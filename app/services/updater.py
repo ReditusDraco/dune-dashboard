@@ -71,13 +71,13 @@ class UpdateService:
             version_file = os.path.join(self.project_root, 'VERSION')
             if os.path.exists(version_file):
                 with open(version_file) as f:
-                    local_version = f.read().strip()
+                    local_version = f.read().strip().replace('\r', '').replace('\n', '')
             else:
                 local_version = "unknown"
 
             self._latest_sha = remote_version
             self._current_sha = local_version
-            self._update_available = remote_version != local_version
+            self._update_available = remote_version != local_version and remote_version != ""
             self._last_check = time.time()
             logger.info(f"Update check: {'available' if self._update_available else 'up to date'} (local={local_version}, remote={remote_version})")
         except Exception as e:

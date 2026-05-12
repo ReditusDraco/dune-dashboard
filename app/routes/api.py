@@ -737,6 +737,6 @@ def register_api_routes(app, services, settings):
         return jsonify({
             'available': updater.update_available,
             'status': updater.update_status,
-            'local_sha': updater._current_sha,
-            'remote_sha': updater._latest_sha,
+            'local_version': updater._current_sha,
+            'remote_version': updater._latest_sha,
         })
