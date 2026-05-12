@@ -74,7 +74,7 @@ class UpdateService:
                 with open(version_file) as f:
                     self._current_sha = f.read().strip()
 
-            self._update_available = self._latest_sha != self._current_sha
+            self._update_available = self._latest_sha != self._current_sha and self._latest_sha[:7] != self._current_sha[:7]
             self._last_check = time.time()
             logger.info(f"Update check: {'available' if self._update_available else 'up to date'} (local={self._current_sha}, remote={self._latest_sha})")
         except Exception as e:
