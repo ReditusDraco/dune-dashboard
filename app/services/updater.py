@@ -61,25 +61,30 @@ class UpdateService:
     def check_for_updates(self):
         """Check GitHub for new commits."""
         try:
-            # Fetch latest commit SHA from GitHub API
-            req = urllib.request.Request(f"{GITHUB_API}/commits/main")
-            req.add_header('Accept', 'application/vnd.github.v3+json')
-            req.add_header('User-Agent', 'DuneDashboard-UpdateChecker')
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
-                remote_sha = data['sha'][:7]
-
-            # Get current version from git if available, otherwise VERSION file
             git_dir = os.path.join(self.project_root, '.git')
             if os.path.isdir(git_dir):
-                try:
-                    local_sha = subprocess.check_output(
-                        ['git', 'rev-parse', 'HEAD'],
-                        cwd=self.project_root, stderr=subprocess.DEVNULL
-                    ).decode().strip()[:7]
-                except Exception:
-                    local_sha = "unknown"
+                # Git clone: compare local HEAD to origin/main
+                subprocess.run(
+                    ['git', 'fetch', 'origin', 'main', '--quiet'],
+                    cwd=self.project_root, stderr=subprocess.DEVNULL, timeout=15
+                )
+                local_sha = subprocess.check_output(
+                    ['git', 'rev-parse', 'HEAD'],
+                    cwd=self.project_root, stderr=subprocess.DEVNULL
+                ).decode().strip()[:7]
+                remote_sha = subprocess.check_output(
+                    ['git', 'rev-parse', 'origin/main'],
+                    cwd=self.project_root, stderr=subprocess.DEVNULL
+                ).decode().strip()[:7]
             else:
+                # ZIP download: compare VERSION file to GitHub API
+                req = urllib.request.Request(f"{GITHUB_API}/commits/main")
+                req.add_header('Accept', 'application/vnd.github.v3+json')
+                req.add_header('User-Agent', 'DuneDashboard-UpdateChecker')
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode())
+                    remote_sha = data['sha'][:7]
+
                 version_file = os.path.join(self.project_root, 'VERSION')
                 if os.path.exists(version_file):
                     with open(version_file) as f:
