@@ -4,6 +4,43 @@
 
 A comprehensive web-based management dashboard for Dune: Awakening private servers. Provides real-time monitoring, player management, chat logging, file browsing, and server administration tools.
 
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+## Quick Start
+
+### Windows
+1. Double-click `setup.bat`
+2. Follow the prompts
+3. Double-click `start.bat` to launch
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
+> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+
 ## Features
 
 - **Real-time Overview**: Server metrics, player counts, pod status, and resource usage.
