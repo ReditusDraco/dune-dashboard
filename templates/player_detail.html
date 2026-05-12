@@ -33,7 +33,7 @@
     <div class="vitals-item">
         <span class="vitals-label">Health</span>
         <span class="vitals-value" style="color:#e74c3c;">{{ "%.0f"|format(vitals.current_health or 0) }}/{{ "%.0f"|format(vitals.max_health or 0) }}</span>
-        {% if is_online %}<span style="font-size:10px;color:#e67e22;margin-left:4px;">(base &mdash; live value may differ)</span>{% else %}<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">(base value)</span>{% endif %}
+        {% if is_online %}<span style="font-size:10px;color:#e67e22;margin-left:4px;">(WIP)</span>{% else %}<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">(WIP)</span>{% endif %}
     </div>
     <div class="vitals-divider"></div>
     <div class="vitals-item">
@@ -60,7 +60,7 @@
     </div>
     {% endif %}
     {% if is_online %}
-    <div style="width:100%;font-size:11px;color:#e67e22;margin-top:4px;">Player is online &mdash; edit vitals only when offline. Health shows base value only.</div>
+    <div style="width:100%;font-size:11px;color:#e67e22;margin-top:4px;">Player is online &mdash; edit vitals only when offline. Health data is currently WIP.</div>
     {% endif %}
 </div>
 {% endif %}
@@ -374,13 +374,13 @@
 <div id="vitals-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeModal('vitals-modal')">
     <div class="modal" style="max-width:500px;">
 <h3>Edit Vitals</h3>
-        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Health edits the <strong>base</strong> value only (in-game max includes equipment bonuses). Hydration/Spice are clamped at 0.</p>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Health editing is currently <strong>WIP</strong>. Hydration/Spice are clamped at 0.</p>
         <form id="vitals-form" onsubmit="return submitVitalsEdit()">
             <input type="hidden" name="pawn_id" value="{{ player.state_pawn_id or player.id }}">
             <label>Current Health:
                 <input type="number" name="current_health" step="1" min="0" max="{{ vitals.max_health | int if vitals.max_health else 150 }}" value="{{ "%.0f"|format(vitals.current_health or 0) }}" style="width:100px;">
             </label>
-            <label>Max Health (Base):
+            <label>Max Health (WIP):
                 <input type="number" name="max_health" step="1" min="0" max="9999" value="{{ "%.0f"|format(vitals.max_health or 150) }}" style="width:100px;">
             </label>
             <label>Hydration:
