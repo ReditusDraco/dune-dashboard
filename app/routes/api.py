@@ -698,3 +698,31 @@ def register_api_routes(app, services, settings):
             return result, 200, {'Content-Type': 'application/json'}
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
+
+    # Update management
+    @app.route('/api/update/status')
+    def api_update_status():
+        updater = services.get('updater')
+        if not updater:
+            return jsonify({'available': False})
+        return jsonify({
+            'available': updater.update_available,
+            'status': updater.update_status,
+        })
+
+    @app.route('/api/update/apply', methods=['POST'])
+    def api_update_apply():
+        updater = services.get('updater')
+        if not updater:
+            return jsonify({'success': False, 'error': 'Updater not available'})
+        success, message = updater.apply_update()
+        return jsonify({'success': success, 'message': message})
+
+    @app.route('/api/update/test', methods=['POST'])
+    def api_update_test():
+        """Force show update banner for testing."""
+        updater = services.get('updater')
+        if updater:
+            updater._update_available = True
+            return jsonify({'success': True, 'message': 'Update banner triggered'})
+        return jsonify({'success': False, 'error': 'Updater not available'})
