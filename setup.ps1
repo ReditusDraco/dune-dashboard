@@ -151,7 +151,7 @@ if (-not $FoundKey) {
 Write-Host ""
 Write-Host "[4/6] Detecting server settings..." -ForegroundColor Yellow
 
-$ServerHost = "65.21.198.100"
+$ServerHost = "YOUR_SERVER_IP"
 $ServerUser = "dune"
 $K8sNamespace = ""
 $DashboardPort = "5050"

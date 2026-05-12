@@ -120,7 +120,7 @@ fi
 echo ""
 echo "[4/6] Detecting server settings..."
 
-SERVER_HOST="65.21.198.100"
+SERVER_HOST="YOUR_SERVER_IP"
 SERVER_USER="dune"
 K8S_NAMESPACE=""
 DASHBOARD_PORT="5050"
