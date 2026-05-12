@@ -11,7 +11,7 @@
 <div class="error-banner danger">
     <strong>SSH Tunnel Not Detected</strong><br>
     Start the SSH tunnel first, then refresh.
-    <br><code>ssh -i $env:TEMP\dune-awakening-server-sshKey -L 15433:localhost:15433 -N dune@65.21.198.100</code>
+    <br><code>ssh -i $env:TEMP\dune-awakening-server-sshKey -L 15433:localhost:15433 -N dune@YOUR_SERVER_IP</code>
 </div>
 {% elif db_error %}
 <div class="error-banner danger"><strong>Database Error:</strong> {{ db_error }}</div>

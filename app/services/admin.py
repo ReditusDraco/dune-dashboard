@@ -266,7 +266,7 @@ class AdminService:
                             name_match = re.search(r'Name=([^?#]+)', line)
                             if name_match:
                                 current_player = name_match.group(1).split('#')[0]
-                                if current_player and current_ip and current_ip != '65.21.198.100':
+                                if current_player and current_ip and current_ip != 'YOUR_SERVER_IP':
                                     ip_to_player[current_ip] = current_player
                             current_ip = None
 

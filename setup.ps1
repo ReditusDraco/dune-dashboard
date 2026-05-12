@@ -164,36 +164,43 @@ $AuthPass = "changeme"
 # Try to detect server IP from known_hosts
 $KnownHosts = Join-Path $env:USERPROFILE ".ssh\known_hosts"
 if (Test-Path $KnownHosts) {
-    $hosts = Select-String -Path $KnownHosts -Pattern '^\d+\.\d+\.\d+\.\d+' | ForEach-Object {
-        if ($_ -match '^(\d+\.\d+\.\d+\.\d+)') { $matches[1] }
-    } | Select-Object -Unique
-    if ($hosts.Count -gt 0) {
-        $ServerHost = $hosts[-1]
-        Write-Host "  Detected previous server IP: $ServerHost" -ForegroundColor Green
+    $content = Get-Content $KnownHosts
+    $ips = @()
+    foreach ($line in $content) {
+        if ($line -match '\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b') {
+            $ips += $matches[1]
+        }
+    }
+    if ($ips.Count -gt 0) {
+        $ServerHost = $ips[-1]
+        Write-Host "  Detected server IP from SSH history: $ServerHost" -ForegroundColor Green
     }
 }
 
-# Test SSH if we have a key and a real IP
-if ($FoundKey -and $ServerHost -ne "YOUR_SERVER_IP") {
-    # Test SSH
-    $testOut = ssh -i $FoundKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o BatchMode=yes "dune@$ServerHost" "echo ok" 2>$null
-    if ($testOut -eq "ok") {
-        Write-Host "  SSH connection OK" -ForegroundColor Green
+# Ask for IP first so we can try SSH to detect namespace
+Write-Host ""
+$val = Read-Host "  Server Host [$ServerHost]"
+if ($val) { $ServerHost = $val }
 
-        # Auto-detect namespace
-        $nsOut = ssh -i $FoundKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o BatchMode=yes "dune@$ServerHost" "sudo kubectl get namespaces -o name" 2>$null
+# Try SSH with the confirmed IP to auto-detect namespace
+if ($FoundKey -and $ServerHost -ne "YOUR_SERVER_IP") {
+    Write-Host "  Testing SSH connection..." -ForegroundColor Yellow
+    $testOut = cmd /c "ssh -i `"$FoundKey`" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -o BatchMode=yes dune@$ServerHost echo ok 2>nul"
+    if ($testOut -match "ok") {
+        Write-Host "  SSH connection OK" -ForegroundColor Green
+        $nsOut = cmd /c "ssh -i `"$FoundKey`" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o BatchMode=yes dune@$ServerHost sudo kubectl get namespaces -o name 2>nul"
         if ($nsOut) {
             foreach ($line in $nsOut -split "`n") {
                 $ns = $line -replace 'namespace/', ''
                 if ($ns -match '^funcom-seabass-') {
                     $K8sNamespace = $ns
-                    Write-Host "  Namespace: $K8sNamespace" -ForegroundColor Green
+                    Write-Host "  Auto-detected namespace: $K8sNamespace" -ForegroundColor Green
                     break
                 }
             }
         }
     } else {
-        Write-Host "  [WARN] SSH failed. Using defaults." -ForegroundColor Yellow
+        Write-Host "  [WARN] SSH failed for $ServerHost. You may need to enter the namespace manually." -ForegroundColor Yellow
     }
 }
 
@@ -202,17 +209,23 @@ Write-Host ""
 Write-Host "  Review settings (press Enter to accept, or type new value):" -ForegroundColor Cyan
 Write-Host ""
 
-$val = Read-Host "  Server Host [$ServerHost]"
-if ($val) { $ServerHost = $val }
+Write-Host "  Server Host: $ServerHost"
 
 $val = Read-Host "  Server User [$ServerUser]"
 if ($val) { $ServerUser = $val }
 
-$val = Read-Host "  SSH Key Path [$FoundKey]"
-if ($val) { $FoundKey = $val }
+Write-Host "  SSH Key Path: $FoundKey"
 
-$val = Read-Host "  K8s Namespace [$K8sNamespace]"
+if (-not $K8sNamespace) {
+    Write-Host "  [INFO] To find your namespace, run: ssh dune@YOUR_IP 'sudo kubectl get namespaces'" -ForegroundColor Cyan
+    $K8sHint = "funcom-seabass-<id>"
+} else {
+    $K8sHint = $K8sNamespace
+}
+
+$val = Read-Host "  K8s Namespace [$K8sHint]"
 if ($val) { $K8sNamespace = $val }
+elseif (-not $K8sNamespace) { $K8sNamespace = "" }
 
 $val = Read-Host "  Dashboard Port [$DashboardPort]"
 if ($val) { $DashboardPort = $val }
