@@ -45,6 +45,9 @@ desktop.ini
 logs/
 *.log
 
+# Backups
+backups/
+
 # Database
 *.db
 *.sqlite3
