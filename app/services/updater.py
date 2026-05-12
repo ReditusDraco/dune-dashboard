@@ -186,14 +186,20 @@ class UpdateService:
             return False, str(e)
 
     def _restart_app(self):
-        """Restart the dashboard process."""
+        """Restart the dashboard via the launcher script to preserve SSH/DB tunnels."""
         try:
-            # Find the running process and restart it
-            script = os.path.join(self.project_root, 'run.py')
             if os.name == 'nt':
-                subprocess.Popen([sys.executable, script], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                launcher = os.path.join(self.project_root, 'start.bat')
+                if os.path.exists(launcher):
+                    subprocess.Popen(['cmd', '/c', 'start', '', launcher], shell=True)
+                else:
+                    subprocess.Popen([sys.executable, os.path.join(self.project_root, 'run.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
-                subprocess.Popen([sys.executable, script])
+                launcher = os.path.join(self.project_root, 'start.sh')
+                if os.path.exists(launcher):
+                    subprocess.Popen(['bash', launcher], start_new_session=True)
+                else:
+                    subprocess.Popen([sys.executable, os.path.join(self.project_root, 'run.py')], start_new_session=True)
             os._exit(0)
         except Exception as e:
             logger.error(f"Restart failed: {e}")
