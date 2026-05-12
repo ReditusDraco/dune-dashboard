@@ -12,6 +12,7 @@ A comprehensive web-based management dashboard for Dune: Awakening private serve
 - **Shell Access**: Interactive VM and Kubernetes pod shells directly in the browser.
 - **Admin Tools**: Ban management, IP detection, kick/unban functionality, and player history.
 - **Vehicles & Buildings**: Track owned vehicles, modules, and player structures.
+- **Auto-Update**: Background checker polls GitHub for new commits. Safe file replacement preserves your settings, logs, and SSH keys. One-click update from the dashboard.
 
 ## License
 
