@@ -42,6 +42,18 @@ class UpdateService:
         self._check_interval = 1800  # 30 minutes
         self._update_in_progress = False
         self._update_status = None
+        self._current_branch = self._detect_branch()
+
+    def _detect_branch(self):
+        """Detect the current git branch."""
+        try:
+            branch = subprocess.check_output(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                cwd=self.project_root, stderr=subprocess.DEVNULL
+            ).decode().strip()
+            return branch if branch else 'main'
+        except Exception:
+            return 'main'
 
     def start_checker(self):
         """Start background update checker thread."""
@@ -61,11 +73,12 @@ class UpdateService:
     def check_for_updates(self):
         """Check GitHub for new commits."""
         try:
+            branch = self._current_branch
             git_dir = os.path.join(self.project_root, '.git')
             if os.path.isdir(git_dir):
-                # Git clone: compare local HEAD to origin/main
+                # Git clone: compare local HEAD to origin/<branch>
                 subprocess.run(
-                    ['git', 'fetch', 'origin', 'main', '--quiet'],
+                    ['git', 'fetch', 'origin', branch, '--quiet'],
                     cwd=self.project_root, stderr=subprocess.DEVNULL, timeout=15
                 )
                 local_sha = subprocess.check_output(
@@ -73,12 +86,12 @@ class UpdateService:
                     cwd=self.project_root, stderr=subprocess.DEVNULL
                 ).decode().strip()[:7]
                 remote_sha = subprocess.check_output(
-                    ['git', 'rev-parse', 'origin/main'],
+                    ['git', 'rev-parse', f'origin/{branch}'],
                     cwd=self.project_root, stderr=subprocess.DEVNULL
                 ).decode().strip()[:7]
             else:
                 # ZIP download: compare VERSION file to GitHub API
-                req = urllib.request.Request(f"{GITHUB_API}/commits/main")
+                req = urllib.request.Request(f"{GITHUB_API}/commits/{branch}")
                 req.add_header('Accept', 'application/vnd.github.v3+json')
                 req.add_header('User-Agent', 'DuneDashboard-UpdateChecker')
                 with urllib.request.urlopen(req, timeout=10) as resp:
@@ -96,7 +109,7 @@ class UpdateService:
             self._current_sha = local_sha
             self._update_available = remote_sha != local_sha and remote_sha != ""
             self._last_check = time.time()
-            logger.info(f"Update check: {'available' if self._update_available else 'up to date'} (local={local_sha}, remote={remote_sha})")
+            logger.info(f"Update check ({branch}): {'available' if self._update_available else 'up to date'} (local={local_sha}, remote={remote_sha})")
         except Exception as e:
             logger.debug(f"Update check error: {e}")
 
