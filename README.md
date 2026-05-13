@@ -2,7 +2,7 @@
 
 A comprehensive web-based management dashboard for Dune: Awakening private servers. Provides real-time monitoring, player management, chat logging, file browsing, and server administration tools.
 
-> **Beta Release** — Feature complete for core functionality. Report issues on GitHub.
+> **Early Development** — This is an early version being developed in real time. Features may be incomplete, unstable, or broken. Use at your own risk. Report issues on GitHub.
 
 ## Quick Start
 
@@ -22,11 +22,12 @@ A comprehensive web-based management dashboard for Dune: Awakening private serve
 - **File Browser**: Secure SSH-based file browser for server configuration and logs.
 - **Shell Access**: Interactive VM and Kubernetes pod shells directly in the browser.
 - **Admin Tools**: Ban management, IP detection, kick/unban functionality, and player history.
+- **Firewall Security**: Block unauthenticated game server ports (File Browser, Director, PostgreSQL) from external internet access. Applied via iptables on the game server VM. Configurable per-port during setup or from the Server page.
 - **Vehicles & Buildings**: Track owned vehicles, modules, and player structures.
 - **Auto-Update**: Background checker polls GitHub for new commits. Safe file replacement preserves your settings, logs, and SSH keys. One-click update from the dashboard.
 - **Remote Access**: Built-in support for HTTPS and binding to `0.0.0.0` for secure remote management.
 - **Let's Encrypt**: Optionally set up publicly trusted SSL certs during setup with automatic renewal via certbot.
-- **Firewall Management**: Setup and launcher scripts automatically create/check firewall rules for required ports.
+- **Firewall Security**: Block unauthenticated game server ports (File Browser, Director, PostgreSQL) from external internet access. Applied via iptables on the game server VM. Configurable per-port during setup or from the Server page.
 - **Settings Migration**: Automatically adds new configuration options to `settings.yaml` when updating, so you never miss a feature.
 - **Cross-Platform**: Works on Windows (`.bat`/`.ps1`) and Linux/macOS (`.sh`).
 
