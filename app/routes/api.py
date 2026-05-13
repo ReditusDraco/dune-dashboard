@@ -90,28 +90,32 @@ def register_api_routes(app, services, settings):
     # Firewall management
     @app.route('/server/firewall')
     def firewall_status():
-        fw = settings.get('firewall', {})
-        blocked = []
-        available = []
-
         port_map = {
             'filebrowser': {'port': 18888, 'name': 'File Browser'},
             'director': {'port': 31820, 'name': 'Battlegroup Director'},
             'postgres': {'port': 15432, 'name': 'PostgreSQL'},
         }
 
+        out_input, _, _ = ssh.run('sudo iptables -L INPUT -n 2>/dev/null | grep -E "dpt:(18888|31820|15432)"', timeout=10)
+        out_forward, _, _ = ssh.run('sudo iptables -L FORWARD -n 2>/dev/null | grep -E "dpt:(18888|31820|15432)"', timeout=10)
+        all_output = out_input + out_forward
+
+        blocked_ports = set()
+        rules = {}
+        for line in all_output.split('\n'):
+            for port in ['18888', '31820', '15432']:
+                if f'dpt:{port}' in line and 'DROP' in line:
+                    blocked_ports.add(port)
+                    rules[port] = line.strip()
+
+        blocked = []
+        available = []
         for key, info in port_map.items():
-            if fw.get(f'block_{key}'):
+            port_str = str(info['port'])
+            if port_str in blocked_ports:
                 blocked.append(info)
             else:
                 available.append(info)
-
-        out, err, rc = ssh.run('sudo iptables -L INPUT -n --line-numbers 2>/dev/null | grep -E "dpt:(18888|31820|15432)"', timeout=10)
-        rules = {}
-        for line in out.split('\n'):
-            for port in ['18888', '31820', '15432']:
-                if f'dpt:{port}' in line:
-                    rules[port] = line.strip()
 
         return jsonify({
             'success': True,
@@ -127,10 +131,29 @@ def register_api_routes(app, services, settings):
         if port not in (18888, 31820, 15432):
             return jsonify({'success': False, 'output': 'Invalid port'})
 
-        cmd = f'sudo iptables -I INPUT 1 -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT && sudo iptables -I INPUT 2 -p tcp --dport {port} -j DROP'
+        cmd = (
+            f'sudo iptables -I INPUT 1 -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT && '
+            f'sudo iptables -I INPUT 2 -p tcp --dport {port} -j DROP && '
+            f'sudo iptables -I FORWARD 1 -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT && '
+            f'sudo iptables -I FORWARD 2 -p tcp --dport {port} -j DROP'
+        )
         out, err, rc = ssh.run(cmd, timeout=15)
-        if rc != 0 and 'already exists' not in err and 'No such file' not in err:
+        if rc != 0 and 'already exists' not in (out + err):
             return jsonify({'success': False, 'output': err})
+
+        port_key = {18888: 'block_filebrowser', 31820: 'block_director', 15432: 'block_postgres'}.get(port)
+        if port_key:
+            settings.setdefault('firewall', {})[port_key] = True
+            import yaml
+            settings_path = None
+            for p in ['settings.yaml', 'settings.yml']:
+                import os
+                if os.path.exists(p):
+                    settings_path = p
+                    break
+            if settings_path:
+                with open(settings_path, 'w') as f:
+                    yaml.dump(dict(settings), f)
 
         return jsonify({'success': True, 'output': f'Port {port} blocked (localhost allowed)'})
 
@@ -144,6 +167,8 @@ def register_api_routes(app, services, settings):
         cmds = [
             f'sudo iptables -D INPUT -p tcp --dport {port} -j DROP',
             f'sudo iptables -D INPUT -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT',
+            f'sudo iptables -D FORWARD -p tcp --dport {port} -j DROP',
+            f'sudo iptables -D FORWARD -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT',
         ]
         all_ok = True
         results = []
@@ -153,6 +178,20 @@ def register_api_routes(app, services, settings):
             results.append(combined if combined else 'ok')
             if rc != 0 and 'Bad rule' not in combined and 'No chain' not in combined and 'not found' not in combined:
                 all_ok = False
+
+        port_key = {18888: 'block_filebrowser', 31820: 'block_director', 15432: 'block_postgres'}.get(port)
+        if port_key:
+            settings.setdefault('firewall', {})[port_key] = False
+            import yaml
+            settings_path = None
+            for p in ['settings.yaml', 'settings.yml']:
+                import os
+                if os.path.exists(p):
+                    settings_path = p
+                    break
+            if settings_path:
+                with open(settings_path, 'w') as f:
+                    yaml.dump(dict(settings), f)
 
         return jsonify({'success': all_ok, 'output': ' / '.join(r for r in results if r)})
 

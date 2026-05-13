@@ -698,11 +698,13 @@ if (-not $SshValid) {
 
         $tmpFwScript = Join-Path $env:TEMP ([System.IO.Path]::GetRandomFileName() + ".sh")
         $fwContent = "for PORT in $($portsToBlock -join ' '); do`n"
-        $fwContent += "  if iptables -C INPUT -p tcp --dport `$PORT -s 127.0.0.1 -j ACCEPT 2>/dev/null; then`n"
+        $fwContent += "  if iptables -C FORWARD -p tcp --dport `$PORT -s 127.0.0.1 -j ACCEPT 2>/dev/null; then`n"
         $fwContent += "    echo 'Port `$PORT already blocked'`n"
         $fwContent += "  else`n"
         $fwContent += "    iptables -I INPUT 1 -p tcp --dport `$PORT -s 127.0.0.1 -j ACCEPT`n"
         $fwContent += "    iptables -I INPUT 2 -p tcp --dport `$PORT -j DROP`n"
+        $fwContent += "    iptables -I FORWARD 1 -p tcp --dport `$PORT -s 127.0.0.1 -j ACCEPT`n"
+        $fwContent += "    iptables -I FORWARD 2 -p tcp --dport `$PORT -j DROP`n"
         $fwContent += "    echo 'Port `$PORT blocked'`n"
         $fwContent += "  fi`n"
         $fwContent += "done`n"
