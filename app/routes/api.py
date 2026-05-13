@@ -96,13 +96,11 @@ def register_api_routes(app, services, settings):
             'postgres': {'port': 15432, 'name': 'PostgreSQL'},
         }
 
-        out_input, _, _ = ssh.run('sudo iptables -L INPUT -n 2>/dev/null | grep -E "dpt:(18888|31820|15432)"', timeout=10)
-        out_forward, _, _ = ssh.run('sudo iptables -L FORWARD -n 2>/dev/null | grep -E "dpt:(18888|31820|15432)"', timeout=10)
-        all_output = out_input + out_forward
+        out, _, _ = ssh.run('sudo iptables -L INPUT -n 2>/dev/null | grep -E "dpt:(18888|31820|15432)"; sudo iptables -L FORWARD -n 2>/dev/null | grep -E "dpt:(18888|31820|15432)"; sudo iptables -t mangle -L PREROUTING -n 2>/dev/null | grep -E "dpt:(18888|31820|15432)"', timeout=15)
 
         blocked_ports = set()
         rules = {}
-        for line in all_output.split('\n'):
+        for line in out.split('\n'):
             for port in ['18888', '31820', '15432']:
                 if f'dpt:{port}' in line and 'DROP' in line:
                     blocked_ports.add(port)
@@ -135,9 +133,11 @@ def register_api_routes(app, services, settings):
             f'sudo iptables -I INPUT 1 -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT && '
             f'sudo iptables -I INPUT 2 -p tcp --dport {port} -j DROP && '
             f'sudo iptables -I FORWARD 1 -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT && '
-            f'sudo iptables -I FORWARD 2 -p tcp --dport {port} -j DROP'
+            f'sudo iptables -I FORWARD 2 -p tcp --dport {port} -j DROP && '
+            f'sudo iptables -t mangle -I PREROUTING 1 -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT && '
+            f'sudo iptables -t mangle -I PREROUTING 2 -p tcp --dport {port} -j DROP'
         )
-        out, err, rc = ssh.run(cmd, timeout=15)
+        out, err, rc = ssh.run(cmd, timeout=20)
         if rc != 0 and 'already exists' not in (out + err):
             return jsonify({'success': False, 'output': err})
 
@@ -164,20 +164,18 @@ def register_api_routes(app, services, settings):
         if port not in (18888, 31820, 15432):
             return jsonify({'success': False, 'output': 'Invalid port'})
 
-        cmds = [
-            f'sudo iptables -D INPUT -p tcp --dport {port} -j DROP',
-            f'sudo iptables -D INPUT -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT',
-            f'sudo iptables -D FORWARD -p tcp --dport {port} -j DROP',
-            f'sudo iptables -D FORWARD -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT',
-        ]
-        all_ok = True
-        results = []
-        for cmd in cmds:
-            out, err, rc = ssh.run(cmd, timeout=10)
-            combined = (out + err).strip()
-            results.append(combined if combined else 'ok')
-            if rc != 0 and 'Bad rule' not in combined and 'No chain' not in combined and 'not found' not in combined:
-                all_ok = False
+        cmd = (
+            f'sudo iptables -D INPUT -p tcp --dport {port} -j DROP 2>/dev/null; '
+            f'sudo iptables -D INPUT -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT 2>/dev/null; '
+            f'sudo iptables -D FORWARD -p tcp --dport {port} -j DROP 2>/dev/null; '
+            f'sudo iptables -D FORWARD -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT 2>/dev/null; '
+            f'sudo iptables -t mangle -D PREROUTING -p tcp --dport {port} -j DROP 2>/dev/null; '
+            f'sudo iptables -t mangle -D PREROUTING -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT 2>/dev/null; '
+            f'echo DONE'
+        )
+        out, err, rc = ssh.run(cmd, timeout=20)
+        combined = (out + err).strip()
+        all_ok = 'DONE' in out or rc == 0
 
         port_key = {18888: 'block_filebrowser', 31820: 'block_director', 15432: 'block_postgres'}.get(port)
         if port_key:
@@ -193,7 +191,7 @@ def register_api_routes(app, services, settings):
                 with open(settings_path, 'w') as f:
                     yaml.dump(dict(settings), f)
 
-        return jsonify({'success': all_ok, 'output': ' / '.join(r for r in results if r)})
+        return jsonify({'success': all_ok, 'output': 'Port unblocked' if all_ok else combined})
 
     # Chat API
     @app.route('/api/chat_logs')
