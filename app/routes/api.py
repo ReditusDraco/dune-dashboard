@@ -149,8 +149,9 @@ def register_api_routes(app, services, settings):
         results = []
         for cmd in cmds:
             out, err, rc = ssh.run(cmd, timeout=10)
-            results.append(err.strip() if err else 'ok')
-            if rc != 0 and 'No chain' not in err and 'not found' not in err:
+            combined = (out + err).strip()
+            results.append(combined if combined else 'ok')
+            if rc != 0 and 'Bad rule' not in combined and 'No chain' not in combined and 'not found' not in combined:
                 all_ok = False
 
         return jsonify({'success': all_ok, 'output': ' / '.join(r for r in results if r)})
