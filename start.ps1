@@ -40,6 +40,7 @@ $SSHUser = $settings.server.user
 $LocalPort = [int]$settings.database.port
 $Namespace = $settings.kubernetes.namespace
 $DashboardPort = [int]$settings.dashboard.port
+$DirectorPort = [int]$settings.director.port
 
 # Find SSH key (prefer project-local for portability)
 $SSHKeySrc = $settings.server.ssh_key
@@ -105,6 +106,7 @@ $sshArgs = @(
     "-o", "ServerAliveInterval=30",
     "-o", "ServerAliveCountMax=3",
     "-L", "${LocalPort}:localhost:${LocalPort}",
+    "-L", "${DirectorPort}:${SSHHost}:${DirectorPort}",
     "-N", "${SSHUser}@${SSHHost}"
 )
 $sshTunnel = Start-Process ssh -ArgumentList $sshArgs -PassThru -WindowStyle Hidden

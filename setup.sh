@@ -131,7 +131,7 @@ DB_PORT="15433"
 DIRECTOR_PORT="32479"
 FILEBROWSER_PORT="18888"
 AUTH_USER="admin"
-AUTH_PASS="changeme"
+AUTH_PASS=""
 
 # Try to detect VM IP from known_hosts
 KNOWN_HOSTS="$HOME/.ssh/known_hosts"
@@ -214,7 +214,12 @@ read -rp "  DB Local Port [$DB_PORT] (Local database tunnel port): " VAL; [ -n "
 read -rp "  Director Port [$DIRECTOR_PORT] (Director API port): " VAL; [ -n "$VAL" ] && DIRECTOR_PORT="$VAL"
 read -rp "  FileBrowser Port [$FILEBROWSER_PORT] (File manager port): " VAL; [ -n "$VAL" ] && FILEBROWSER_PORT="$VAL"
 read -rp "  Auth Username [$AUTH_USER] (Dashboard login name): " VAL; [ -n "$VAL" ] && AUTH_USER="$VAL"
-read -rp "  Auth Password [$AUTH_PASS] (Dashboard login password): " VAL; [ -n "$VAL" ] && AUTH_PASS="$VAL"
+read -rp "  Auth Password (required): " VAL
+if [ -n "$VAL" ]; then AUTH_PASS="$VAL"
+else
+    echo "  [ERROR] Password is required. Setup cancelled."
+    exit 1
+fi
 
 # SSL certificate (Let's Encrypt or local CA)
 echo ""
@@ -362,6 +367,17 @@ echo "[5/6] Saving settings..."
 # Generate secret key
 SECRET=$($PYTHON -c "import secrets; print(secrets.token_hex(32))")
 
+# Hash the password using Argon2
+echo "  Hashing password with Argon2..."
+AUTH_HASH=$($PYTHON -c "from argon2 import PasswordHasher; ph = PasswordHasher(); print(ph.hash('$AUTH_PASS'))" 2>/dev/null)
+if [[ "$AUTH_HASH" == \$argon2* ]]; then
+    echo "  Password hashed successfully."
+else
+    echo "  [ERROR] Failed to hash password. Argon2 may not be installed."
+    echo "  Run: pip install argon2-cffi"
+    exit 1
+fi
+
 # Escape SSH key path for YAML
 SSH_KEY_YAML="null"
 if [ -n "$FOUND_KEY" ]; then
@@ -417,7 +433,7 @@ cache:
 auth:
   enabled: true
   username: $AUTH_USER
-  password: $AUTH_PASS
+  password_hash: '$AUTH_HASH'
 
 logging:
   level: INFO

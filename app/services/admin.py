@@ -4,8 +4,19 @@ import re
 import time
 import threading
 import logging
+import ipaddress
 
 logger = logging.getLogger(__name__)
+audit_logger = logging.getLogger('audit')
+
+
+def _validate_ip(ip):
+    """Validate that a string is a valid IPv4 or IPv6 address."""
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except (ValueError, TypeError):
+        return False
 
 
 class AdminService:
@@ -74,6 +85,7 @@ class AdminService:
                     """, [player_id, reason, note, duration_int, duration_int, duration_int])
 
             conn.commit()
+            audit_logger.info(f"BAN: player_id={player_id} player_name={player_name} duration={duration_int}min reason={reason}")
             return True, f"Player {player_name} banned for {duration_int} minutes"
         except Exception as e:
             logger.error(f"Failed to ban player {player_id}: {e}")
@@ -115,9 +127,13 @@ class AdminService:
             conn.commit()
 
             for ip in ips_to_unblock:
+                if not _validate_ip(ip):
+                    logger.warning(f"Skipping invalid IP in unban: {ip}")
+                    continue
                 self.ssh.run(f'sudo iptables -D INPUT -s {ip} -j DROP 2>/dev/null')
                 self.ssh.run(f'sudo iptables -D OUTPUT -d {ip} -j DROP 2>/dev/null')
 
+            audit_logger.info(f"UNBAN: player_id={player_id} ips_cleared={len(ips_to_unblock)}")
             return True, f"Player unbanned. Cleared {len(ips_to_unblock)} IP block(s)."
         except Exception as e:
             logger.error(f"Failed to unban player {player_id}: {e}")
@@ -147,6 +163,9 @@ class AdminService:
             return False, "Player IP not known. Detect IPs first."
 
         def temporary_block(ip):
+            if not _validate_ip(ip):
+                logger.error(f"Invalid IP address for kick: {ip}")
+                return
             self.ssh.run(f'sudo iptables -I INPUT -s {ip} -j DROP')
             self.ssh.run(f'sudo iptables -I OUTPUT -d {ip} -j DROP')
             time.sleep(60)
@@ -157,6 +176,7 @@ class AdminService:
         thread.start()
 
         self.db.execute("INSERT INTO dune.player_actions (player_id, action_type, reason, duration_minutes, ip_address) VALUES (%s, 'kick', 'Temporary kick', 1, %s)", [player_id, player_ip])
+        audit_logger.info(f"KICK: player_id={player_id} player_name={player_name} ip={player_ip}")
 
         return True, f"Player {player_name} kicked (IP {player_ip} blocked for 60 seconds)"
 
@@ -206,6 +226,7 @@ class AdminService:
                 [hydration, hydration, spice, spice, pawn_id]
             )
             conn.commit()
+            audit_logger.info(f"EDIT_VITALS: pawn_id={pawn_id} health={health} max_health={max_h} hydration={hydration} spice={spice}")
             return True, {"health": health, "max_health": max_h, "hydration": hydration, "spice": spice}
         except Exception as e:
             logger.error(f"Failed to edit vitals for pawn {pawn_id}: {e}")
@@ -297,8 +318,11 @@ class AdminService:
                                 """, [pid, account_id], one=True)
 
                                 if ban_check:
-                                    self.ssh.run(f'sudo iptables -I INPUT -s {ip} -j DROP')
-                                    self.ssh.run(f'sudo iptables -I OUTPUT -d {ip} -j DROP')
+                                    if _validate_ip(ip):
+                                        self.ssh.run(f'sudo iptables -I INPUT -s {ip} -j DROP')
+                                        self.ssh.run(f'sudo iptables -I OUTPUT -d {ip} -j DROP')
+                                    else:
+                                        logger.warning(f"Skipping invalid IP for ban block: {ip}")
 
             conn.commit()
             return True, f"Updated {updated} player IPs from game logs"
@@ -320,8 +344,11 @@ class AdminService:
         """, [player_id, ip_address])
 
     def emergency_unban(self, ip):
+        if not _validate_ip(ip):
+            return False, f"Invalid IP address: {ip}"
         self.ssh.run(f'sudo iptables -D INPUT -s {ip} -j DROP 2>/dev/null')
         self.ssh.run(f'sudo iptables -D OUTPUT -d {ip} -j DROP 2>/dev/null')
+        audit_logger.info(f"EMERGENCY_UNBAN: ip={ip}")
         return True, f"Unblocked {ip}"
 
     def get_bans(self, limit=50):
@@ -387,6 +414,268 @@ class AdminService:
             if conn:
                 conn.rollback()
             return False, [], str(e)
+        finally:
+            if cur:
+                cur.close()
+            self.db.return_connection(conn)
+
+    def edit_faction(self, player_controller_id, faction_id):
+        if player_controller_id is None or faction_id is None:
+            return False, "Missing parameters"
+        faction_id = int(faction_id)
+        if faction_id not in (1, 2, 3, 4):
+            return False, "Invalid faction ID. Must be 1 (Atreides), 2 (Harkonnen), 3 (None), or 4 (Smuggler)"
+
+        conn = self.db.get_connection()
+        if not conn:
+            return False, "Database connection failed"
+        cur = None
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO dune.player_faction (actor_id, faction_id, utc_time_faction_change)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (actor_id) DO UPDATE SET
+                    faction_id = EXCLUDED.faction_id,
+                    utc_time_faction_change = EXCLUDED.utc_time_faction_change
+            """, [player_controller_id, faction_id])
+            conn.commit()
+            audit_logger.info(f"EDIT_FACTION: player_controller_id={player_controller_id} faction_id={faction_id}")
+            return True, {"faction_id": faction_id}
+        except Exception as e:
+            logger.error(f"Failed to edit faction for player {player_controller_id}: {e}")
+            if conn:
+                conn.rollback()
+            return False, str(e)
+        finally:
+            if cur:
+                cur.close()
+            self.db.return_connection(conn)
+
+    def edit_xp(self, player_controller_id, track_type, xp_amount, level=None):
+        if player_controller_id is None or track_type is None or xp_amount is None:
+            return False, "Missing parameters"
+        try:
+            xp_amount = float(xp_amount)
+        except (ValueError, TypeError):
+            return False, "Invalid XP amount"
+        if level is not None:
+            try:
+                level = float(level)
+            except (ValueError, TypeError):
+                return False, "Invalid level"
+
+        conn = self.db.get_connection()
+        if not conn:
+            return False, "Database connection failed"
+        cur = None
+        try:
+            cur = conn.cursor()
+            if level is not None:
+                cur.execute("""
+                    INSERT INTO dune.specialization_tracks (player_id, track_type, xp_amount, level)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (player_id, track_type) DO UPDATE SET
+                        xp_amount = EXCLUDED.xp_amount,
+                        level = EXCLUDED.level
+                """, [player_controller_id, track_type, xp_amount, level])
+            else:
+                cur.execute("""
+                    INSERT INTO dune.specialization_tracks (player_id, track_type, xp_amount)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (player_id, track_type) DO UPDATE SET
+                        xp_amount = EXCLUDED.xp_amount
+                """, [player_controller_id, track_type, xp_amount])
+            conn.commit()
+            audit_logger.info(f"EDIT_XP: player_controller_id={player_controller_id} track={track_type} xp={xp_amount} level={level}")
+            return True, {"track_type": track_type, "xp_amount": xp_amount, "level": level}
+        except Exception as e:
+            logger.error(f"Failed to edit XP for player {player_controller_id}: {e}")
+            if conn:
+                conn.rollback()
+            return False, str(e)
+        finally:
+            if cur:
+                cur.close()
+            self.db.return_connection(conn)
+
+    def edit_tech_knowledge(self, player_id, xp_points):
+        if player_id is None or xp_points is None:
+            return False, "Missing parameters"
+        try:
+            xp_points = int(xp_points)
+        except (ValueError, TypeError):
+            return False, "Invalid XP points value"
+
+        conn = self.db.get_connection()
+        if not conn:
+            return False, "Database connection failed"
+        cur = None
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE dune.actors SET properties = jsonb_set(
+                    properties,
+                    '{TechKnowledgePlayerComponent,m_TechKnowledgePoints}',
+                    to_jsonb(%s::int)
+                ) WHERE id = %s
+            """, [xp_points, player_id])
+            conn.commit()
+            audit_logger.info(f"EDIT_TECH_KNOWLEDGE: player_id={player_id} xp_points={xp_points}")
+            return True, {"xp_points": xp_points}
+        except Exception as e:
+            logger.error(f"Failed to edit tech knowledge for player {player_id}: {e}")
+            if conn:
+                conn.rollback()
+            return False, str(e)
+        finally:
+            if cur:
+                cur.close()
+            self.db.return_connection(conn)
+
+    def edit_currency(self, player_controller_id, currency_id, new_balance):
+        if player_controller_id is None or currency_id is None or new_balance is None:
+            return False, "Missing parameters"
+        try:
+            new_balance = int(new_balance)
+        except (ValueError, TypeError):
+            return False, "Invalid balance value"
+
+        conn = self.db.get_connection()
+        if not conn:
+            return False, "Database connection failed"
+        cur = None
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO dune.player_virtual_currency_balances (player_controller_id, currency_id, balance)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (player_controller_id, currency_id) DO UPDATE SET
+                    balance = EXCLUDED.balance
+                RETURNING balance
+            """, [player_controller_id, currency_id, new_balance])
+            row = cur.fetchone()
+            conn.commit()
+            audit_logger.info(f"EDIT_CURRENCY: player_controller_id={player_controller_id} currency={currency_id} new_balance={new_balance}")
+            return True, {"currency_id": currency_id, "new_balance": new_balance}
+        except Exception as e:
+            logger.error(f"Failed to edit currency for player {player_controller_id}: {e}")
+            if conn:
+                conn.rollback()
+            return False, str(e)
+        finally:
+            if cur:
+                cur.close()
+            self.db.return_connection(conn)
+
+    def edit_item(self, item_id, field, value):
+        if item_id is None or field is None or value is None:
+            return False, "Missing parameters"
+        allowed_fields = ('stack_size', 'quality_level', 'is_new')
+        if field not in allowed_fields:
+            return False, f"Invalid field. Allowed: {', '.join(allowed_fields)}"
+
+        conn = self.db.get_connection()
+        if not conn:
+            return False, "Database connection failed"
+        cur = None
+        try:
+            cur = conn.cursor()
+            if field == 'is_new':
+                cur.execute(
+                    "UPDATE dune.items SET is_new = %s WHERE id = %s RETURNING id, stack_size, quality_level, is_new",
+                    [bool(value), item_id]
+                )
+            else:
+                cur.execute(
+                    "UPDATE dune.items SET {} = %s WHERE id = %s RETURNING id, stack_size, quality_level, is_new".format(field),
+                    [int(value), item_id]
+                )
+            row = cur.fetchone()
+            if not row:
+                conn.rollback()
+                return False, "Item not found"
+            conn.commit()
+            audit_logger.info(f"EDIT_ITEM: item_id={item_id} field={field} value={value}")
+            return True, {"item_id": item_id, "field": field, "value": row[field]}
+        except Exception as e:
+            logger.error(f"Failed to edit item {item_id}: {e}")
+            if conn:
+                conn.rollback()
+            return False, str(e)
+        finally:
+            if cur:
+                cur.close()
+            self.db.return_connection(conn)
+
+    def delete_item(self, item_id):
+        if item_id is None:
+            return False, "Missing item_id"
+
+        conn = self.db.get_connection()
+        if not conn:
+            return False, "Database connection failed"
+        cur = None
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT template_id FROM dune.items WHERE id = %s", [item_id])
+            row = cur.fetchone()
+            if not row:
+                conn.rollback()
+                return False, "Item not found"
+            template_name = row[0]
+            cur.execute("DELETE FROM dune.items WHERE id = %s", [item_id])
+            conn.commit()
+            audit_logger.info(f"DELETE_ITEM: item_id={item_id} template={template_name}")
+            return True, {"item_id": item_id, "template_id": template_name}
+        except Exception as e:
+            logger.error(f"Failed to delete item {item_id}: {e}")
+            if conn:
+                conn.rollback()
+            return False, str(e)
+        finally:
+            if cur:
+                cur.close()
+            self.db.return_connection(conn)
+
+    def add_item(self, inventory_id, template_id, stack_size=1, quality_level=0):
+        if inventory_id is None or template_id is None:
+            return False, "Missing inventory_id or template_id"
+        try:
+            stack_size = int(stack_size)
+        except (ValueError, TypeError):
+            stack_size = 1
+        try:
+            quality_level = int(quality_level)
+        except (ValueError, TypeError):
+            quality_level = 0
+
+        conn = self.db.get_connection()
+        if not conn:
+            return False, "Database connection failed"
+        cur = None
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM dune.inventories WHERE id = %s", [inventory_id])
+            if not cur.fetchone():
+                conn.rollback()
+                return False, "Inventory not found"
+
+            cur.execute("""
+                INSERT INTO dune.items (inventory_id, template_id, stack_size, quality_level, is_new, position_index)
+                VALUES (%s, %s, %s, %s, FALSE, (SELECT COALESCE(MAX(position_index), 0) + 1 FROM dune.items WHERE inventory_id = %s))
+                RETURNING id
+            """, [inventory_id, template_id, stack_size, quality_level, inventory_id])
+            row = cur.fetchone()
+            conn.commit()
+            new_item_id = row[0] if row else None
+            audit_logger.info(f"ADD_ITEM: inventory_id={inventory_id} template={template_id} stack={stack_size} quality={quality_level} new_item_id={new_item_id}")
+            return True, {"item_id": new_item_id, "template_id": template_id}
+        except Exception as e:
+            logger.error(f"Failed to add item to inventory {inventory_id}: {e}")
+            if conn:
+                conn.rollback()
+            return False, str(e)
         finally:
             if cur:
                 cur.close()

@@ -4,6 +4,7 @@ import os
 import yaml
 import logging
 import copy
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ DEFAULTS = {
         'host': '127.0.0.1',
         'port': 5050,
         'debug': False,
-        'secret_key': 'change-me-to-random-string',
+        'secret_key': None,  # Generated at runtime if not set
         'ssl_cert': None,
         'ssl_key': None,
         'ssl_domain': None,
@@ -27,7 +28,7 @@ DEFAULTS = {
         'host': '127.0.0.1',
         'port': 15433,
         'user': 'postgres',
-        'password': 'postgres',
+        'password': None,  # Must be set via setup or env var
         'name': 'dune',
         'schema': 'dune',
         'min_connections': 2,
@@ -50,8 +51,8 @@ DEFAULTS = {
     },
     'auth': {
         'enabled': True,
-        'username': 'admin',
-        'password': 'changeme',
+        'username': None,  # Must be set via setup
+        'password_hash': None,  # Argon2 hash, never plaintext
     },
     'logging': {
         'level': 'INFO',
@@ -156,5 +157,26 @@ def load_settings(settings_path=None):
     if env_overrides:
         settings = deep_merge(settings, env_overrides)
         logger.info("Environment variable overrides applied")
+
+    # Generate secure secret_key if not set
+    if not settings['dashboard'].get('secret_key'):
+        settings['dashboard']['secret_key'] = secrets.token_hex(32)
+        logger.info("Generated secure SECRET_KEY")
+
+    # Backward compatibility: migrate old plaintext password to hash
+    # This is a one-time migration that hashes the password and removes plaintext
+    auth = settings.get('auth', {})
+    if auth.get('password') and not auth.get('password_hash'):
+        try:
+            from argon2 import PasswordHasher
+            ph = PasswordHasher()
+            settings['auth']['password_hash'] = ph.hash(str(auth['password']))
+            # Remove plaintext after hashing
+            del settings['auth']['password']
+            logger.info("Migrated plaintext password to Argon2 hash")
+        except ImportError:
+            logger.error("argon2-cffi not installed. Password hashing unavailable.")
+            # Fallback: keep plaintext for now but log warning
+            settings['auth']['password_hash'] = None
 
     return settings

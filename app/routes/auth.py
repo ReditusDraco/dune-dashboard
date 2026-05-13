@@ -2,6 +2,8 @@
 
 from flask import render_template, request, redirect, url_for, flash
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 login_manager = LoginManager()
 login_manager.login_view = 'login'
@@ -11,7 +13,7 @@ class AdminUser(UserMixin):
     def __init__(self, username):
         self.id = username
 
-def init_auth(app, settings):
+def init_auth(app, settings, limiter=None):
     login_manager.init_app(app)
 
     @login_manager.user_loader
@@ -22,6 +24,7 @@ def init_auth(app, settings):
         return None
 
     @app.route('/login', methods=['GET', 'POST'])
+    @limiter.limit("10 per minute") if limiter else lambda f: f
     def login():
         if current_user.is_authenticated:
             return redirect(url_for('overview'))
@@ -30,15 +33,33 @@ def init_auth(app, settings):
             u = request.form.get('username', '')
             p = request.form.get('password', '')
             auth = settings.get('auth', {})
-            
-            cfg_u = str(auth.get('username', ''))
-            cfg_p = str(auth.get('password', ''))
 
-            if u == cfg_u and p == cfg_p:
-                login_user(AdminUser(u))
-                return redirect(url_for('overview'))
-            else:
+            cfg_u = str(auth.get('username', ''))
+            password_hash = auth.get('password_hash')
+
+            # Verify username matches
+            if u != cfg_u:
                 flash('Invalid username or password')
+                return render_template('login.html')
+
+            # Verify password using Argon2 hash
+            if password_hash:
+                try:
+                    from argon2 import PasswordHasher, exceptions
+                    ph = PasswordHasher()
+                    if ph.verify(password_hash, p):
+                        login_user(AdminUser(u))
+                        return redirect(url_for('overview'))
+                except exceptions.VerifyMismatchError:
+                    pass
+                except Exception:
+                    flash('Authentication error. Please try again.')
+                    return render_template('login.html')
+            else:
+                flash('Authentication not configured. Please run setup.')
+                return render_template('login.html')
+
+            flash('Invalid username or password')
 
         return render_template('login.html')
 

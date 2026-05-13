@@ -165,7 +165,7 @@ $DbPort = "15433"
 $DirectorPort = "32479"
 $FileBrowserPort = "18888"
 $AuthUser = "admin"
-$AuthPass = "changeme"
+$AuthPass = ""
 
 # Try to detect VM IP from known_hosts
 $KnownHosts = Join-Path $env:USERPROFILE ".ssh\known_hosts"
@@ -284,8 +284,12 @@ if ($val) { $FileBrowserPort = $val }
 $val = Read-Host "  Auth Username [$AuthUser] (Dashboard login name)"
 if ($val) { $AuthUser = $val }
 
-$val = Read-Host "  Auth Password [$AuthPass] (Dashboard login password)"
+$val = Read-Host "  Auth Password (required)"
 if ($val) { $AuthPass = $val }
+else {
+    Write-Host "  [ERROR] Password is required. Setup cancelled." -ForegroundColor Red
+    exit 1
+}
 
 # SSL certificate (Let's Encrypt or local CA)
 Write-Host ""
@@ -523,6 +527,18 @@ Write-Host "[5/6] Saving settings..." -ForegroundColor Yellow
 # Generate secret key
 $secret = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 32 | ForEach-Object {[char]$_})
 
+# Hash the password using Argon2
+Write-Host "  Hashing password with Argon2..." -ForegroundColor Yellow
+$hashResult = python -c "from argon2 import PasswordHasher; ph = PasswordHasher(); print(ph.hash('$AuthPass'.replace('`$','').replace(\"'\",\"\").replace('\"','')))" 2>$null
+if ($hashResult -and $hashResult -match '^\$argon2') {
+    $AuthHash = $hashResult.Trim()
+    Write-Host "  Password hashed successfully." -ForegroundColor Green
+} else {
+    Write-Host "  [ERROR] Failed to hash password. Argon2 may not be installed." -ForegroundColor Red
+    Write-Host "  Run: pip install argon2-cffi" -ForegroundColor Yellow
+    exit 1
+}
+
 # Write settings.yaml (UTF-8 without BOM)
 $sshKeyPath = if ($FoundKey) { $FoundKey -replace '\\', '\\' } else { "null" }
 $leDomain = if ($DomainName) { $DomainName } else { "null" }
@@ -571,7 +587,7 @@ cache:
 auth:
   enabled: true
   username: $AuthUser
-  password: $AuthPass
+  password_hash: '$AuthHash'
 
 logging:
   level: INFO

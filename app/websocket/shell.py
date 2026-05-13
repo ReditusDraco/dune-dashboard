@@ -12,6 +12,9 @@ try:
 except ImportError:
     HAS_PARAMIKO = False
 
+from flask import request
+from flask_socketio import emit
+
 logger = logging.getLogger(__name__)
 
 shell_processes = {}
@@ -68,13 +71,15 @@ def register_websocket_handlers(socketio, settings):
                         if chan.closed:
                             socketio.emit('shell_output', {'data': '\r\n[Disconnected]\r\n', 'type': 'stdout', 'target': shell_type}, room=shell_id)
                             break
-                    except Exception:
+                    except Exception as e:
+                        logger.error(f"Shell read error: {e}")
                         break
                     time.sleep(0.1)
 
             threading.Thread(target=read_channel, daemon=True).start()
             socketio.emit('shell_created', {'success': True, 'shell_id': shell_id}, room=shell_id)
         except Exception as e:
+            logger.error(f"Shell creation failed: {e}")
             socketio.emit('shell_created', {'success': False, 'error': str(e)}, room=shell_id)
 
     @socketio.on('shell_input')
@@ -85,8 +90,8 @@ def register_websocket_handlers(socketio, settings):
                 chan = shell_processes[shell_id]['channel']
                 if chan and chan.send_ready():
                     chan.send(data.get('data', ''))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Shell input error: {e}")
 
     @socketio.on('shell_disconnect')
     def handle_shell_disconnect():
@@ -95,8 +100,8 @@ def register_websocket_handlers(socketio, settings):
             try:
                 if 'client' in shell_processes[shell_id]:
                     shell_processes[shell_id]['client'].close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Shell disconnect error: {e}")
             del shell_processes[shell_id]
 
 
@@ -117,8 +122,3 @@ def _find_ssh_key(settings):
         if os.path.exists(p):
             return p
     return None
-
-
-# Import flask globals inside functions to avoid circular imports
-from flask import request
-from flask_socketio import emit

@@ -3,6 +3,9 @@
 import json
 import logging
 from flask import Blueprint, request, jsonify
+from flask_login import login_required
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from app.utils.constants import NAV_PAGES
 
 logger = logging.getLogger(__name__)
@@ -16,8 +19,16 @@ def register_api_routes(app, services, settings):
     admin_svc = services['admin']
     vehicle_svc = services['vehicle']
 
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["200 per day", "50 per hour"],
+        storage_uri="memory://",
+    )
+
     # Server actions
     @app.route('/server/action', methods=['POST'])
+    @limiter.limit("20 per hour")
     def server_action():
         deployment = request.form.get('deployment', '')
         action = request.form.get('action', '')
@@ -60,6 +71,7 @@ def register_api_routes(app, services, settings):
         return jsonify({'success': rc == 0, 'output': out + err if out or err else 'No output'})
 
     @app.route('/server/battlegroup/action', methods=['POST'])
+    @limiter.limit("10 per hour")
     def battlegroup_action():
         action = request.form.get('action', '')
         if action not in ('start', 'stop', 'restart'):
@@ -69,6 +81,7 @@ def register_api_routes(app, services, settings):
         return jsonify({'success': rc == 0, 'output': out + err if out or err else 'No output'})
 
     @app.route('/server/battlegroup/update', methods=['POST'])
+    @limiter.limit("5 per hour")
     def battlegroup_update():
         bg_script = settings['kubernetes']['battlegroup_script']
         out, err, rc = ssh.run(f'{bg_script} update', timeout=600)
@@ -129,6 +142,7 @@ def register_api_routes(app, services, settings):
 
     # Ban management
     @app.route('/api/ban_player', methods=['POST'])
+    @limiter.limit("20 per hour")
     def api_ban_player():
         try:
             player_id = request.form.get('player_id', type=int)
@@ -188,6 +202,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'success': False, 'error': str(e)})
 
     @app.route('/api/unban_player', methods=['POST'])
+    @limiter.limit("20 per hour")
     def api_unban_player():
         try:
             player_id = request.form.get('player_id', type=int)
@@ -211,6 +226,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'success': False, 'error': str(e)})
 
     @app.route('/api/kick_player', methods=['POST'])
+    @limiter.limit("30 per hour")
     def api_kick_player():
         try:
             player_id = request.form.get('player_id', type=int)
@@ -224,6 +240,7 @@ def register_api_routes(app, services, settings):
 
     # Vitals editing
     @app.route('/api/edit_vitals', methods=['POST'])
+    @limiter.limit("30 per hour")
     def api_edit_vitals():
         try:
             pawn_id = request.form.get('pawn_id', type=int)
@@ -235,6 +252,131 @@ def register_api_routes(app, services, settings):
             success, result = admin_svc.edit_vitals(pawn_id, current_health, max_health, current_hydration, current_spice)
             if success:
                 return jsonify({'success': True, **result})
+            return jsonify({'success': False, 'error': result})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # Player editing endpoints
+    @app.route('/api/edit_faction', methods=['POST'])
+    @login_required
+    def api_edit_faction():
+        try:
+            player_controller_id = request.form.get('player_controller_id', type=int)
+            faction_id = request.form.get('faction_id', type=int)
+            if not player_controller_id:
+                return jsonify({'success': False, 'error': 'Missing player_controller_id'})
+            if faction_id is None:
+                return jsonify({'success': False, 'error': 'Missing faction_id'})
+
+            success, result = admin_svc.edit_faction(player_controller_id, faction_id)
+            if success:
+                return jsonify({'success': True, 'message': f'Faction changed to {result["faction_id"]}'})
+            return jsonify({'success': False, 'error': result})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/edit_xp', methods=['POST'])
+    @login_required
+    def api_edit_xp():
+        try:
+            player_id = request.form.get('player_id', type=int)
+            track_type = request.form.get('track_type', '').strip()
+            xp_amount = request.form.get('xp_amount', type=float)
+            level = request.form.get('level', type=float)
+
+            if not player_id or not track_type or xp_amount is None:
+                return jsonify({'success': False, 'error': 'Missing required parameters'})
+
+            success, result = admin_svc.edit_xp(player_id, track_type, xp_amount, level)
+            if success:
+                return jsonify({'success': True, 'message': f'XP updated for {track_type}'})
+            return jsonify({'success': False, 'error': result})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/edit_tech_knowledge', methods=['POST'])
+    @login_required
+    def api_edit_tech_knowledge():
+        try:
+            player_id = request.form.get('player_id', type=int)
+            xp_points = request.form.get('xp_points', type=int)
+
+            if not player_id or xp_points is None:
+                return jsonify({'success': False, 'error': 'Missing required parameters'})
+
+            success, result = admin_svc.edit_tech_knowledge(player_id, xp_points)
+            if success:
+                return jsonify({'success': True, 'message': 'Tech knowledge updated'})
+            return jsonify({'success': False, 'error': result})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/edit_currency', methods=['POST'])
+    @login_required
+    def api_edit_currency():
+        try:
+            player_controller_id = request.form.get('player_controller_id', type=int)
+            currency_id = request.form.get('currency_id', type=int)
+            new_balance = request.form.get('new_balance', type=int)
+
+            if not player_controller_id or currency_id is None or new_balance is None:
+                return jsonify({'success': False, 'error': 'Missing required parameters'})
+
+            success, result = admin_svc.edit_currency(player_controller_id, currency_id, new_balance)
+            if success:
+                return jsonify({'success': True, 'message': 'Currency updated', 'new_balance': result['new_balance']})
+            return jsonify({'success': False, 'error': result})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/edit_item', methods=['POST'])
+    @login_required
+    def api_edit_item():
+        try:
+            item_id = request.form.get('item_id', type=int)
+            field = request.form.get('field', '').strip()
+            value = request.form.get('value', '').strip()
+
+            if not item_id or not field or value == '':
+                return jsonify({'success': False, 'error': 'Missing required parameters'})
+
+            success, result = admin_svc.edit_item(item_id, field, value)
+            if success:
+                return jsonify({'success': True, 'value': result['value']})
+            return jsonify({'success': False, 'error': result})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/delete_item', methods=['POST'])
+    @login_required
+    def api_delete_item():
+        try:
+            item_id = request.form.get('item_id', type=int)
+            if not item_id:
+                return jsonify({'success': False, 'error': 'Missing item_id'})
+
+            success, result = admin_svc.delete_item(item_id)
+            if success:
+                return jsonify({'success': True, 'message': f'Item {result["template_id"]} deleted'})
+            return jsonify({'success': False, 'error': result})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/add_item', methods=['POST'])
+    @login_required
+    def api_add_item():
+        try:
+            inventory_id = request.form.get('inventory_id', type=int)
+            template_id = request.form.get('template_id', '').strip()
+            stack_size = request.form.get('stack_size', type=int, default=1)
+            quality_level = request.form.get('quality_level', type=int, default=0)
+
+            if not inventory_id or not template_id:
+                return jsonify({'success': False, 'error': 'Missing inventory_id or template_id'})
+
+            success, result = admin_svc.add_item(inventory_id, template_id, stack_size, quality_level)
+            if success:
+                return jsonify({'success': True, 'message': 'Item added', 'item_id': result['item_id']})
             return jsonify({'success': False, 'error': result})
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)})
@@ -294,6 +436,7 @@ def register_api_routes(app, services, settings):
 
     # Debug endpoints (should be restricted in production)
     @app.route('/api/debug/vehicle_properties/<int:vehicle_id>')
+    @login_required
     def debug_vehicle_properties(vehicle_id):
         try:
             vehicle = db.query("""
@@ -339,6 +482,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/debug/vehicle_children/<int:vehicle_id>/')
+    @login_required
     def debug_vehicle_children(vehicle_id):
         try:
             children = db.query("""
@@ -360,6 +504,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/debug/vehicle_parts/<int:vehicle_id>')
+    @login_required
     def debug_vehicle_parts(vehicle_id):
         try:
             parts = db.query("""
@@ -394,6 +539,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/debug/list_tables')
+    @login_required
     def list_tables():
         try:
             tables = db.query("""
@@ -405,6 +551,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/debug/vehicle_modules/<int:vehicle_id>')
+    @login_required
     def debug_vehicle_modules(vehicle_id):
         try:
             vehicle_modules = db.query("SELECT * FROM dune.vehicle_modules WHERE vehicle_id = %s LIMIT 50", [vehicle_id]) or []
@@ -414,6 +561,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/debug/vmi/<int:vehicle_id>')
+    @login_required
     def debug_vmi(vehicle_id):
         try:
             invs = db.query("SELECT * FROM dune.vehicle_module_inventories WHERE vehicle_id = %s LIMIT 10", [vehicle_id])
@@ -422,6 +570,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'error': str(e)[:100]})
 
     @app.route('/api/debug/vm_schema')
+    @login_required
     def debug_vm_schema():
         try:
             cols = db.query("""
@@ -434,6 +583,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/debug/vm_stats/<int:vehicle_id>')
+    @login_required
     def debug_vm_stats(vehicle_id):
         try:
             modules = db.query("SELECT id, template_id, stats FROM dune.vehicle_modules WHERE vehicle_id = %s", [vehicle_id]) or []
@@ -451,6 +601,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/debug/vehicle_row/<int:vehicle_id>')
+    @login_required
     def debug_vehicle_row(vehicle_id):
         try:
             v = db.query("SELECT * FROM dune.vehicles WHERE id = %s", [vehicle_id], one=True)
@@ -459,6 +610,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/debug/module_tables')
+    @login_required
     def debug_module_tables():
         try:
             tables = db.query("""
@@ -471,6 +623,18 @@ def register_api_routes(app, services, settings):
             return jsonify({'error': str(e)}), 500
 
     # File browser
+    FILEBROWSER_BASE_PATH = '/srv'
+
+    def _validate_fb_path(path):
+        """Validate filebrowser path is within allowed directory."""
+        import posixpath
+        normalized = posixpath.normpath(path)
+        if not normalized.startswith(FILEBROWSER_BASE_PATH):
+            return False
+        if '..' in path or '\x00' in path:
+            return False
+        return True
+
     def _get_fb_pod():
         """Get the FileBrowser pod name dynamically."""
         pod = k8s.find_pod_by_pattern('fb-deploy')
@@ -487,6 +651,8 @@ def register_api_routes(app, services, settings):
     @app.route('/api/files/list', methods=['POST'])
     def api_files_list():
         path = request.form.get('path', '/srv')
+        if not _validate_fb_path(path):
+            return jsonify({'success': False, 'error': 'Invalid path: access denied'})
         out, err, rc = _fb_exec(f'ls -la "{path}"', timeout=10)
         if rc != 0:
             return jsonify({'success': False, 'error': err or 'Failed to list directory'})
@@ -515,17 +681,22 @@ def register_api_routes(app, services, settings):
         path = request.args.get('path', '')
         if not path:
             return jsonify({'success': False, 'error': 'Missing path'})
+        if not _validate_fb_path(path):
+            return jsonify({'success': False, 'error': 'Invalid path: access denied'})
         out, err, rc = _fb_exec(f'head -c 100000 "{path}"', timeout=10)
         if rc != 0:
             return jsonify({'success': False, 'error': err or 'Failed to read file'})
         return jsonify({'success': True, 'content': out, 'path': path})
 
     @app.route('/api/files/save', methods=['POST'])
+    @limiter.limit("50 per hour")
     def api_files_save():
         path = request.form.get('path', '')
         content = request.form.get('content', '')
         if not path:
             return jsonify({'success': False, 'error': 'Missing path'})
+        if not _validate_fb_path(path):
+            return jsonify({'success': False, 'error': 'Invalid path: access denied'})
         import base64
         content_b64 = base64.b64encode(content.encode()).decode()
         out, err, rc = _fb_exec(f'sh -c \'echo {content_b64} | base64 -d > "{path}"\'', timeout=15)
@@ -537,6 +708,23 @@ def register_api_routes(app, services, settings):
     director_base = f"http://{settings['server']['host']}:{director_port}"
     k8s_ns = settings['kubernetes']['namespace']
     cm_name = f"{k8s_ns}-bgd-conf-cm"
+
+    def _director_request(path, method='GET', data=None, timeout=15, raw_data=False):
+        """Execute HTTP request to director service via NodePort."""
+        import urllib.request
+        url = f"{director_base}{path}"
+        if method == 'GET':
+            req = urllib.request.Request(url)
+        else:
+            if raw_data and isinstance(data, str):
+                body = data.encode()
+            elif data is not None:
+                body = json.dumps(data).encode()
+            else:
+                body = None
+            req = urllib.request.Request(url, data=body, headers={'Content-Type': 'application/json'}, method=method)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode()
 
     def _patch_configmap(new_ini_content):
         """Patch the BGD ConfigMap with new director.ini content via base64 pipe."""
@@ -584,23 +772,19 @@ def register_api_routes(app, services, settings):
     @app.route('/api/director/battlegroup')
     def director_battlegroup():
         try:
-            import urllib.request
-            req = urllib.request.Request(f"{director_base}/v0/battlegroup")
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = resp.read().decode()
-                return data, 200, {'Content-Type': 'application/json'}
+            logger.info(f"Director request: {director_base}/v0/battlegroup")
+            data = _director_request('/v0/battlegroup')
+            return data, 200, {'Content-Type': 'application/json'}
         except Exception as e:
+            logger.error(f"Director battlegroup error: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
 
     @app.route('/api/director/update_config', methods=['POST'])
     def director_update_config():
         try:
-            import urllib.request
             config = request.get_json()
             map_name = config.get('MapName', '')
-            req = urllib.request.Request(f"{director_base}/v0/BattlegroupUpdateServerGroupConfig", data=json.dumps(config).encode(), headers={'Content-Type': 'application/json'}, method='POST')
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = resp.read().decode()
+            result = _director_request('/v0/BattlegroupUpdateServerGroupConfig', method='POST', data=config, timeout=30)
 
             if map_name:
                 kv = {}
@@ -642,11 +826,8 @@ def register_api_routes(app, services, settings):
     @app.route('/api/director/clear_config', methods=['POST'])
     def director_clear_config():
         try:
-            import urllib.request
             map_name = request.get_data(as_text=True).strip()
-            req = urllib.request.Request(f"{director_base}/v0/BattlegroupClearMapConfigOverrides", data=map_name.encode(), headers={'Content-Type': 'application/json'}, method='POST')
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = resp.read().decode()
+            result = _director_request('/v0/BattlegroupClearMapConfigOverrides', method='POST', data=map_name, timeout=30, raw_data=True)
             if map_name:
                 _update_ini_section(map_name, {}, remove_section=True)
             return result, 200, {'Content-Type': 'application/json'}
@@ -656,22 +837,16 @@ def register_api_routes(app, services, settings):
     @app.route('/api/director/character_transfer', methods=['GET'])
     def director_character_transfer_get():
         try:
-            import urllib.request
-            req = urllib.request.Request(f"{director_base}/v0/BattlegroupFetchCharacterTransferRules")
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = resp.read().decode()
-                return data, 200, {'Content-Type': 'application/json'}
+            data = _director_request('/v0/BattlegroupFetchCharacterTransferRules')
+            return data, 200, {'Content-Type': 'application/json'}
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
 
     @app.route('/api/director/character_transfer', methods=['POST'])
     def director_character_transfer_update():
         try:
-            import urllib.request
             config = request.get_json()
-            req = urllib.request.Request(f"{director_base}/v0/BattlegroupUpdateCharacterTransferSettings", data=json.dumps(config).encode(), headers={'Content-Type': 'application/json'}, method='POST')
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = resp.read().decode()
+            result = _director_request('/v0/BattlegroupUpdateCharacterTransferSettings', method='POST', data=config, timeout=30)
 
             kv = {}
             if 'ForceIsWorldClosed' in config:
@@ -688,10 +863,7 @@ def register_api_routes(app, services, settings):
     @app.route('/api/director/character_transfer_clear', methods=['POST'])
     def director_character_transfer_clear():
         try:
-            import urllib.request
-            req = urllib.request.Request(f"{director_base}/v0/BattlegroupClearCharacterTransferOverrides", method='POST')
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = resp.read().decode()
+            result = _director_request('/v0/BattlegroupClearCharacterTransferOverrides', method='POST', timeout=30)
 
             _update_ini_section('CharacterTransfers', {}, remove_section=True)
 

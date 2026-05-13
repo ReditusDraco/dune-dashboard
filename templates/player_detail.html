@@ -401,7 +401,6 @@
 <div id="currencies-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeModal('currencies-modal')">
     <div class="modal" style="max-width:500px;">
         <h3>Edit Currencies</h3>
-        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Current balances. Enter a positive number to add, negative to subtract.</p>
         <div id="currency-forms"></div>
         <div class="modal-actions" style="margin-top:12px;">
             <button type="button" onclick="closeModal('currencies-modal')" class="btn-cancel">Close</button>
@@ -508,7 +507,7 @@ function openCurrenciesModal() {
     {
         const div = document.createElement('div');
         div.style.marginBottom = '12px';
-        div.innerHTML = '<label style="display:flex;align-items:center;gap:8px;">{{ c.currency_id | currency_label | safe }}: <span style="font-weight:600;min-width:80px;">{{ c.balance | format_number | safe }}</span> <input type="number" name="delta_{{ c.currency_id }}" placeholder="+/-" style="width:120px;"> <button type="button" class="btn-save" style="font-size:11px;padding:2px 8px;" onclick="submitCurrencyEdit({{ c.currency_id }})">Apply</button></label>';
+        div.innerHTML = '<label style="display:flex;align-items:center;gap:8px;">{{ c.currency_id | currency_label | safe }}: <span style="font-weight:600;min-width:80px;">{{ c.balance | format_number | safe }}</span> <input type="number" name="new_balance_{{ c.currency_id }}" placeholder="New balance" style="width:150px;"> <button type="button" class="btn-save" style="font-size:11px;padding:2px 8px;" onclick="submitCurrencyEdit({{ c.currency_id }})">Set</button></label>';
         container.appendChild(div);
     }
     {% endfor %}
@@ -516,21 +515,21 @@ function openCurrenciesModal() {
 }
 
 async function submitCurrencyEdit(currencyId) {
-    const input = document.querySelector(`input[name="delta_${currencyId}"]`);
-    const delta = parseInt(input ? input.value : 0);
-    if (isNaN(delta) || delta === 0) {
-        alert('Enter a non-zero amount to add or subtract.');
+    const input = document.querySelector(`input[name="new_balance_${currencyId}"]`);
+    const newBalance = parseInt(input ? input.value : '');
+    if (isNaN(newBalance)) {
+        alert('Enter a valid balance amount.');
         return;
     }
     const data = new FormData();
     data.append('player_controller_id', '{{ player.player_controller_id }}');
     data.append('currency_id', currencyId);
-    data.append('delta', delta);
+    data.append('new_balance', newBalance);
     try {
         const resp = await fetch('/api/edit_currency', { method: 'POST', body: data });
         const result = await resp.json();
         if (result.success) {
-            alert('Currency updated: ' + result.old_balance + ' → ' + result.new_balance + ' (delta: ' + (delta > 0 ? '+' : '') + delta + ')');
+            alert('Currency updated successfully!');
             location.reload();
         } else {
             alert('Error: ' + (result.error || 'Unknown error'));
@@ -610,7 +609,7 @@ async function submitAddItem() {
         const resp = await fetch('/api/add_item', { method: 'POST', body: data });
         const result = await resp.json();
         if (result.success) {
-            alert('Item added! ID: ' + result.item_id);
+            alert('Item added successfully!');
             location.reload();
         } else {
             alert('Error: ' + (result.error || 'Unknown error'));

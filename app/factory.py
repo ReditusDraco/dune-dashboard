@@ -8,6 +8,8 @@ import threading
 from flask import Flask, request
 from flask_socketio import SocketIO
 from flask_talisman import Talisman
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 from app.config import load_settings
 from app.services.database import DatabaseService
@@ -39,6 +41,7 @@ def create_app(settings_path=None):
     app.config['SECRET_KEY'] = settings['dashboard']['secret_key']
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['SESSION_COOKIE_SECURE'] = True  # Always enforce secure cookies
 
     ssl_enabled = bool(
         settings['dashboard'].get('ssl_cert')
@@ -46,7 +49,6 @@ def create_app(settings_path=None):
         and settings['dashboard']['ssl_cert'] != 'null'
         and settings['dashboard']['ssl_key'] != 'null'
     )
-    app.config['SESSION_COOKIE_SECURE'] = ssl_enabled
 
     if not settings['dashboard']['debug']:
         Talisman(app, content_security_policy=None, force_https=ssl_enabled)
@@ -101,8 +103,16 @@ def create_app(settings_path=None):
 
     socketio = SocketIO(app, cors_allowed_origins=[], async_mode='threading')
 
+    # Initialize rate limiter
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["200 per day", "50 per hour"],
+        storage_uri="memory://",
+    )
+
     if settings['auth']['enabled']:
-        init_auth(app, settings)
+        init_auth(app, settings, limiter)
 
     register_routes(app, services, settings)
     register_api_routes(app, services, settings)
