@@ -3,6 +3,8 @@
 A comprehensive web-based management dashboard for Dune: Awakening private servers. Provides real-time monitoring, player management, chat logging, file browsing, and server administration tools.
 
 > <span style="color:red;font-weight:bold;">⚠ Early Development</span> — This is an early version being developed in real time. Features may be incomplete, unstable, or broken. Use at your own risk. Report issues on GitHub.
+>
+> **Branch Status**: The `main` branch is currently **beta** — there is no stable release yet. The `nightly` branch is the bleeding-edge development branch.
 
 ## Quick Start
 
