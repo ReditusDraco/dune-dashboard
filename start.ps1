@@ -176,6 +176,11 @@ if ($pfCheck) {
 }
 
 $RemotePort = 15432
+$killOldPfs = 'ssh -i "' + $SSHKey + '" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 ' + $SSHUser + '@' + $ServerHost + ' "sudo pkill -f ''kubectl port-forward'' 2>/dev/null; sleep 1"'
+$killOldPfs | Out-File -FilePath "$env:TEMP\ssh_kill_pf.bat" -Encoding ascii
+cmd /c "$env:TEMP\ssh_kill_pf.bat"
+Start-Sleep -Seconds 2
+
 $remoteCmd = 'nohup sudo kubectl port-forward -n ' + $Namespace + ' svc/' + $DBService + ' ' + $LocalPort + ':' + $RemotePort + ' > /tmp/pf.log 2>&1 &'
 $pfRemote = 'ssh -i "' + $SSHKey + '" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 ' + $SSHUser + '@' + $ServerHost + ' "' + $remoteCmd + '"'
 $pfRemote | Out-File -FilePath "$env:TEMP\ssh_pf_db.bat" -Encoding ascii
