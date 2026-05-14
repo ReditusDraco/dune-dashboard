@@ -16,6 +16,7 @@
     </div>
     <nav>
         <div class="brand">DUNE DASHBOARD</div>
+        <span style="font-size:11px;color:var(--nav-text);opacity:0.6;">v1.2</span>
         {% for href, label in nav_pages %}
         <a href="{{ href }}" class="{% if current_path == href %}active{% endif %}">{{ label }}</a>
         {% endfor %}
