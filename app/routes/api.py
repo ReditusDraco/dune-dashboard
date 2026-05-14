@@ -19,12 +19,16 @@ def register_api_routes(app, services, settings):
     admin_svc = services['admin']
     vehicle_svc = services['vehicle']
 
-    limiter = Limiter(
-        app=app,
-        key_func=get_remote_address,
-        default_limits=["200 per day", "50 per hour"],
-        storage_uri="memory://",
-    )
+    # Get or create rate limiter - use existing one from factory if available
+    if not hasattr(app, 'limiter'):
+        limiter = Limiter(
+            app=app,
+            key_func=get_remote_address,
+            default_limits=["200 per day", "50 per hour"],
+            storage_uri="memory://",
+        )
+    else:
+        limiter = app.limiter
 
     # Only require login if auth is enabled
     auth_req = login_required if settings.get('auth', {}).get('enabled', True) else lambda f: f
@@ -78,6 +82,7 @@ def register_api_routes(app, services, settings):
         return jsonify({'success': rc == 0, 'output': out + err if out or err else 'No output'})
 
     @app.route('/server/battlegroup/action', methods=['POST'])
+    @auth_req
     @limiter.limit("10 per hour")
     def battlegroup_action():
         action = request.form.get('action', '')
@@ -88,6 +93,7 @@ def register_api_routes(app, services, settings):
         return jsonify({'success': rc == 0, 'output': out + err if out or err else 'No output'})
 
     @app.route('/server/battlegroup/update', methods=['POST'])
+    @auth_req
     @limiter.limit("5 per hour")
     def battlegroup_update():
         bg_script = settings['kubernetes']['battlegroup_script']
@@ -96,6 +102,7 @@ def register_api_routes(app, services, settings):
 
     # Firewall management
     @app.route('/server/firewall')
+    @auth_req
     def firewall_status():
         port_map = {
             'filebrowser': {'port': 18888, 'name': 'File Browser'},
@@ -130,6 +137,7 @@ def register_api_routes(app, services, settings):
         })
 
     @app.route('/server/firewall/block', methods=['POST'])
+    @auth_req
     @limiter.limit("10 per hour")
     def firewall_block():
         port = request.form.get('port', type=int)
@@ -165,6 +173,7 @@ def register_api_routes(app, services, settings):
         return jsonify({'success': True, 'output': f'Port {port} blocked (localhost allowed)'})
 
     @app.route('/server/firewall/unblock', methods=['POST'])
+    @auth_req
     @limiter.limit("10 per hour")
     def firewall_unblock():
         port = request.form.get('port', type=int)
@@ -202,6 +211,7 @@ def register_api_routes(app, services, settings):
 
     # Chat API
     @app.route('/api/chat_logs')
+    @auth_req
     def api_chat_logs():
         try:
             chat_svc.ensure_history_table()
@@ -230,6 +240,7 @@ def register_api_routes(app, services, settings):
 
     # Player IP management
     @app.route('/api/set_player_ip', methods=['POST'])
+    @auth_req
     def api_set_player_ip():
         try:
             player_id = request.form.get('player_id', type=int)
@@ -246,6 +257,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'success': False, 'error': str(e)})
 
     @app.route('/api/detect_player_ips', methods=['POST'])
+    @auth_req
     def api_detect_player_ips():
         try:
             success, message = admin_svc.detect_player_ips(settings['kubernetes']['namespace'])
@@ -272,6 +284,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'success': False, 'error': str(e)})
 
     @app.route('/api/get_player_ban', methods=['POST'])
+    @auth_req
     def api_get_player_ban():
         try:
             player_id = request.form.get('player_id', type=int)
@@ -293,6 +306,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'success': False, 'error': str(e)})
 
     @app.route('/api/get_player_history', methods=['POST'])
+    @auth_req
     def api_get_player_history():
         try:
             player_id = request.form.get('player_id', type=int)
@@ -328,6 +342,7 @@ def register_api_routes(app, services, settings):
             return jsonify({'success': False, 'error': str(e)})
 
     @app.route('/api/emergency_unban', methods=['POST'])
+    @auth_req
     def api_emergency_unban():
         try:
             ip = request.form.get('ip', '').strip()
@@ -496,6 +511,7 @@ def register_api_routes(app, services, settings):
 
     # Maintenance
     @app.route('/api/maintenance/create_indexes', methods=['POST'])
+    @auth_req
     def api_create_indexes():
         try:
             success, created, error = admin_svc.create_indexes()
@@ -507,6 +523,7 @@ def register_api_routes(app, services, settings):
 
     # Delete vehicle
     @app.route('/api/vehicles/<int:vehicle_id>', methods=['DELETE'])
+    @auth_req
     def delete_vehicle(vehicle_id):
         success, message = vehicle_svc.delete_vehicle(vehicle_id)
         if success:
@@ -515,6 +532,7 @@ def register_api_routes(app, services, settings):
 
     # Delete building
     @app.route('/api/buildings/<int:building_id>', methods=['DELETE'])
+    @auth_req
     def delete_building(building_id):
         conn = db.get_connection()
         if not conn:
