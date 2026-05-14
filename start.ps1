@@ -176,7 +176,8 @@ if ($pfCheck) {
 }
 
 $RemotePort = 15432
-ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 ${SSHUser}@${ServerHost} "sudo pkill -f port-forward 2>/dev/null; sleep 2" 2>$null
+ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 ${SSHUser}@${ServerHost} "sudo pkill -9 -f port-forward 2>/dev/null; sleep 2" 2>$null
+Start-Sleep -Seconds 2
 
 $remoteCmd = 'nohup sudo kubectl port-forward -n ' + $Namespace + ' svc/' + $DBService + ' ' + $LocalPort + ':' + $RemotePort + ' > /tmp/pf.log 2>&1 &'
 $pfRemote = 'ssh -i "' + $SSHKey + '" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 ' + $SSHUser + '@' + $ServerHost + ' "' + $remoteCmd + '"'
