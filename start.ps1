@@ -129,7 +129,6 @@ $sshArgs = @(
     "-o", "ServerAliveInterval=30",
     "-o", "ServerAliveCountMax=3",
     "-L", "${LocalPort}:localhost:${LocalPort}",
-    "-L", "${DirectorPort}:${ServerHost}:${DirectorPort}",
     "-N", "${SSHUser}@${ServerHost}"
 )
 $sshTunnel = Start-Process ssh -ArgumentList $sshArgs -PassThru -WindowStyle Hidden
@@ -188,9 +187,9 @@ if ($pfCheckBgd) {
     $bgdMatch = ($pfCheckBgd -split "`n") | Where-Object { $_ -match 'bgd.*svc' } | Select-Object -First 1
     if ($bgdMatch) { $bgdSvc = $bgdMatch -replace 'service/', '' }
 }
-Write-Host "  Forwarding director port $DirectorPort -> ${ServerHost}:30822 (via bgd NodePort)..." -ForegroundColor Cyan
-$directorRemotePort = 30822
-$directorCmd = 'nohup kubectl port-forward -n ' + $Namespace + ' svc/' + $bgdSvc + ' ' + $DirectorPort + ':' + $directorRemotePort + ' > /tmp/director_pf.log 2>&1 &'
+
+$directorRemotePort = 11717
+$directorCmd = 'nohup sudo kubectl port-forward -n ' + $Namespace + ' svc/' + $bgdSvc + ' ' + $DirectorPort + ':' + $directorRemotePort + ' > /tmp/director_pf.log 2>&1 &'
 $directorCmdEscaped = $directorCmd -replace '&', '`&'
 $directorPf = 'ssh -i "' + $SSHKey + '" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 ' + $SSHUser + '@' + $ServerHost + ' "' + $directorCmdEscaped + '"'
 cmd /c $directorPf
