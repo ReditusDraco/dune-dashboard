@@ -811,7 +811,8 @@ def register_api_routes(app, services, settings):
         return jsonify({'success': True})
 
     director_port = settings.get('director', {}).get('port', 32479)
-    director_base = f"http://{settings['server']['host']}:{director_port}"
+    director_node_port = settings.get('director', {}).get('node_port', 30822)
+    director_base = f"http://{settings['server']['host']}:{director_node_port}"
     k8s_ns = settings['kubernetes']['namespace']
     cm_name = f"{k8s_ns}-bgd-conf-cm"
 
