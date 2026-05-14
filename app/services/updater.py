@@ -62,8 +62,6 @@ class UpdateService:
         if 'beta' in folder_name:
             return 'beta'
         return 'main'
-        except Exception:
-            return 'main'
 
     def start_checker(self):
         """Start background update checker thread."""
