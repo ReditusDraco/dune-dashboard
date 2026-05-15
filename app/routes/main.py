@@ -557,11 +557,51 @@ def register_routes(app, services, settings):
                     all_maps.add(loc['map'])
             maps = sorted(all_maps)
 
+            # Get map configuration from settings
+            map_config = settings.get('maps', {})
+            default_map = map_config.get('default_map', 'DeepDesert')
+
+            # Calculate pixel positions for markers
+            def to_pixel_coords(x, y, map_name):
+                cfg = map_config.get(map_name, {})
+                bounds = cfg.get('bounds', {})
+                img_size = cfg.get('image_size', {'width': 1000, 'height': 600})
+
+                min_x = bounds.get('min_x', 0)
+                max_x = bounds.get('max_x', 1)
+                min_y = bounds.get('min_y', 0)
+                max_y = bounds.get('max_y', 1)
+
+                if max_x == min_x or max_y == min_y:
+                    return None, None
+
+                # Scale to image dimensions
+                px = ((x - min_x) / (max_x - min_x)) * img_size['width']
+                py = ((y - min_y) / (max_y - min_y)) * img_size['height']
+
+                # Flip Y if needed (some coordinate systems have inverted Y)
+                if cfg.get('flip_y', False):
+                    py = img_size['height'] - py
+
+                return int(px), int(py)
+
+            # Add pixel positions
+            for p in player_locations:
+                p['px'], p['py'] = to_pixel_coords(p['x'], p['y'], p.get('map', ''))
+
+            for v in vehicle_locations:
+                v['px'], v['py'] = to_pixel_coords(v['x'], v['y'], v.get('map', ''))
+
+            for b in building_locations:
+                b['px'], b['py'] = to_pixel_coords(b['x'], b['y'], b.get('map', ''))
+
             return render_template('map.html',
                 players=player_locations,
                 vehicles=vehicle_locations,
                 buildings=building_locations,
-                maps=maps)
+                maps=maps,
+                map_config=map_config,
+                default_map=default_map)
         except Exception as e:
             logger.exception("Error in map route")
             return render_template('map.html', db_error=f"{type(e).__name__}: {e}")

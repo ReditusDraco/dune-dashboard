@@ -148,6 +148,88 @@
     font-size: 13px;
     color: var(--text-muted);
 }
+
+.map-display {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background: #1a1a1a;
+}
+
+.map-image-container {
+    position: relative;
+    display: inline-block;
+    min-width: 1200px;
+    min-height: 800px;
+}
+
+.map-image {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
+.map-marker {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    cursor: pointer;
+    transform: translate(-50%, -50%);
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    transition: transform 0.15s;
+    z-index: 10;
+}
+
+.map-marker:hover {
+    transform: translate(-50%, -50%) scale(1.5);
+    z-index: 100;
+}
+
+.map-marker.player {
+    background: var(--primary);
+}
+
+.map-marker.vehicle {
+    background: #3498db;
+}
+
+.map-marker.building {
+    background: var(--success);
+}
+
+.map-marker-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.85);
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    display: none;
+    margin-bottom: 4px;
+}
+
+.map-marker:hover .map-marker-tooltip {
+    display: block;
+}
+
+.map-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    padding: 40px;
+    text-align: center;
+}
 </style>
 
 <h2>World Map</h2>
@@ -240,21 +322,66 @@
     </div>
 
     <div class="map-view">
+        {% set current_map = map_config.get(default_map, {}) %}
+        {% set map_image = current_map.get('image') %}
+        {% if map_image %}
+        <div class="map-display">
+            <div class="map-image-container">
+                <img src="{{ url_for('static', filename=map_image) }}" class="map-image" alt="Map">
+
+                {# Players #}
+                {% if show_players is not defined %}{% set show_players = true %}{% endif %}
+                {% if show_players %}
+                {% for p in players %}
+                {% if p.px is not none and p.py is not none %}
+                <div class="map-marker player" style="left:{{ p.px }}px;top:{{ p.py }}px;" title="{{ p.name }}">
+                    <span class="map-marker-tooltip">{{ p.name }} (Player)</span>
+                </div>
+                {% endif %}
+                {% endfor %}
+                {% endif %}
+
+                {# Vehicles #}
+                {% if show_vehicles is not defined %}{% set show_vehicles = true %}{% endif %}
+                {% if show_vehicles %}
+                {% for v in vehicles %}
+                {% if v.px is not none and v.py is not none %}
+                <div class="map-marker vehicle" style="left:{{ v.px }}px;top:{{ v.py }}px;" title="{{ v.class }}">
+                    <span class="map-marker-tooltip">{{ v.class.split('/')[-1].split('.')[0] }} (Vehicle)</span>
+                </div>
+                {% endif %}
+                {% endfor %}
+                {% endif %}
+
+                {# Buildings #}
+                {% if show_buildings is not defined %}{% set show_buildings = true %}{% endif %}
+                {% if show_buildings %}
+                {% for b in buildings[:30] %}
+                {% if b.px is not none and b.py is not none %}
+                <div class="map-marker building" style="left:{{ b.px }}px;top:{{ b.py }}px;" title="{{ b.class }}">
+                    <span class="map-marker-tooltip">{{ b.class.split('/')[-1].split('.')[0] }} (Building)</span>
+                </div>
+                {% endif %}
+                {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
         <div class="map-placeholder">
             <div class="map-placeholder-icon">🗺️</div>
-            <h3>Map Image Coming Soon</h3>
-            <p>This is a prototype showing coordinate data.<br>Once you source a map image, markers will be overlaid here.</p>
+            <h3>No Map Configured</h3>
+            <p>Configure a map in settings to display coordinates.</p>
             <div class="no-map-note">
                 <strong>Data available:</strong><br>
-                Players: {{ players|length }} locations<br>
-                Vehicles: {{ vehicles|length }} locations<br>
-                Buildings: {{ buildings|length }} locations<br><br>
-                <em>Coordinates are extracted from the game world. Once a map image is added, these will appear as clickable markers.</em>
+                Players: {{ players|length }}<br>
+                Vehicles: {{ vehicles|length }}<br>
+                Buildings: {{ buildings|length }}
             </div>
-            <div id="selected-coords" style="display:none;margin-top:16px;">
-                <strong>Selected:</strong>
-                <div class="coord-display" id="coord-display"></div>
-            </div>
+        </div>
+        {% endif %}
+        <div id="selected-coords" style="display:none;margin-top:16px;">
+            <strong>Selected:</strong>
+            <div class="coord-display" id="coord-display"></div>
         </div>
     </div>
 </div>
