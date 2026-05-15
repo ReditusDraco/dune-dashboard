@@ -73,7 +73,7 @@ def create_app(settings_path=None):
             # Content Security Policy
             response.headers['Content-Security-Policy'] = (
                 "default-src 'self'; "
-                "script-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
                 "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data:; "
                 "connect-src 'self' ws: wss:; "

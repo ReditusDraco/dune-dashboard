@@ -45,7 +45,7 @@ def register_websocket_handlers(socketio, settings):
     @socketio.on('shell_create')
     def handle_shell_create(data):
         # Check if shell access is enabled
-        shell_enabled = settings.get('auth', {}).get('shell_enabled', False)
+        shell_enabled = settings.get('auth', {}).get('shell_enabled', True)
         if not shell_enabled:
             logger.warning(f"WebSocket shell rejected: shell disabled (sid={request.sid})")
             return emit('shell_created', {'success': False, 'error': 'Shell access is disabled'})

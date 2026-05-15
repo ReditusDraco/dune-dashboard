@@ -58,6 +58,7 @@ DEFAULTS = {
         'enabled': True,
         'username': None,  # Must be set via setup
         'password_hash': None,  # Argon2 hash, never plaintext
+        'shell_enabled': True,
     },
     'logging': {
         'level': 'INFO',
@@ -73,6 +74,7 @@ DEFAULTS = {
         'default_map': 'DeepDesert',
         'DeepDesert': {
             'image': 'maps/Deep_Desert_Map1.jpg',
+            'label': 'The Deep Desert',
             'bounds': {
                 'min_x': 466906,
                 'max_x': 466907,
@@ -80,10 +82,11 @@ DEFAULTS = {
                 'max_y': -620340
             },
             'flip_y': False,
-            'image_size': {'width': 1200, 'height': 800}
+            'image_size': {'width': 683, 'height': 683}
         },
         'HaggaBasin': {
-            'image': None,
+            'image': 'maps/T_WorldMap_Survival_1_D.png',
+            'label': 'Hagga Basin',
             'bounds': {
                 'min_x': 21352,
                 'max_x': 23166,
@@ -91,7 +94,7 @@ DEFAULTS = {
                 'max_y': 237943
             },
             'flip_y': False,
-            'image_size': {'width': 800, 'height': 600}
+            'image_size': {'width': 1228, 'height': 1228}
         }
     },
 }

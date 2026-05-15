@@ -456,7 +456,61 @@ def register_routes(app, services, settings):
     @app.route('/map')
     @login_required
     def map_page():
+        def get_map_context():
+            map_config = settings.get('maps', {})
+            try:
+                from app.config import DEFAULTS
+                default_map_config = DEFAULTS.get('maps', {})
+                merged_map_config = {}
+                for name, default_cfg in default_map_config.items():
+                    if not isinstance(default_cfg, dict):
+                        continue
+                    cfg = dict(default_cfg)
+                    cfg.update(map_config.get(name, {}) if isinstance(map_config.get(name), dict) else {})
+                    for fallback_key in ('image', 'label', 'image_size'):
+                        if not cfg.get(fallback_key) and default_cfg.get(fallback_key):
+                            cfg[fallback_key] = default_cfg[fallback_key]
+                    merged_map_config[name] = cfg
+                for name, cfg in map_config.items():
+                    if isinstance(cfg, dict) and name not in merged_map_config:
+                        merged_map_config[name] = cfg
+                map_config = merged_map_config
+            except Exception:
+                pass
+
+            configured_maps = {
+                name: cfg for name, cfg in map_config.items()
+                if isinstance(cfg, dict) and cfg.get('image') and cfg.get('bounds')
+            }
+            default_map = map_config.get('default_map', 'DeepDesert')
+
+            return map_config, configured_maps, default_map
+
+        def build_map_options(configured_maps, player_locations=None, vehicle_locations=None, building_locations=None):
+            player_locations = player_locations or []
+            vehicle_locations = vehicle_locations or []
+            building_locations = building_locations or []
+            map_options = []
+            for key, cfg in configured_maps.items():
+                image_size = cfg.get('image_size', {})
+                map_options.append({
+                    'key': key,
+                    'label': cfg.get('label') or key,
+                    'image': cfg.get('image'),
+                    'width': image_size.get('width', 1000),
+                    'height': image_size.get('height', 1000),
+                    'counts': {
+                        'players': sum(1 for p in player_locations if p.get('map') == key and p.get('in_bounds')),
+                        'vehicles': sum(1 for v in vehicle_locations if v.get('map') == key and v.get('in_bounds')),
+                        'bases': sum(1 for b in building_locations if b.get('map') == key and b.get('in_bounds')),
+                    }
+                })
+            return map_options
+
         try:
+            map_config, configured_maps, default_map = get_map_context()
+            selected_map_keys = list(configured_maps.keys()) or ['DeepDesert', 'HaggaBasin']
+
             # Get players with coordinates
             players = db.query("""
                 SELECT
@@ -466,28 +520,33 @@ def register_routes(app, services, settings):
                     a.transform
                 FROM dune.actors a
                 JOIN dune.player_state ps ON a.id = ps.player_pawn_id
-                WHERE a.transform IS NOT NULL
+                WHERE a.transform IS NOT NULL AND a.map = ANY(%s)
                 ORDER BY a.map, ps.character_name
-            """) or []
+            """, [selected_map_keys]) or []
 
-            # Get vehicles with coordinates (only DeepDesert and HaggaBasin)
+            # Get vehicles with coordinates for configured map assets
             vehicles = db.query("""
                 SELECT v.id, a.map, a.transform, a.class
                 FROM dune.vehicles v
                 JOIN dune.actors a ON v.id = a.id
-                WHERE a.transform IS NOT NULL AND a.map IN ('DeepDesert', 'HaggaBasin')
+                WHERE a.transform IS NOT NULL AND a.map = ANY(%s)
                 ORDER BY a.map, a.class
-            """) or []
+            """, [selected_map_keys]) or []
 
-            # Get buildings with coordinates (only DeepDesert and HaggaBasin)
+            # Get bases/buildings with coordinates for configured map assets
             buildings = db.query("""
-                SELECT b.id, a.map, a.transform, a.class
+                SELECT b.id, a.map, a.transform, a.class,
+                    COALESCE(NULLIF(ps.character_name, ''), NULLIF(ea.platform_name, ''), 'Base ' || b.id::text) as owner_name
                 FROM dune.buildings b
                 JOIN dune.actors a ON b.id = a.id
-                WHERE a.transform IS NOT NULL AND a.map IN ('DeepDesert', 'HaggaBasin')
+                LEFT JOIN dune.player_state ps ON b.owner_id = ps.player_pawn_id
+                LEFT JOIN dune.encrypted_accounts ea ON ea.id = (
+                    SELECT ps2.account_id FROM dune.player_state ps2 WHERE ps2.player_pawn_id = b.owner_id LIMIT 1
+                )
+                WHERE a.transform IS NOT NULL AND a.map = ANY(%s)
                 ORDER BY a.map
-                LIMIT 200
-            """) or []
+                LIMIT 500
+            """, [selected_map_keys]) or []
 
             # Parse coordinates from transform field
             def parse_transform(t):
@@ -518,7 +577,8 @@ def register_routes(app, services, settings):
                         'map': p['map'],
                         'x': coords['x'],
                         'y': coords['y'],
-                        'z': coords['z']
+                        'z': coords['z'],
+                        'type': 'player',
                     })
 
             # Process vehicles
@@ -533,7 +593,8 @@ def register_routes(app, services, settings):
                         'class': v.get('class', '').split('/')[-1] if v.get('class') else '',
                         'x': coords['x'],
                         'y': coords['y'],
-                        'z': coords['z']
+                        'z': coords['z'],
+                        'type': 'vehicle',
                     })
 
             # Process buildings
@@ -544,22 +605,13 @@ def register_routes(app, services, settings):
                     building_locations.append({
                         'id': b['id'],
                         'map': b['map'],
+                        'name': b.get('owner_name') or f"Base {b['id']}",
                         'class': b.get('class', '').split('/')[-1] if b.get('class') else '',
                         'x': coords['x'],
                         'y': coords['y'],
-                        'z': coords['z']
+                        'z': coords['z'],
+                        'type': 'base',
                     })
-
-            # Get unique maps
-            all_maps = set()
-            for loc in player_locations + vehicle_locations + building_locations:
-                if loc.get('map'):
-                    all_maps.add(loc['map'])
-            maps = sorted(all_maps)
-
-            # Get map configuration from settings
-            map_config = settings.get('maps', {})
-            default_map = map_config.get('default_map', 'DeepDesert')
 
             # Calculate pixel positions for markers
             def to_pixel_coords(x, y, map_name):
@@ -585,23 +637,45 @@ def register_routes(app, services, settings):
 
                 return int(px), int(py)
 
-            # Add pixel positions
+            def is_in_bounds(loc):
+                img_size = map_config.get(loc.get('map'), {}).get('image_size', {})
+                width = img_size.get('width', 0)
+                height = img_size.get('height', 0)
+                return (
+                    loc.get('px') is not None
+                    and loc.get('py') is not None
+                    and 0 <= loc['px'] <= width
+                    and 0 <= loc['py'] <= height
+                )
+
+            # Add pixel positions and hide out-of-bounds markers until bounds are calibrated.
             for p in player_locations:
                 p['px'], p['py'] = to_pixel_coords(p['x'], p['y'], p.get('map', ''))
+                p['in_bounds'] = is_in_bounds(p)
 
             for v in vehicle_locations:
                 v['px'], v['py'] = to_pixel_coords(v['x'], v['y'], v.get('map', ''))
+                v['in_bounds'] = is_in_bounds(v)
 
             for b in building_locations:
                 b['px'], b['py'] = to_pixel_coords(b['x'], b['y'], b.get('map', ''))
+                b['in_bounds'] = is_in_bounds(b)
+
+            map_options = build_map_options(configured_maps, player_locations, vehicle_locations, building_locations)
 
             return render_template('map.html',
                 players=player_locations,
                 vehicles=vehicle_locations,
                 buildings=building_locations,
-                maps=maps,
+                map_options=map_options,
                 map_config=map_config,
                 default_map=default_map)
         except Exception as e:
             logger.exception("Error in map route")
-            return render_template('map.html', db_error=f"{type(e).__name__}: {e}")
+            map_config, configured_maps, default_map = get_map_context()
+            return render_template('map.html',
+                players=[], vehicles=[], buildings=[],
+                map_options=build_map_options(configured_maps),
+                map_config=map_config,
+                default_map=default_map,
+                db_error=f"{type(e).__name__}: {e}")

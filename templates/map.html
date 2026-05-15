@@ -4,398 +4,679 @@
 
 {% block content %}
 <style>
-.map-container {
-    display: grid;
-    grid-template-columns: 300px 1fr;
-    gap: 20px;
-    height: calc(100vh - 120px);
-}
-
-.map-sidebar {
-    background: var(--card-bg);
-    border-radius: 8px;
-    padding: 16px;
-    overflow-y: auto;
-    box-shadow: var(--shadow);
-}
-
-.map-sidebar h3 {
-    font-size: 14px;
-    color: var(--text-light);
-    margin: 16px 0 8px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border);
-}
-
-.map-sidebar h3:first-child {
-    margin-top: 0;
-}
-
-.map-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 0;
-    cursor: pointer;
-    font-size: 13px;
-}
-
-.map-checkbox input {
-    accent-color: var(--primary);
-}
-
-.location-list {
-    max-height: 200px;
-    overflow-y: auto;
-    font-size: 12px;
-}
-
-.location-item {
-    padding: 4px 8px;
-    border-radius: 4px;
-    margin: 2px 0;
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-}
-
-.location-item:hover {
-    background: var(--hover);
-}
-
-.location-item.player { border-left: 3px solid var(--primary); }
-.location-item.vehicle { border-left: 3px solid #3498db; }
-.location-item.building { border-left: 3px solid var(--success); }
-
-.map-view {
-    background: var(--card-bg);
-    border-radius: 8px;
-    position: relative;
-    overflow: hidden;
-    box-shadow: var(--shadow);
-    min-height: 400px;
-}
-
-.map-placeholder {
+.map-page {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    color: var(--text-muted);
-    padding: 40px;
-    text-align: center;
+    gap: 14px;
+    height: calc(100vh - 104px);
+    min-height: 620px;
 }
 
-.map-placeholder-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-    opacity: 0.5;
-}
-
-.map-stats {
+.map-header {
     display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
     gap: 16px;
-    margin-bottom: 16px;
+}
+
+.map-header h2 {
+    margin: 0;
+}
+
+.map-summary {
+    display: flex;
+    gap: 10px;
     flex-wrap: wrap;
 }
 
-.stat-card {
-    background: var(--bg);
-    padding: 12px 16px;
+.map-summary-item {
+    min-width: 92px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
     border-radius: 6px;
-    min-width: 100px;
+    background: var(--card-bg);
 }
 
-.stat-card .count {
-    font-size: 24px;
-    font-weight: 700;
+.map-summary-item strong {
+    display: block;
+    font-size: 18px;
+    line-height: 1.1;
     color: var(--primary);
 }
 
-.stat-card .label {
+.map-summary-item span {
+    display: block;
+    margin-top: 3px;
     font-size: 11px;
     color: var(--text-muted);
     text-transform: uppercase;
 }
 
-.map-select {
-    padding: 8px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--card-bg);
-    color: var(--text);
-    font-size: 13px;
-    margin-bottom: 16px;
+.map-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 16px;
+    min-height: 0;
+    flex: 1;
 }
 
-.coord-display {
-    background: var(--code-bg);
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-family: monospace;
-    font-size: 12px;
-    color: var(--text-light);
-    margin-top: 8px;
-}
-
-.no-map-note {
-    background: var(--hover);
-    border: 1px dashed var(--border);
-    padding: 16px;
-    border-radius: 8px;
-    margin-top: 16px;
-    font-size: 13px;
-    color: var(--text-muted);
-}
-
-.map-display {
+.map-view {
     position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #101312;
+}
+
+.map-scroll {
     width: 100%;
     height: 100%;
     overflow: auto;
-    background: #1a1a1a;
+    cursor: grab;
 }
 
-.map-image-container {
+.map-scroll.dragging {
+    cursor: grabbing;
+    user-select: none;
+}
+
+.map-canvas {
     position: relative;
-    display: inline-block;
-    min-width: 1200px;
-    min-height: 800px;
+    margin: 24px;
+    background: #0d0f0f;
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
 }
 
 .map-image {
+    position: absolute;
+    inset: 0;
     width: 100%;
-    max-width: 100%;
-    height: auto;
-    display: block;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+    pointer-events: none;
 }
 
 .map-marker {
     position: absolute;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    cursor: pointer;
-    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
     border: 2px solid #fff;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-    transition: transform 0.15s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    z-index: 5;
+}
+
+.map-marker:hover,
+.map-marker.active {
+    transform: translate(-50%, -50%) scale(1.45);
     z-index: 10;
 }
 
-.map-marker:hover {
-    transform: translate(-50%, -50%) scale(1.5);
-    z-index: 100;
-}
+.map-marker.player { background: #e7c65b; }
+.map-marker.vehicle { background: #45a3ff; }
+.map-marker.base { background: #54c878; }
 
-.map-marker.player {
-    background: var(--primary);
-}
-
-.map-marker.vehicle {
-    background: #3498db;
-}
-
-.map-marker.building {
-    background: var(--success);
-}
-
-.map-marker-tooltip {
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0,0,0,0.85);
-    color: #fff;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    white-space: nowrap;
+.map-tooltip {
     display: none;
-    margin-bottom: 4px;
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+    min-width: 150px;
+    padding: 6px 8px;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.86);
+    color: #fff;
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: nowrap;
 }
 
-.map-marker:hover .map-marker-tooltip {
+.map-marker:hover .map-tooltip {
     display: block;
 }
 
 .map-empty {
+    position: absolute;
+    inset: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
-    color: var(--text-muted);
-    padding: 40px;
+    gap: 8px;
+    padding: 28px;
     text-align: center;
+    color: var(--text-muted);
+}
+
+.map-panel {
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-bg);
+}
+
+.panel-section {
+    padding: 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.panel-section:last-child {
+    border-bottom: 0;
+}
+
+.panel-title {
+    margin: 0 0 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0;
+}
+
+.map-choice {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 10px;
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.map-choice.active {
+    border-color: var(--primary);
+    box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.map-choice strong {
+    font-size: 13px;
+}
+
+.map-choice span {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.map-controls {
+    display: grid;
+    grid-template-columns: 36px 1fr 36px;
+    align-items: center;
+    gap: 8px;
+}
+
+.map-controls button,
+.map-icon-button {
+    height: 34px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+}
+
+.map-controls input {
+    width: 100%;
+}
+
+.zoom-readout {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.map-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 0;
+    font-size: 13px;
+}
+
+.map-toggle input {
+    accent-color: var(--primary);
+}
+
+.legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 7px;
+    border-radius: 999px;
+    border: 1px solid #fff;
+    vertical-align: middle;
+}
+
+.legend-dot.player { background: #e7c65b; }
+.legend-dot.vehicle { background: #45a3ff; }
+.legend-dot.base { background: #54c878; }
+
+.location-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 310px;
+    overflow: auto;
+}
+
+.location-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 8px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.location-item:hover,
+.location-item.active {
+    border-color: var(--primary);
+}
+
+.location-item strong {
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.location-item span {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.coord-card {
+    display: none;
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--text-light);
+    line-height: 1.5;
+}
+
+@media (max-width: 980px) {
+    .map-page {
+        height: auto;
+    }
+
+    .map-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .map-view {
+        height: 64vh;
+    }
 }
 </style>
 
-<h2>World Map</h2>
-
-{% if db_error %}
-<div class="error-banner danger">{{ db_error }}</div>
-{% endif %}
-
-<div class="map-stats">
-    <div class="stat-card">
-        <div class="count">{{ players|length }}</div>
-        <div class="label">Players</div>
-    </div>
-    <div class="stat-card">
-        <div class="count">{{ vehicles|length }}</div>
-        <div class="label">Vehicles</div>
-    </div>
-    <div class="stat-card">
-        <div class="count">{{ buildings|length }}</div>
-        <div class="label">Buildings</div>
-    </div>
-</div>
-
-<div class="map-container">
-    <div class="map-sidebar">
-        <h3>Filter by Type</h3>
-        <label class="map-checkbox">
-            <input type="checkbox" id="show-players" checked onchange="updateMap()">
-            Players ({{ players|length }})
-        </label>
-        <label class="map-checkbox">
-            <input type="checkbox" id="show-vehicles" checked onchange="updateMap()">
-            Vehicles ({{ vehicles|length }})
-        </label>
-        <label class="map-checkbox">
-            <input type="checkbox" id="show-buildings" checked onchange="updateMap()">
-            Buildings ({{ buildings|length }})
-        </label>
-
-        <h3>Players</h3>
-        <div class="location-list" id="player-list">
-            {% for p in players %}
-            <div class="location-item player" data-type="player" data-map="{{ p.map }}" data-x="{{ p.x }}" data-y="{{ p.y }}" data-z="{{ p.z }}" data-name="{{ p.name }}" onclick="showCoords(this)">
-                <span>{{ p.name }}</span>
-                <span style="color:var(--text-muted)">{{ p.map }}</span>
-            </div>
-            {% endfor %}
-            {% if not players %}
-            <div style="color:var(--text-muted);font-size:12px;padding:8px;">No player locations</div>
+<div class="map-page">
+    <div class="map-header">
+        <div>
+            <h2>World Map</h2>
+            {% if db_error %}
+            <div class="error-banner danger">{{ db_error }}</div>
             {% endif %}
         </div>
-
-        <h3>Vehicles</h3>
-        <div class="location-list" id="vehicle-list">
-            {% for v in vehicles %}
-            {% set vehicle_name = v.class.split('/')[-1].split('.')[0] if v.class else 'Unknown' %}
-            <div class="location-item vehicle" data-type="vehicle" data-map="{{ v.map }}" data-x="{{ v.x }}" data-y="{{ v.y }}" data-z="{{ v.z }}" data-name="{{ vehicle_name }}" onclick="showCoords(this)">
-                <span>{{ vehicle_name|truncate(15) }}</span>
-                <span style="color:var(--text-muted)">{{ v.map }}</span>
+        <div class="map-summary">
+            <div class="map-summary-item">
+                <strong id="summary-players">0</strong>
+                <span>Players</span>
             </div>
-            {% endfor %}
-            {% if not vehicles %}
-            <div style="color:var(--text-muted);font-size:12px;padding:8px;">No vehicle locations</div>
-            {% endif %}
-        </div>
-
-        <h3>Buildings</h3>
-        <div class="location-list" id="building-list">
-            {% for b in buildings[:50] %}
-            <div class="location-item building" data-type="building" data-map="{{ b.map }}" data-x="{{ b.x }}" data-y="{{ b.y }}" data-z="{{ b.z }}" data-name="{{ b.class }}" onclick="showCoords(this)">
-                <span>{{ b.class|truncate(20) }}</span>
-                <span style="color:var(--text-muted)">{{ b.map }}</span>
+            <div class="map-summary-item">
+                <strong id="summary-vehicles">0</strong>
+                <span>Vehicles</span>
             </div>
-            {% endfor %}
-            {% if not buildings %}
-            <div style="color:var(--text-muted);font-size:12px;padding:8px;">No building locations</div>
-            {% endif %}
-            {% if buildings|length > 50 %}
-            <div style="color:var(--text-muted);font-size:11px;padding:8px;">+{{ buildings|length - 50 }} more</div>
-            {% endif %}
+            <div class="map-summary-item">
+                <strong id="summary-bases">0</strong>
+                <span>Bases</span>
+            </div>
         </div>
     </div>
 
-    <div class="map-view">
-        {% set current_map = map_config.get(default_map, {}) %}
-        {% set map_image = current_map.get('image') %}
-        {% if map_image %}
-        <div class="map-display">
-            <div class="map-image-container">
-                <img src="{{ url_for('static', filename=map_image) }}" class="map-image" alt="Map">
-
-                {# Players - only show if they have pixel coords #}
-                {% for p in players %}
-                {% if p.px is not none and p.py is not none %}
-                <div class="map-marker player" style="left:{{ p.px }}px;top:{{ p.py }}px;" title="{{ p.name }}">
-                    <span class="map-marker-tooltip">{{ p.name }} (Player)</span>
+    <div class="map-layout">
+        <div class="map-view">
+            <div class="map-scroll" id="map-scroll">
+                <div class="map-canvas" id="map-canvas">
+                    <img class="map-image" id="map-image" alt="Selected map">
+                    <div id="map-markers"></div>
                 </div>
-                {% endif %}
-                {% endfor %}
-
-                {# Vehicles #}
-                {% for v in vehicles %}
-                {% if v.px is not none and v.py is not none %}
-                <div class="map-marker vehicle" style="left:{{ v.px }}px;top:{{ v.py }}px;" title="{{ v.class }}">
-                    <span class="map-marker-tooltip">{{ v.class.split('/')[-1].split('.')[0] }} (Vehicle)</span>
-                </div>
-                {% endif %}
-                {% endfor %}
-
-                {# Buildings #}
-                {% for b in buildings[:30] %}
-                {% if b.px is not none and b.py is not none %}
-                <div class="map-marker building" style="left:{{ b.px }}px;top:{{ b.py }}px;" title="{{ b.class }}">
-                    <span class="map-marker-tooltip">{{ b.class.split('/')[-1].split('.')[0] }} (Building)</span>
-                </div>
-                {% endif %}
-                {% endfor %}
+            </div>
+            <div class="map-empty" id="map-empty" style="display:none;">
+                <strong>No markers on this map</strong>
+                <span>The selected map has no in-bounds players, vehicles, or bases yet.</span>
             </div>
         </div>
-        {% else %}
-        <div class="map-placeholder">
-            <div class="map-placeholder-icon">🗺️</div>
-            <h3>No Map Available</h3>
-            <p>Map image not configured. Showing coordinate data in list view.</p>
-            <div class="no-map-note">
-                <strong>Available Data:</strong><br>
-                DeepDesert & HaggaBasin locations:<br>
-                Players: {{ players|length }}<br>
-                Vehicles: {{ vehicles|length }}<br>
-                Buildings: {{ buildings|length }}
-            </div>
-        </div>
-        {% endif %}
+
+        <aside class="map-panel">
+            <section class="panel-section">
+                <h3 class="panel-title">Map</h3>
+                <div id="map-choices"></div>
+            </section>
+
+            <section class="panel-section">
+                <h3 class="panel-title">Zoom</h3>
+                <div class="map-controls">
+                    <button type="button" id="zoom-out" title="Zoom out">-</button>
+                    <input type="range" id="zoom-slider" min="50" max="350" value="100" step="10">
+                    <button type="button" id="zoom-in" title="Zoom in">+</button>
+                </div>
+                <div class="zoom-readout" id="zoom-readout">100%</div>
+            </section>
+
+            <section class="panel-section">
+                <h3 class="panel-title">Assets</h3>
+                <label class="map-toggle">
+                    <span><i class="legend-dot player"></i>Players</span>
+                    <input type="checkbox" data-filter="player" checked>
+                </label>
+                <label class="map-toggle">
+                    <span><i class="legend-dot vehicle"></i>Vehicles</span>
+                    <input type="checkbox" data-filter="vehicle" checked>
+                </label>
+                <label class="map-toggle">
+                    <span><i class="legend-dot base"></i>Bases</span>
+                    <input type="checkbox" data-filter="base" checked>
+                </label>
+            </section>
+
+            <section class="panel-section">
+                <h3 class="panel-title">Visible Assets</h3>
+                <div class="location-list" id="location-list"></div>
+                <div class="coord-card" id="coord-card"></div>
+            </section>
+        </aside>
     </div>
 </div>
 
 <script>
-function showCoords(el) {
-    const name = el.dataset.name;
-    const map = el.dataset.map;
-    const x = parseFloat(el.dataset.x);
-    const y = parseFloat(el.dataset.y);
-    const z = parseFloat(el.dataset.z);
+const mapOptions = {{ map_options|tojson }};
+const markers = [
+    ...{{ players|tojson }},
+    ...{{ vehicles|tojson }},
+    ...{{ buildings|tojson }}
+];
+const mapImageUrls = {
+    {% for map in map_options %}
+    "{{ map.key }}": "{{ url_for('static', filename=map.image) }}"{% if not loop.last %},{% endif %}
+    {% endfor %}
+};
 
-    document.getElementById('selected-coords').style.display = 'block';
-    document.getElementById('coord-display').innerHTML =
-        `<strong>${name}</strong><br>` +
-        `Map: ${map}<br>` +
-        `X: ${x.toFixed(2)} | Y: ${y.toFixed(2)} | Z: ${z.toFixed(2)}`;
+let currentMap = "{{ default_map }}";
+let currentZoom = 1;
+let activeMarkerId = null;
+const enabledTypes = { player: true, vehicle: true, base: true };
+
+if (!mapOptions.some(map => map.key === currentMap) && mapOptions.length) {
+    currentMap = mapOptions[0].key;
 }
 
-function updateMap() {
-    const showPlayers = document.getElementById('show-players').checked;
-    const showVehicles = document.getElementById('show-vehicles').checked;
-    const showBuildings = document.getElementById('show-buildings').checked;
+const els = {
+    choices: document.getElementById('map-choices'),
+    scroll: document.getElementById('map-scroll'),
+    canvas: document.getElementById('map-canvas'),
+    image: document.getElementById('map-image'),
+    markers: document.getElementById('map-markers'),
+    empty: document.getElementById('map-empty'),
+    list: document.getElementById('location-list'),
+    coord: document.getElementById('coord-card'),
+    zoomSlider: document.getElementById('zoom-slider'),
+    zoomReadout: document.getElementById('zoom-readout'),
+    summaryPlayers: document.getElementById('summary-players'),
+    summaryVehicles: document.getElementById('summary-vehicles'),
+    summaryBases: document.getElementById('summary-bases'),
+};
 
-    // Filter lists
-    document.querySelectorAll('#player-list .location-item').forEach(el => {
-        el.style.display = showPlayers ? 'flex' : 'none';
-    });
-    document.querySelectorAll('#vehicle-list .location-item').forEach(el => {
-        el.style.display = showVehicles ? 'flex' : 'none';
-    });
-    document.querySelectorAll('#building-list .location-item').forEach(el => {
-        el.style.display = showBuildings ? 'flex' : 'none';
+function markerKey(marker) {
+    return `${marker.type}-${marker.id}`;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[char]));
+}
+
+function markerLabel(marker) {
+    if (marker.type === 'player') return marker.name || `Player ${marker.id}`;
+    if (marker.type === 'vehicle') return marker.class || `Vehicle ${marker.id}`;
+    return marker.name || marker.class || `Base ${marker.id}`;
+}
+
+function selectedMapConfig() {
+    return mapOptions.find(map => map.key === currentMap) || mapOptions[0] || null;
+}
+
+function visibleMarkers() {
+    return markers.filter(marker =>
+        marker.map === currentMap &&
+        marker.in_bounds &&
+        enabledTypes[marker.type]
+    );
+}
+
+function setZoom(nextZoom, keepCenter = true) {
+    const map = selectedMapConfig();
+    if (!map) return;
+
+    const oldZoom = currentZoom;
+    const viewportCenterX = els.scroll.scrollLeft + els.scroll.clientWidth / 2;
+    const viewportCenterY = els.scroll.scrollTop + els.scroll.clientHeight / 2;
+    const relativeX = oldZoom ? viewportCenterX / oldZoom : 0;
+    const relativeY = oldZoom ? viewportCenterY / oldZoom : 0;
+
+    currentZoom = Math.min(3.5, Math.max(0.5, nextZoom));
+    els.canvas.style.width = `${map.width * currentZoom}px`;
+    els.canvas.style.height = `${map.height * currentZoom}px`;
+    els.zoomSlider.value = Math.round(currentZoom * 100);
+    els.zoomReadout.textContent = `${Math.round(currentZoom * 100)}%`;
+
+    if (keepCenter) {
+        els.scroll.scrollLeft = relativeX * currentZoom - els.scroll.clientWidth / 2;
+        els.scroll.scrollTop = relativeY * currentZoom - els.scroll.clientHeight / 2;
+    }
+}
+
+function renderChoices() {
+    els.choices.innerHTML = '';
+    mapOptions.forEach(map => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `map-choice${map.key === currentMap ? ' active' : ''}`;
+        button.innerHTML = `
+            <strong>${escapeHtml(map.label)}</strong>
+            <span>${map.counts.players} P / ${map.counts.vehicles} V / ${map.counts.bases} B</span>
+            <span>${escapeHtml(map.key)}</span>
+            <span>${map.width} x ${map.height}</span>
+        `;
+        button.addEventListener('click', () => {
+            currentMap = map.key;
+            activeMarkerId = null;
+            renderAll(true);
+        });
+        els.choices.appendChild(button);
     });
 }
+
+function renderMarkers() {
+    const map = selectedMapConfig();
+    const current = visibleMarkers();
+    els.markers.innerHTML = '';
+
+    current.forEach(marker => {
+        const key = markerKey(marker);
+        const label = escapeHtml(markerLabel(marker));
+        const node = document.createElement('button');
+        node.type = 'button';
+        node.className = `map-marker ${marker.type}${activeMarkerId === key ? ' active' : ''}`;
+        node.style.left = `${(marker.px / map.width) * 100}%`;
+        node.style.top = `${(marker.py / map.height) * 100}%`;
+        node.title = markerLabel(marker);
+        node.innerHTML = `
+            <span class="map-tooltip">
+                ${label}<br>
+                ${escapeHtml(marker.type.toUpperCase())} | X ${Number(marker.x).toFixed(0)} Y ${Number(marker.y).toFixed(0)}
+            </span>
+        `;
+        node.addEventListener('click', () => selectMarker(key, true));
+        els.markers.appendChild(node);
+    });
+
+    els.empty.style.display = current.length ? 'none' : 'flex';
+}
+
+function renderList() {
+    const current = visibleMarkers();
+    els.list.innerHTML = '';
+
+    if (!current.length) {
+        const empty = document.createElement('div');
+        empty.className = 'location-item';
+        empty.innerHTML = '<strong>No visible assets</strong><span>Adjust map or filters</span>';
+        els.list.appendChild(empty);
+        return;
+    }
+
+    current
+        .sort((a, b) => a.type.localeCompare(b.type) || markerLabel(a).localeCompare(markerLabel(b)))
+        .forEach(marker => {
+            const key = markerKey(marker);
+            const label = escapeHtml(markerLabel(marker));
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = `location-item${activeMarkerId === key ? ' active' : ''}`;
+            item.dataset.markerKey = key;
+            item.innerHTML = `
+                <strong><i class="legend-dot ${marker.type}"></i>${label}</strong>
+                <span>${escapeHtml(marker.type)}</span>
+                <span>X ${Number(marker.x).toFixed(0)} | Y ${Number(marker.y).toFixed(0)}</span>
+                <span>Z ${Number(marker.z).toFixed(0)}</span>
+            `;
+            item.addEventListener('click', () => selectMarker(key, true));
+            els.list.appendChild(item);
+        });
+}
+
+function renderSummary() {
+    const scoped = markers.filter(marker => marker.map === currentMap && marker.in_bounds);
+    els.summaryPlayers.textContent = scoped.filter(marker => marker.type === 'player').length;
+    els.summaryVehicles.textContent = scoped.filter(marker => marker.type === 'vehicle').length;
+    els.summaryBases.textContent = scoped.filter(marker => marker.type === 'base').length;
+}
+
+function selectMarker(key, centerMap = false) {
+    activeMarkerId = key;
+    const marker = markers.find(candidate => markerKey(candidate) === key);
+    if (!marker) return;
+
+    els.coord.style.display = 'block';
+    els.coord.innerHTML = `
+        <strong>${escapeHtml(markerLabel(marker))}</strong><br>
+        Type: ${escapeHtml(marker.type)}<br>
+        Map: ${escapeHtml(marker.map)}<br>
+        X: ${Number(marker.x).toFixed(2)} | Y: ${Number(marker.y).toFixed(2)} | Z: ${Number(marker.z).toFixed(2)}
+    `;
+
+    if (centerMap) {
+        els.scroll.scrollLeft = marker.px * currentZoom - els.scroll.clientWidth / 2;
+        els.scroll.scrollTop = marker.py * currentZoom - els.scroll.clientHeight / 2;
+    }
+
+    renderMarkers();
+    renderList();
+}
+
+function renderAll(resetView = false) {
+    const map = selectedMapConfig();
+    renderChoices();
+
+    if (!map) {
+        els.empty.style.display = 'flex';
+        return;
+    }
+
+    els.image.src = mapImageUrls[map.key] || '';
+    els.image.alt = map.label;
+    setZoom(resetView ? 1 : currentZoom, !resetView);
+
+    if (resetView) {
+        requestAnimationFrame(() => {
+            els.scroll.scrollLeft = Math.max(0, (els.canvas.offsetWidth - els.scroll.clientWidth) / 2);
+            els.scroll.scrollTop = Math.max(0, (els.canvas.offsetHeight - els.scroll.clientHeight) / 2);
+        });
+    }
+
+    renderSummary();
+    renderMarkers();
+    renderList();
+}
+
+document.querySelectorAll('[data-filter]').forEach(input => {
+    input.addEventListener('change', () => {
+        enabledTypes[input.dataset.filter] = input.checked;
+        activeMarkerId = null;
+        els.coord.style.display = 'none';
+        renderMarkers();
+        renderList();
+    });
+});
+
+document.getElementById('zoom-in').addEventListener('click', () => setZoom(currentZoom + 0.1));
+document.getElementById('zoom-out').addEventListener('click', () => setZoom(currentZoom - 0.1));
+els.zoomSlider.addEventListener('input', event => setZoom(Number(event.target.value) / 100));
+
+els.scroll.addEventListener('wheel', event => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    setZoom(currentZoom + (event.deltaY < 0 ? 0.1 : -0.1));
+}, { passive: false });
+
+let dragStart = null;
+els.scroll.addEventListener('mousedown', event => {
+    if (event.button !== 0) return;
+    dragStart = {
+        x: event.clientX,
+        y: event.clientY,
+        left: els.scroll.scrollLeft,
+        top: els.scroll.scrollTop,
+    };
+    els.scroll.classList.add('dragging');
+});
+
+window.addEventListener('mousemove', event => {
+    if (!dragStart) return;
+    els.scroll.scrollLeft = dragStart.left - (event.clientX - dragStart.x);
+    els.scroll.scrollTop = dragStart.top - (event.clientY - dragStart.y);
+});
+
+window.addEventListener('mouseup', () => {
+    dragStart = null;
+    els.scroll.classList.remove('dragging');
+});
+
+renderAll(true);
 </script>
 {% endblock %}
