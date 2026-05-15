@@ -498,14 +498,55 @@ if (-not $UseLetsEncrypt) {
     $SslKey = "'$LeKeyPath'"
 }
 
-# Firewall rules for HTTP redirect (port 80) and HTTPS dashboard
+# Remote access
 Write-Host ""
-Write-Host "  Windows Firewall needs to allow incoming connections on ports 80 and $DashboardPort" -ForegroundColor Cyan
-Write-Host "  for remote access to work. This requires Administrator privileges." -ForegroundColor Cyan
+$RemoteAccess = Read-Host "  Enable remote access? (y/N)"
+$EnableRemote = ($RemoteAccess -eq 'y' -or $RemoteAccess -eq 'Y')
+
+if ($EnableRemote) {
+    $DashHost = "0.0.0.0"
+    Write-Host "  Remote access enabled. The dashboard will bind to 0.0.0.0 so localhost, 127.0.0.1, LAN IP, and public IP can all work." -ForegroundColor Green
+    Write-Host "  Dedicated server: allow TCP $DashboardPort in Windows Firewall/cloud firewall." -ForegroundColor Cyan
+    Write-Host "  Home network: port-forward TCP $DashboardPort from your router to this machine's LAN IP." -ForegroundColor Cyan
+} else {
+    $DashHost = "127.0.0.1"
+    Write-Host "  Local-only access enabled. Use http(s)://localhost:$DashboardPort or http(s)://127.0.0.1:$DashboardPort." -ForegroundColor Green
+}
+
+$HttpRedirect = $false
+$HttpRedirectPort = 80
+if ($EnableRemote -and ($SslCert -ne "null") -and ($SslKey -ne "null")) {
+    Write-Host ""
+    Write-Host "  Optional HTTP to HTTPS redirect:" -ForegroundColor Cyan
+    Write-Host "    - Not required if you visit https://HOST:$DashboardPort directly." -ForegroundColor Cyan
+    Write-Host "    - Useful if you want http://HOST to redirect automatically." -ForegroundColor Cyan
+    Write-Host "    - Requires TCP port 80 to be free and forwarded/open." -ForegroundColor Cyan
+    $RedirectAnswer = Read-Host "  Enable HTTP redirect on port 80? (y/N)"
+    $HttpRedirect = ($RedirectAnswer -eq 'y' -or $RedirectAnswer -eq 'Y')
+}
+
+# Firewall rules for optional HTTP redirect and dashboard port
 Write-Host ""
-$SetupFirewall = Read-Host "  Create firewall rules? (Y/n)"
+if ($EnableRemote) {
+    $FirewallPorts = @($DashboardPort)
+    if ($HttpRedirect) { $FirewallPorts = @(80) + $FirewallPorts }
+    $FirewallPortList = ($FirewallPorts -join ',')
+    Write-Host "  Windows Firewall needs to allow incoming TCP port(s): $FirewallPortList" -ForegroundColor Cyan
+    Write-Host "  This requires Administrator privileges." -ForegroundColor Cyan
+    Write-Host ""
+} else {
+    $FirewallPorts = @()
+    $FirewallPortList = ""
+    Write-Host "  Skipping Windows Firewall rules because remote access is disabled." -ForegroundColor Cyan
+}
+Write-Host ""
+if ($EnableRemote) {
+    $SetupFirewall = Read-Host "  Create firewall rules? (Y/n)"
+} else {
+    $SetupFirewall = "n"
+}
 if ($SetupFirewall -eq 'n' -or $SetupFirewall -eq 'N') {
-    Write-Host "  Skipped. Remote access may be blocked by firewall." -ForegroundColor Yellow
+    if ($EnableRemote) { Write-Host "  Skipped. Remote access may be blocked by firewall." -ForegroundColor Yellow }
 } else {
     $fwRuleName = "DuneDashboard"
     $fwExists = $null
@@ -516,12 +557,12 @@ if ($SetupFirewall -eq 'n' -or $SetupFirewall -eq 'N') {
         $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
         if (-not $isAdmin) {
             Write-Host "  Starting elevated PowerShell to add firewall rules..." -ForegroundColor Yellow
-            $fwScript = "New-NetFirewallRule -DisplayName DuneDashboard -Direction Inbound -Action Allow -Protocol TCP -LocalPort 80,$DashboardPort; Write-Host ''; Read-Host 'Press Enter to close'"
+            $fwScript = "New-NetFirewallRule -DisplayName DuneDashboard -Direction Inbound -Action Allow -Protocol TCP -LocalPort $FirewallPortList; Write-Host ''; Read-Host 'Press Enter to close'"
             Start-Process powershell -ArgumentList "-NoProfile", "-Command", $fwScript -Verb RunAs -Wait
             Write-Host "  Firewall rules added." -ForegroundColor Green
         } else {
-            New-NetFirewallRule -DisplayName DuneDashboard -Direction Inbound -Action Allow -Protocol TCP -LocalPort 80, $DashboardPort
-            Write-Host "  Firewall rules added for ports 80 (HTTP redirect) and $DashboardPort (HTTPS)." -ForegroundColor Green
+            New-NetFirewallRule -DisplayName DuneDashboard -Direction Inbound -Action Allow -Protocol TCP -LocalPort $FirewallPorts
+            Write-Host "  Firewall rules added for TCP port(s): $FirewallPortList." -ForegroundColor Green
         }
     }
 }
@@ -541,18 +582,6 @@ if ($UseLetsEncrypt) {
         Register-ScheduledTask -TaskName $taskName -Action $renewAction -Trigger $renewTrigger -Settings $renewSettings -Description "Auto-renew Let's Encrypt certificate for Dune Dashboard" -ErrorAction SilentlyContinue | Out-Null
         Write-Host "  Auto-renewal scheduled (daily at 2 AM). Certificates renew automatically." -ForegroundColor Green
     }
-}
-
-# Remote access
-Write-Host ""
-$RemoteAccess = Read-Host "  Enable remote access? (y/N)"
-$EnableRemote = ($RemoteAccess -eq 'y' -or $RemoteAccess -eq 'Y')
-
-if ($EnableRemote) {
-    $DashHost = "0.0.0.0"
-    Write-Host "  Remote access enabled with HTTPS" -ForegroundColor Green
-} else {
-    $DashHost = "127.0.0.1"
 }
 
 # Firewall security hardening
@@ -636,6 +665,8 @@ dashboard:
   ssl_key: $SslKey
   ssl_domain: $leDomain
   ssl_email: $leEmail
+  http_redirect: $HttpRedirect
+  http_redirect_port: $HttpRedirectPort
 
 database:
   host: 127.0.0.1

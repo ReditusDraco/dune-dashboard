@@ -225,21 +225,31 @@ Write-Host "[OK]   Database connected" -ForegroundColor Green
 $fwRuleName = "DuneDashboard"
 $fwExists = $null
 try { $fwExists = Get-NetFirewallRule -DisplayName $fwRuleName -ErrorAction SilentlyContinue } catch {}
-if (-not $fwExists) {
+$remoteDashboard = "$($settings.dashboard.host)" -eq "0.0.0.0"
+if ($remoteDashboard -and -not $fwExists) {
     Write-Host "[WARN] No firewall rule found. Remote access to the dashboard will be blocked." -ForegroundColor Yellow
-    Write-Host "  Ports needed: 80 (HTTP redirect), $DashboardPort (HTTPS)" -ForegroundColor Yellow
+    $redirectEnabled = $settings.dashboard.http_redirect -eq $true
+    if ($redirectEnabled) {
+        $redirectPort = if ($settings.dashboard.http_redirect_port) { $settings.dashboard.http_redirect_port } else { 80 }
+        Write-Host "  Ports needed: $redirectPort (optional HTTP redirect), $DashboardPort (dashboard)" -ForegroundColor Yellow
+    } else {
+        Write-Host "  Port needed: $DashboardPort (dashboard)" -ForegroundColor Yellow
+    }
     Write-Host ""
     $SetupFirewall = Read-Host "  Create firewall rules now? Requires Administrator (Y/n)"
     if ($SetupFirewall -ne 'n' -and $SetupFirewall -ne 'N') {
+        $firewallPorts = @($DashboardPort)
+        if ($redirectEnabled) { $firewallPorts = @($redirectPort) + $firewallPorts }
+        $firewallPortList = ($firewallPorts -join ',')
         $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
         if (-not $isAdmin) {
             Write-Host "  Starting elevated PowerShell to add firewall rules..." -ForegroundColor Yellow
-            $fwScript = "New-NetFirewallRule -DisplayName DuneDashboard -Direction Inbound -Action Allow -Protocol TCP -LocalPort 80,$DashboardPort; Write-Host ''; Read-Host 'Press Enter to close'"
+            $fwScript = "New-NetFirewallRule -DisplayName DuneDashboard -Direction Inbound -Action Allow -Protocol TCP -LocalPort $firewallPortList; Write-Host ''; Read-Host 'Press Enter to close'"
             Start-Process powershell -ArgumentList "-NoProfile", "-Command", $fwScript -Verb RunAs -Wait
             Write-Host "[OK]   Firewall rules added." -ForegroundColor Green
         } else {
-            New-NetFirewallRule -DisplayName DuneDashboard -Direction Inbound -Action Allow -Protocol TCP -LocalPort 80, $DashboardPort
-            Write-Host "[OK]   Firewall rules added for ports 80, $DashboardPort." -ForegroundColor Green
+            New-NetFirewallRule -DisplayName DuneDashboard -Direction Inbound -Action Allow -Protocol TCP -LocalPort $firewallPorts
+            Write-Host "[OK]   Firewall rules added for port(s): $firewallPortList." -ForegroundColor Green
         }
     } else {
         Write-Host "  Skipped. External access will be blocked." -ForegroundColor Yellow

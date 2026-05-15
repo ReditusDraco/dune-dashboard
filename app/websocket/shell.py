@@ -143,7 +143,7 @@ def register_websocket_handlers(socketio, settings):
                 logger.error(f"Shell input error: {e}")
 
     @socketio.on('shell_disconnect')
-    def handle_shell_disconnect():
+    def handle_shell_disconnect(data=None):
         shell_id = request.sid
         if shell_id in shell_processes:
             try:

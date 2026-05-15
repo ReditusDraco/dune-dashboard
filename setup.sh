@@ -344,9 +344,26 @@ ENABLE_REMOTE=false
 
 if [[ "$REMOTE_ANSWER" == "y" || "$REMOTE_ANSWER" == "Y" ]]; then
     DASH_HOST="0.0.0.0"
-    echo "  Remote access enabled with HTTPS"
+    echo "  Remote access enabled. The dashboard will bind to 0.0.0.0 so localhost, 127.0.0.1, LAN IP, and public IP can all work."
+    echo "  Dedicated server: allow TCP $DASHBOARD_PORT in the host/cloud firewall."
+    echo "  Home network: port-forward TCP $DASHBOARD_PORT from your router to this machine's LAN IP."
 else
     DASH_HOST="127.0.0.1"
+    echo "  Local-only access enabled. Use http(s)://localhost:$DASHBOARD_PORT or http(s)://127.0.0.1:$DASHBOARD_PORT."
+fi
+
+HTTP_REDIRECT=false
+HTTP_REDIRECT_PORT=80
+if [ "$ENABLE_REMOTE" = true ] && [ "$SSL_CERT" != "null" ] && [ "$SSL_KEY" != "null" ]; then
+    echo ""
+    echo "  Optional HTTP to HTTPS redirect:"
+    echo "    - Not required if you visit https://HOST:$DASHBOARD_PORT directly."
+    echo "    - Useful if you want http://HOST to redirect automatically."
+    echo "    - Requires TCP port 80 to be free and forwarded/open."
+    read -rp "  Enable HTTP redirect on port 80? (y/N): " REDIRECT_ANSWER
+    if [[ "$REDIRECT_ANSWER" == "y" || "$REDIRECT_ANSWER" == "Y" ]]; then
+        HTTP_REDIRECT=true
+    fi
 fi
 
 # Let's Encrypt auto-renewal via cron
@@ -412,6 +429,8 @@ dashboard:
   ssl_key: $SSL_KEY
   ssl_domain: $LE_DOMAIN_YAML
   ssl_email: $LE_EMAIL_YAML
+  http_redirect: $HTTP_REDIRECT
+  http_redirect_port: $HTTP_REDIRECT_PORT
 
 database:
   host: 127.0.0.1

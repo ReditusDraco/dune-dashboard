@@ -21,6 +21,8 @@ dashboard:
   ssl_key: null                # Path to SSL key (null = HTTP only)
   ssl_domain: null             # Domain for Let's Encrypt (e.g. dashboard.example.com)
   ssl_email: null              # Email for Let's Encrypt notifications
+  http_redirect: false         # Optional HTTP -> HTTPS redirect listener
+  http_redirect_port: 80       # Only needed if http_redirect is true
                                # For Let's Encrypt or custom CA:
                                #   ssl_cert: /etc/letsencrypt/live/yourdomain/fullchain.pem
                                #   ssl_key: /etc/letsencrypt/live/yourdomain/privkey.pem

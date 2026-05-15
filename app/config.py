@@ -23,6 +23,8 @@ DEFAULTS = {
         'ssl_key': None,
         'ssl_domain': None,
         'ssl_email': None,
+        'http_redirect': False,
+        'http_redirect_port': 80,
     },
     'database': {
         'host': '127.0.0.1',
