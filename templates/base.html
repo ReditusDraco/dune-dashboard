@@ -6,6 +6,7 @@
     <title>{% block title %}Dune Awakening Server Dashboard{% endblock %}</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='themes.css') }}">
 </head>
 <body>
     <div id="update-banner" class="update-banner" style="display:none;">
@@ -21,6 +22,53 @@
         <a href="{{ href }}" class="{% if current_path == href %}active{% endif %}">{{ label }}</a>
         {% endfor %}
         <div class="spacer"></div>
+        <div class="theme-dropdown">
+            <button class="theme-btn" title="Theme">🎨</button>
+            <div class="theme-dropdown-content">
+                <div class="theme-option active" data-theme="default" onclick="setTheme('default')">
+                    <span class="theme-swatch default"></span> Classic Dune
+                </div>
+                <div class="theme-option" data-theme="atreides" onclick="setTheme('atreides')">
+                    <span class="theme-swatchatreides"></span> House Atreides
+                </div>
+                <div class="theme-option" data-theme="harkonnen" onclick="setTheme('harkonnen')">
+                    <span class="theme-swatch harkonnen"></span> House Harkonnen
+                </div>
+                <div class="theme-option" data-theme="fremen" onclick="setTheme('fremen')">
+                    <span class="theme-swatch fremen"></span> Fremen
+                </div>
+                <div class="theme-option" data-theme="bene-gesserit" onclick="setTheme('bene-gesserit')">
+                    <span class="theme-swatch bene-gesserit"></span> Bene Gesserit
+                </div>
+                <div class="theme-option" data-theme="spacing-guild" onclick="setTheme('spacing-guild')">
+                    <span class="theme-swatch spacing-guild"></span> Spacing Guild
+                </div>
+                <div class="theme-option" data-theme="emperor" onclick="setTheme('emperor')">
+                    <span class="theme-swatch emperor"></span> Emperor
+                </div>
+                <div class="theme-option" data-theme="corrino" onclick="setTheme('corrino')">
+                    <span class="theme-swatch corrino"></span> House Corrino
+                </div>
+                <div class="theme-option" data-theme="mentat" onclick="setTheme('mentat')">
+                    <span class="theme-swatch mentat"></span> Mentat
+                </div>
+                <div class="theme-option" data-theme="sardaukar" onclick="setTheme('sardaukar')">
+                    <span class="theme-swatch sardaukar"></span> Sardaukar
+                </div>
+                <div class="theme-option" data-theme="tleilax" onclick="setTheme('tleilax')">
+                    <span class="theme-swatch tleilax"></span> Bene Tleilax
+                </div>
+                <div class="theme-option" data-theme="ordos" onclick="setTheme('ordos')">
+                    <span class="theme-swatch ordos"></span> House Ordos
+                </div>
+                <div class="theme-option" data-theme="ix" onclick="setTheme('ix')">
+                    <span class="theme-swatch ix"></span> Ix
+                </div>
+                <div class="theme-option" data-theme="choam" onclick="setTheme('choam')">
+                    <span class="theme-swatch choam"></span> CHOAM
+                </div>
+            </div>
+        </div>
         <span style="font-size:12px;color:var(--nav-text);display:flex;align-items:center;">
             <span class="conn-dot {% if conn_ok %}online{% else %}offline{% endif %}"></span>
             {{ 'Connected' if conn_ok else 'Disconnected' }}
@@ -108,10 +156,34 @@
     }
     setInterval(checkForUpdate, 60000);
     checkForUpdate();
+
+    // Theme System
+    function setTheme(themeName) {
+        document.documentElement.setAttribute('data-theme', themeName);
+        localStorage.setItem('dune-theme', themeName);
+        updateThemeUI(themeName);
+    }
+
+    function updateThemeUI(themeName) {
+        document.querySelectorAll('.theme-option').forEach(opt => {
+            opt.classList.remove('active');
+            if (opt.getAttribute('data-theme') === themeName) {
+                opt.classList.add('active');
+            }
+        });
+    }
+
+    function initTheme() {
+        const savedTheme = localStorage.getItem('dune-theme') || 'default';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        updateThemeUI(savedTheme);
+    }
+
+    initTheme();
     </script>
     {% block scripts %}{% endblock %}
     <style>
-    .update-banner { background: var(--bg-hover); border-bottom: 2px solid var(--accent); padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text); }
+    .update-banner { background: var(--hover); border-bottom: 2px solid var(--accent); padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text); }
     .update-actions { display: flex; gap: 8px; }
     .update-btn { padding: 4px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-card); color: var(--text); cursor: pointer; font-size: 12px; }
     .update-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
