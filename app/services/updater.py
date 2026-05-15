@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-GITHUB_REPO = "Sutider/dune-dashboard"
+GITHUB_REPO = "ReditusDraco/dune-dashboard"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}"
 
 # Paths that should NEVER be overwritten during update
