@@ -149,9 +149,9 @@ During setup, answer **y** when asked to enable Let's Encrypt. The setup script 
 
 ### Local CA Utilities (Windows)
 
-Two helper scripts are included for managing the self-signed CA:
-- **`install-ca-cert.bat`** — Installs the local CA (`ssl/ca.pem`) into Windows Trusted Root store. Run as Administrator. Removes browser warnings.
-- **`clean-ca-certs.bat`** — Removes the dashboard CA from Windows Trusted Root store. Run as Administrator.
+Available from the launcher menu (`.\launcher.ps1`):
+- **Option 4: Install CA Certificate** — Installs the local CA (`ssl/ca.pem`) into Windows Trusted Root store. Run as Administrator. Removes browser warnings.
+- **Option 5: Clean & Reinstall CA Certificate** — Removes all old Dune Dashboard CA certificates from Windows Trusted Root store and installs a fresh one. Use if you have duplicate or expired CA certificates.
 
 ### SSL Configuration
 
@@ -164,7 +164,7 @@ The dashboard supports both self-signed and CA-signed certificates.
 - Valid for 365 days
 
 **Remove browser warnings (Windows):**
-1. Run `install-ca-cert.bat` as Administrator
+1. Run `.\launcher.ps1` and select option **4** (Install CA Certificate)
 2. Restart your browser
 3. Access `https://localhost:5050` — no more warnings
 
@@ -209,9 +209,10 @@ DuneDashboard/
 │   └── websocket/       # Socket.IO handlers
 ├── templates/           # Jinja2 HTML templates
 ├── static/              # CSS and frontend assets
-├── setup.ps1 / setup.sh # One-time setup scripts
-├── start.ps1 / start.sh # Dashboard launchers
-└── settings.yaml        # Configuration (gitignored)
+├── launcher.ps1         # Unified launcher (setup, start, diagnostics, CA tools)
+├── start.sh             # Linux/macOS entry point
+├── settings.yaml        # Configuration (gitignored)
+└── settings.yaml.example # Reference configuration
 ```
 
 ## Security Notes
