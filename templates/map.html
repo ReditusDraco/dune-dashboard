@@ -426,7 +426,7 @@
                 <h3 class="panel-title">Zoom</h3>
                 <div class="map-controls">
                     <button type="button" id="zoom-out" title="Zoom out">-</button>
-                    <input type="range" id="zoom-slider" min="5" max="350" value="100" step="10">
+                    <input type="range" id="zoom-slider" min="15" max="350" value="100" step="10">
                     <button type="button" id="zoom-in" title="Zoom in">+</button>
                 </div>
                 <div class="zoom-readout" id="zoom-readout">100%</div>
@@ -472,11 +472,11 @@ const mapImageUrls = {
 
 let currentMap = "HaggaBasin";
 let currentZoom = 0;
-let defaultZoom = 0.05;
+let defaultZoom = 0.15;
 let activeMarkerId = null;
 const enabledTypes = { player: true, vehicle: true, base: true };
 
-const mapDefaultZoom = 0.05;
+const mapDefaultZoom = 0.15;
 currentZoom = mapDefaultZoom;
 defaultZoom = mapDefaultZoom;
 
@@ -532,7 +532,7 @@ function setZoom(nextZoom, keepCenter = true) {
     const map = selectedMapConfig();
     if (!map) return;
 
-    currentZoom = Math.min(3.5, Math.max(0.05, nextZoom));
+    currentZoom = Math.min(3.5, Math.max(0.15, nextZoom));
     
     els.canvas.style.width = `${map.width * currentZoom}px`;
     els.canvas.style.height = `${map.height * currentZoom}px`;
@@ -542,7 +542,12 @@ function setZoom(nextZoom, keepCenter = true) {
 
 function renderChoices() {
     els.choices.innerHTML = '';
-    mapOptions.forEach(map => {
+    const sortedMaps = [...mapOptions].sort((a, b) => {
+        if (a.key === 'HaggaBasin') return -1;
+        if (b.key === 'HaggaBasin') return 1;
+        return 0;
+    });
+    sortedMaps.forEach(map => {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = `map-choice${map.key === currentMap ? ' active' : ''}`;
