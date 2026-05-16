@@ -79,9 +79,9 @@ DEFAULTS = {
             'label': 'The Deep Desert',
             'bounds': {
                 'min_x': -1268624.82,
-                'max_x': 1112310.15,
+                'max_x': 1163312.83,
                 'min_y': -1266548.17,
-                'max_y': 1104490.67
+                'max_y': 1162416.13
             },
             'flip_y': False,
             'image_size': {'width': 8000, 'height': 8000},
