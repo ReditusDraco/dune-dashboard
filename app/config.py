@@ -78,10 +78,10 @@ DEFAULTS = {
             'image': 'maps/Deep_Desert.webp',
             'label': 'The Deep Desert',
             'bounds': {
-                'min_x': 21352,
-                'max_x': 23166,
-                'min_y': 233981,
-                'max_y': 237943
+                'min_x': -849967.40,
+                'max_x': 1112310.15,
+                'min_y': 430513.14,
+                'max_y': 1104490.67
             },
             'flip_y': False,
             'image_size': {'width': 8000, 'height': 8000},
