@@ -91,10 +91,10 @@ DEFAULTS = {
             'image': 'maps/HaggaBasin_8k.webp',
             'label': 'Hagga Basin',
             'bounds': {
-                'min_x': 21352,
-                'max_x': 23166,
-                'min_y': 233981,
-                'max_y': 237943
+                'min_x': -456752.21,
+                'max_x': 354547.46,
+                'min_y': -450630.14,
+                'max_y': 353821.95
             },
             'flip_y': False,
             'image_size': {'width': 8000, 'height': 8000},

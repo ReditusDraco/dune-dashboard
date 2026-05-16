@@ -87,16 +87,19 @@
     margin: 24px;
     background: #0d0f0f;
     box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
+    display: inline-block;
+    min-width: 100%;
+    min-height: 100%;
 }
 
 .map-image {
     position: absolute;
-    inset: 0;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: contain;
     user-select: none;
-    pointer-events: none;
 }
 
 .map-image-credit {
