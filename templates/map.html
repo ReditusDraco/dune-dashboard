@@ -100,10 +100,17 @@
 }
 
 .map-image-credit {
-    text-align: center;
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
     font-size: 11px;
     color: var(--text-muted);
-    padding: 4px 0 0;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 4px 12px;
+    border-radius: 4px;
+    z-index: 10;
+    pointer-events: auto;
 }
 
 .map-image-credit a {
@@ -402,7 +409,7 @@
                     <div id="map-markers"></div>
                 </div>
             </div>
-            <div class="map-image-credit">Map images sourced from <a href="https://awakening.wiki/" target="_blank" rel="noopener noreferrer">awakening.wiki</a></div>
+            <div class="map-image-credit">Map images sourced from <a href="https://awakening.wiki/" target="_blank" rel="noopener noreferrer">awakening.wiki</a> &mdash; thank you for the amazing resource!</div>
             <div class="map-empty" id="map-empty" style="display:none;">
                 <strong>No markers on this map</strong>
                 <span>The selected map has no in-bounds players, vehicles, or bases yet.</span>
