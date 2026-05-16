@@ -75,6 +75,7 @@
     height: 100%;
     overflow: auto;
     cursor: grab;
+    position: relative;
 }
 
 .map-scroll.dragging {
@@ -87,6 +88,7 @@
     margin: 24px;
     background: #0d0f0f;
     box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
 }
 
 .map-image {
@@ -670,15 +672,14 @@ function renderAll(resetView = false) {
 
     els.image.src = mapImageUrls[map.key] || '';
     els.image.alt = map.label;
-    const mapDefaultZoom = map.default_zoom || 0.5;
-    setZoom(resetView ? mapDefaultZoom : currentZoom, !resetView);
-
-    if (resetView) {
-        requestAnimationFrame(() => {
-            els.scroll.scrollLeft = Math.max(0, (els.canvas.offsetWidth - els.scroll.clientWidth) / 2);
-            els.scroll.scrollTop = Math.max(0, (els.canvas.offsetHeight - els.scroll.clientHeight) / 2);
-        });
-    }
+    const mapDefaultZoom = map.default_zoom || 0.15;
+    setZoom(mapDefaultZoom, false);
+    currentZoom = mapDefaultZoom;
+    
+    requestAnimationFrame(() => {
+        els.scroll.scrollLeft = 0;
+        els.scroll.scrollTop = 0;
+    });
 
     renderSummary();
     renderMarkers();
