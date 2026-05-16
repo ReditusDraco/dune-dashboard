@@ -426,10 +426,10 @@
                 <h3 class="panel-title">Zoom</h3>
                 <div class="map-controls">
                     <button type="button" id="zoom-out" title="Zoom out">-</button>
-                    <input type="range" id="zoom-slider" min="50" max="350" value="100" step="10">
+                    <input type="range" id="zoom-slider" min="25" max="350" value="50" step="10">
                     <button type="button" id="zoom-in" title="Zoom in">+</button>
                 </div>
-                <div class="zoom-readout" id="zoom-readout">100%</div>
+                <div class="zoom-readout" id="zoom-readout">50%</div>
             </section>
 
             <section class="panel-section">
@@ -471,7 +471,7 @@ const mapImageUrls = {
 };
 
 let currentMap = "{{ default_map }}";
-let currentZoom = 1;
+let currentZoom = 0.5;
 let activeMarkerId = null;
 const enabledTypes = { player: true, vehicle: true, base: true };
 
@@ -537,7 +537,7 @@ function setZoom(nextZoom, keepCenter = true) {
     const relativeX = oldZoom ? viewportCenterX / oldZoom : 0;
     const relativeY = oldZoom ? viewportCenterY / oldZoom : 0;
 
-    currentZoom = Math.min(3.5, Math.max(0.5, nextZoom));
+    currentZoom = Math.min(3.5, Math.max(0.25, nextZoom));
     els.canvas.style.width = `${map.width * currentZoom}px`;
     els.canvas.style.height = `${map.height * currentZoom}px`;
     els.zoomSlider.value = Math.round(currentZoom * 100);
@@ -669,7 +669,7 @@ function renderAll(resetView = false) {
 
     els.image.src = mapImageUrls[map.key] || '';
     els.image.alt = map.label;
-    setZoom(resetView ? 1 : currentZoom, !resetView);
+    setZoom(resetView ? 0.5 : currentZoom, !resetView);
 
     if (resetView) {
         requestAnimationFrame(() => {
