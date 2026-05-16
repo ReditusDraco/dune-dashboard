@@ -29,7 +29,7 @@ If you're testing this project, grab builds from nightly for the latest features
 
 ## Features
 
-- **Real-time Overview**: Server metrics, player counts, pod status, and resource usage.
+- **Map Features**: Interactive maps with real-world coordinate calibration for Hagga Basin and The Deep Desert. Default view centers on Hagga Basin at 15% zoom. Zoom range: 15%–100%.
 - **Player Management**: View, search, and filter players. Track online status, factions, guilds, and locations.
 - **Chat Logs**: Parsed from text-router pod logs with channel filtering and auto-refresh.
 - **Director Controls**: Live battlegroup stats, world state management, and server transfer controls.
