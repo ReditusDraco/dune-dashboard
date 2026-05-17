@@ -88,7 +88,7 @@ This project is **Source Available** under the [Dune Dashboard Source License (D
 
     During setup you'll be prompted for:
     - **VM External IP** — the IP you SSH into (e.g., `<YOUR_VM_IP>`)
-    - **Host External IP** — the public IP for SSL certificate SANs (e.g., `<YOUR_VM_IP>`)
+    - **Host External IP** — the public IP for SSL certificate SANs (e.g., `<YOUR_HOST_IP>`)
     - **Let's Encrypt** — optionally set up a publicly trusted SSL cert with auto-renewal via certbot
     - **Firewall rules** — only prompted if no `DuneDashboard` rule exists yet
 
