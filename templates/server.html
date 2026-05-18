@@ -244,6 +244,49 @@
 </div>
 
 <div class="card">
+    <div class="card-header" style="cursor:pointer;" onclick="document.getElementById('audit-section').classList.toggle('hidden');">
+        <span>📋 Audit Log Viewer</span>
+        <span id="audit-stats" style="font-size:12px;color:var(--text-muted);">Loading...</span>
+    </div>
+    <div class="card-body" id="audit-section">
+        <div style="margin-bottom:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="audit-search" placeholder="Filter by action..." style="padding:8px 12px;background:#1a1a2e;border:1px solid #333;border-radius:6px;color:#e0d5c7;font-size:13px;width:180px;">
+            <input type="text" id="audit-user" placeholder="Filter by user..." style="padding:8px 12px;background:#1a1a2e;border:1px solid #333;border-radius:6px;color:#e0d5c7;font-size:13px;width:140px;">
+            <select id="audit-severity" style="padding:8px 12px;background:#1a1a2e;border:1px solid #333;border-radius:6px;color:#e0d5c7;font-size:13px;">
+                <option value="">All Severities</option>
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+            </select>
+            <button onclick="loadAuditLogs()" style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Filter</button>
+            <button onclick="refreshAuditLogs()" style="padding:8px 16px;background:#333;color:#e0d5c7;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Refresh</button>
+        </div>
+        <div style="margin-bottom:12px;display:flex;gap:16px;font-size:12px;color:var(--text-muted);">
+            <span>Total: <strong id="audit-total">0</strong></span>
+            <span>Info: <strong id="audit-info-count" style="color:#3498db;">0</strong></span>
+            <span>Warning: <strong id="audit-warning-count" style="color:#f39c12;">0</strong></span>
+            <span>Error: <strong id="audit-error-count" style="color:#e74c3c;">0</strong></span>
+        </div>
+        <div id="audit-logs-container" style="max-height:300px;overflow-y:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                <thead style="position:sticky;top:0;background:#2a2a3e;">
+                    <tr style="text-align:left;color:var(--text-muted);">
+                        <th style="padding:8px;border-bottom:1px solid #333;">Time</th>
+                        <th style="padding:8px;border-bottom:1px solid #333;">Action</th>
+                        <th style="padding:8px;border-bottom:1px solid #333;">User</th>
+                        <th style="padding:8px;border-bottom:1px solid #333;">Severity</th>
+                        <th style="padding:8px;border-bottom:1px solid #333;">Details</th>
+                    </tr>
+                </thead>
+                <tbody id="audit-logs-body">
+                    <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text-muted);">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card">
     <div class="card-header">
         <span>Firewall Security</span>
         <span id="fw-status-indicator" style="font-size:12px;color:var(--text-muted);">Loading...</span>
@@ -581,5 +624,67 @@ loadMinerStatus();
 
 // Auto-refresh every 30 seconds
 setInterval(loadMinerStatus, 30000);
+
+// Audit Log Viewer
+async function loadAuditLogs(action = '', user = '', severity = '', limit = 100, offset = 0) {
+    const tbody = document.getElementById('audit-logs-body');
+    const actionFilter = document.getElementById('audit-search').value;
+    const userFilter = document.getElementById('audit-user').value;
+    const severityFilter = document.getElementById('audit-severity').value;
+    
+    try {
+        let url = '/api/audit/logs?limit=' + limit + '&offset=' + offset;
+        if (actionFilter) url += '&action=' + encodeURIComponent(actionFilter);
+        if (userFilter) url += '&user=' + encodeURIComponent(userFilter);
+        
+        const resp = await fetch(url);
+        const data = await resp.json();
+        
+        if (!data.success) {
+            tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--danger);">Error: ' + data.error + '</td></tr>';
+            return;
+        }
+        
+        const logs = data.logs || [];
+        if (logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text-muted);">No audit logs found</td></tr>';
+            document.getElementById('audit-total').textContent = '0';
+            return;
+        }
+        
+        // Update stats
+        const infoCount = logs.filter(l => l.severity === 'info').length;
+        const warningCount = logs.filter(l => l.severity === 'warning').length;
+        const errorCount = logs.filter(l => l.severity === 'error').length;
+        document.getElementById('audit-total').textContent = logs.length;
+        document.getElementById('audit-info-count').textContent = infoCount;
+        document.getElementById('audit-warning-count').textContent = warningCount;
+        document.getElementById('audit-error-count').textContent = errorCount;
+        
+        // Render table
+        tbody.innerHTML = logs.map(log => {
+            const details = log.details ? JSON.stringify(log.details) : '-';
+            const severityColor = log.severity === 'error' ? 'color:#e74c3c;' : (log.severity === 'warning' ? 'color:#f39c12;' : 'color:#3498db;');
+            const timestamp = log.timestamp ? log.timestamp.replace('T', ' ').substring(0, 19) : '-';
+            return '<tr style="border-bottom:1px solid #333;">' +
+                '<td style="padding:8px;color:var(--text-muted);">' + timestamp + '</td>' +
+                '<td style="padding:8px;font-weight:600;">' + (log.action || '-') + '</td>' +
+                '<td style="padding:8px;">' + (log.user || '-') + '</td>' +
+                '<td style="padding:8px;' + severityColor + '">' + (log.severity || 'info') + '</td>' +
+                '<td style="padding:8px;color:var(--text-muted);font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">' + details + '</td>' +
+                '</tr>';
+        }).join('');
+        
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--danger);">Error: ' + e.message + '</td></tr>';
+    }
+}
+
+function refreshAuditLogs() {
+    loadAuditLogs();
+}
+
+// Load audit stats on page load
+loadAuditLogs();
 </script>
 {% endblock %}

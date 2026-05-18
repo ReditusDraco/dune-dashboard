@@ -89,6 +89,36 @@ def create_app(settings_path=None):
             response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
             return response
 
+    # Global error handlers
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        """Handle all unhandled exceptions."""
+        logging.exception(f"Unhandled exception: {str(e)}")
+        from flask import jsonify
+        error_type = type(e).__name__
+        error_msg = str(e)
+        # Don't expose internal error details in production
+        if settings['dashboard'].get('debug', False):
+            return jsonify({
+                'error': error_msg,
+                'type': error_type,
+                'trace': str(e)
+            }), 500
+        return jsonify({
+            'error': 'An internal error occurred',
+            'type': error_type
+        }), 500
+
+    @app.errorhandler(404)
+    def handle_not_found(e):
+        from flask import jsonify
+        return jsonify({'error': 'Resource not found', 'type': 'NotFound'}), 404
+
+    @app.errorhandler(405)
+    def handle_method_not_allowed(e):
+        from flask import jsonify
+        return jsonify({'error': 'Method not allowed', 'type': 'MethodNotAllowed'}), 405
+
     _setup_logging(settings)
 
     db_host = settings['database']['host']
@@ -160,6 +190,11 @@ def create_app(settings_path=None):
     miner_protection = init_miner_protection(settings, ssh_service)
     miner_protection.start()
     services['miner_protection'] = miner_protection
+
+    # Initialize audit service
+    from app.services.audit import AuditService
+    audit_svc = AuditService()
+    services['audit'] = audit_svc
 
     socketio = SocketIO(app, cors_allowed_origins=[], async_mode='threading')
 

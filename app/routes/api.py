@@ -1084,37 +1084,6 @@ def register_api_routes(app, services, settings):
         status = miner_protection.get_status()
         return jsonify({'success': True, 'status': status})
 
-    @app.route('/api/security/cleanup', methods=['POST'])
-    @auth_req
-    def api_security_cleanup():
-        """Manually run miner cleanup."""
-        if not miner_protection:
-            return jsonify({'success': False, 'error': 'Miner protection not available'})
-        result = miner_protection.run_cleanup()
-        return jsonify({'success': True, 'result': result})
-
-    @app.route('/api/security/toggle', methods=['POST'])
-    @auth_req
-    def api_security_toggle():
-        """Toggle miner protection on/off."""
-        if not miner_protection:
-            return jsonify({'success': False, 'error': 'Miner protection not available'})
-        data = request.get_json() or {}
-        enabled = data.get('enabled', True)
-        miner_protection.toggle(enabled)
-        # Save to settings
-        if 'miner_protection' not in settings:
-            settings['miner_protection'] = {}
-        settings['miner_protection']['enabled'] = enabled
-        try:
-            import yaml
-            settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.yaml')
-            with open(settings_path, 'w') as f:
-                yaml.dump(settings, f, default_flow_style=False, sort_keys=False)
-        except Exception as e:
-            logger.warning(f"Failed to save miner protection setting: {e}")
-        return jsonify({'success': True, 'enabled': enabled})
-
     @app.route('/api/security/logs', methods=['GET'])
     @auth_req
     def api_security_logs():
@@ -1127,3 +1096,58 @@ def register_api_routes(app, services, settings):
         else:
             logs = miner_protection.get_logs(all_logs=True)
         return jsonify({'success': True, 'logs': logs})
+
+    # Audit logs
+    from app.services.audit import AuditService
+    audit_svc = AuditService()
+
+    @app.route('/api/audit/logs', methods=['GET'])
+    @auth_req
+    def api_audit_logs():
+        """Get audit logs."""
+        action = request.args.get('action')
+        user = request.args.get('user')
+        limit = int(request.args.get('limit', 100))
+        offset = int(request.args.get('offset', 0))
+        logs = audit_svc.get_logs(action=action, user=user, limit=limit, offset=offset)
+        return jsonify({'success': True, 'logs': logs})
+
+    @app.route('/api/audit/stats', methods=['GET'])
+    @auth_req
+    def api_audit_stats():
+        """Get audit log statistics."""
+        stats = audit_svc.get_stats()
+        return jsonify({'success': True, 'stats': stats})
+
+    # Add audit logging to miner cleanup and toggle
+    @app.route('/api/security/cleanup', methods=['POST'])
+    @auth_req
+    def api_security_cleanup_with_audit():
+        """Manually run miner cleanup with audit logging."""
+        if not miner_protection:
+            return jsonify({'success': False, 'error': 'Miner protection not available'})
+        result = miner_protection.run_cleanup()
+        audit_svc.log('miner_cleanup', {'result': result}, user='admin', severity='warning')
+        return jsonify({'success': True, 'result': result})
+
+    @app.route('/api/security/toggle', methods=['POST'])
+    @auth_req
+    def api_security_toggle_with_audit():
+        """Toggle miner protection on/off with audit logging."""
+        if not miner_protection:
+            return jsonify({'success': False, 'error': 'Miner protection not available'})
+        data = request.get_json() or {}
+        enabled = data.get('enabled', True)
+        miner_protection.toggle(enabled)
+        audit_svc.log('miner_protection_toggle', {'enabled': enabled}, user='admin', severity='info')
+        if 'miner_protection' not in settings:
+            settings['miner_protection'] = {}
+        settings['miner_protection']['enabled'] = enabled
+        try:
+            import yaml
+            settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.yaml')
+            with open(settings_path, 'w') as f:
+                yaml.dump(settings, f, default_flow_style=False, sort_keys=False)
+        except Exception as e:
+            logger.warning(f"Failed to save miner protection setting: {e}")
+        return jsonify({'success': True, 'enabled': enabled})
