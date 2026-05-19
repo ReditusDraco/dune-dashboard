@@ -434,8 +434,8 @@ def _setup_logging(settings):
         os.makedirs(os.path.dirname(debug_file), exist_ok=True)
         debug_handler = create_debug_log_handler(
             debug_file,
-            maxBytes=settings['logging']['max_bytes'],
-            backupCount=settings['logging']['backup_count']
+            max_bytes=settings['logging']['max_bytes'],
+            backup_count=settings['logging']['backup_count']
         )
         root_logger.addHandler(debug_handler)
         root_logger.setLevel(logging.DEBUG)
