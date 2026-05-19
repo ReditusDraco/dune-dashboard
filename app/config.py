@@ -1,6 +1,7 @@
 """Settings loader - reads settings.yaml with env var overrides"""
 
 import os
+import socket
 import yaml
 import logging
 import copy
@@ -13,6 +14,7 @@ DEFAULTS = {
         'host': '127.0.0.1',
         'user': 'dune',
         'ssh_key': None,
+        'local_ip': None,
     },
     'dashboard': {
         'host': '127.0.0.1',
@@ -121,6 +123,48 @@ def deep_merge(base, override):
     return result
 
 
+def _detect_local_ip():
+    """Detect local IP address for VM connectivity."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(1)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+        if local_ip:
+            logger.debug(f"Detected local IP: {local_ip}")
+            return local_ip
+    except Exception as e:
+        logger.debug(f"Could not detect local IP: {e}")
+    return '127.0.0.1'
+
+
+def _validate_server_host(settings):
+    """Validate and fix server.host if invalid or placeholder."""
+    server = settings.setdefault('server', {})
+    host = server.get('host', '')
+
+    local_ip = server.get('local_ip')
+    if local_ip:
+        local_ip_str = str(local_ip).strip()
+        if local_ip_str and local_ip_str not in ('', 'null', 'None', 'YOUR_SERVER_IP', 'YOUR_VM_IP'):
+            if local_ip_str.count('.') == 3 and all(part.isdigit() and 0 <= int(part) <= 255 for part in local_ip_str.split('.')):
+                server['host'] = local_ip_str
+                logger.info(f"Using server.local_ip override: {server['host']}")
+                return settings
+
+    host_str = str(host).strip() if host else ''
+    invalid_hosts = ('', 'YOUR_SERVER_IP', 'YOUR_VM_IP', 'null', 'None')
+
+    if host_str in invalid_hosts or not host_str:
+        detected_ip = _detect_local_ip()
+        server['host'] = detected_ip
+        logger.warning(f"Invalid server.host detected, using auto-detected IP: {detected_ip}")
+        logger.warning("To fix: Edit settings.yaml and set server.host to your VM's IP address")
+
+    return settings
+
+
 def _find_missing_keys(defaults, current, path=""):
     """Find keys present in defaults but missing in current."""
     missing = []
@@ -225,5 +269,7 @@ def load_settings(settings_path=None):
     if password_migrated:
         settings['dashboard']['secret_key'] = secrets.token_hex(32)
         logger.warning("Rotated secret_key to invalidate sessions after password migration")
+
+    settings = _validate_server_host(settings)
 
     return settings

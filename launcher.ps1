@@ -1071,9 +1071,9 @@ function Run-Setup {
     try {
         $vmAdapter = Get-VMNetworkAdapter -VMName 'dune-awakening' -ErrorAction SilentlyContinue
         if ($vmAdapter -and $vmAdapter.IPAddresses) {
-            $localIp = $vmAdapter.IPAddresses | Where-Object { Test-IsLocalIP $_ }
-            if ($localIp) {
-                $vmIp = $localIp[0]
+            $validIps = $vmAdapter.IPAddresses | Where-Object { $_ -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$' -and (Test-IsLocalIP $_) }
+            if ($validIps -and $validIps.Count -gt 0) {
+                $vmIp = @($validIps)[0]
                 Write-Host "  Detected local Hyper-V VM IP: $vmIp" -ForegroundColor Green
             }
         }
@@ -1096,11 +1096,17 @@ function Run-Setup {
                 }
             }
             if ($localIps.Count -gt 0) {
-                $vmIp = $localIps[-1]
-                Write-Host "  Detected local IP from SSH history: $vmIp" -ForegroundColor Green
+                $validLocal = $localIps | Where-Object { $_ -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$' }
+                if ($validLocal) {
+                    $vmIp = @($validLocal)[-1]
+                    Write-Host "  Detected local IP from SSH history: $vmIp" -ForegroundColor Green
+                }
             } elseif ($publicIps.Count -gt 0) {
-                $vmIp = $publicIps[-1]
-                Write-Host "  Detected IP from SSH history: $vmIp (verify this is your local VM)" -ForegroundColor Yellow
+                $validPublic = $publicIps | Where-Object { $_ -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$' }
+                if ($validPublic) {
+                    $vmIp = @($validPublic)[-1]
+                    Write-Host "  Detected IP from SSH history: $vmIp (verify this is your local VM)" -ForegroundColor Yellow
+                }
             }
         }
     }
@@ -1115,32 +1121,54 @@ function Run-Setup {
     }
 
     Write-Host ""
-    Write-Host "  VM External IP - used for SSH connection to your game server" -ForegroundColor Cyan
-    $val = Read-Host "  VM Host [$VmHost]"
+    Write-Host "  Access Mode - Choose how you want to access the dashboard:" -ForegroundColor Cyan
+    Write-Host "    Local only (n) - Access from this machine only (recommended)" -ForegroundColor DarkGray
+    Write-Host "    Remote (y)     - Access from other devices on your network" -ForegroundColor DarkGray
+    $val = Read-Host "  Enable remote access? (n)"
+    $EnableRemote = ($val -eq 'y' -or $val -eq 'Y')
+
+    Write-Host ""
+    Write-Host "  VM Host - IP of your game server (for SSH connection)" -ForegroundColor Cyan
+    if ($EnableRemote) {
+        Write-Host "    Example: Your VM's external or LAN IP" -ForegroundColor DarkGray
+    } else {
+        Write-Host "    Example: Your VM's local IP (e.g., 192.168.x.x, 10.x.x.x)" -ForegroundColor DarkGray
+    }
+    $vmHint = $VmHost
+    if ($vmIp -and $vmIp -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') {
+        $vmHint = "$VmHost (detected - press Enter to accept)"
+    }
+    $val = Read-Host "  VM Host [$vmHint]"
     if ($val) { $VmHost = $val }
 
-    Write-Host ""
-    Write-Host "  This Machine's External IP - used for SSL certificate so remote access works" -ForegroundColor Cyan
-    if ($HostIp) { $hostIpHint = "$HostIp (auto-detected)" } else { $hostIpHint = "Your Windows machine's external IP" }
-    $val = Read-Host "  Host IP [$hostIpHint]"
-    if ($val) { $HostIp = $val }
-    elseif (-not $HostIp) { $HostIp = $null }
-
-    Write-Host ""
-    Write-Host "  Domain Name (optional) - for a publicly trusted SSL certificate via Let's Encrypt." -ForegroundColor Cyan
-    Write-Host "  This removes browser warnings for ALL visitors. Requires:" -ForegroundColor Cyan
-    Write-Host "    - A domain (or subdomain) pointing to this machine's external IP" -ForegroundColor Cyan
-    Write-Host "    - Port 80 accessible from the internet" -ForegroundColor Cyan
-    $val = Read-Host "  Domain (leave blank to use local CA instead)"
-    $DomainName = $null
-    if ($val -and $val -match '\S') { $DomainName = $val }
-
-    $LeEmail = $null
-    if ($DomainName) {
+    if ($EnableRemote) {
         Write-Host ""
-        Write-Host "  Email address is required by Let's Encrypt for expiry notifications." -ForegroundColor Cyan
-        $val = Read-Host "  Email Address"
-        if ($val -and $val -match '\S') { $LeEmail = $val }
+        Write-Host "  This Machine's IP - used for SSL certificate (required for remote access)" -ForegroundColor Cyan
+        if ($HostIp) { $hostIpHint = "$HostIp (auto-detected)" } else { $hostIpHint = "Your machine's IP" }
+        $val = Read-Host "  Host IP [$hostIpHint]"
+        if ($val) { $HostIp = $val }
+        elseif (-not $HostIp) { $HostIp = $null }
+
+        Write-Host ""
+        Write-Host "  Domain Name (optional) - for a publicly trusted SSL certificate via Let's Encrypt." -ForegroundColor Cyan
+        Write-Host "  This removes browser warnings for ALL visitors. Requires:" -ForegroundColor Cyan
+        Write-Host "    - A domain (or subdomain) pointing to this machine's IP" -ForegroundColor Cyan
+        Write-Host "    - Port 80 accessible from the internet" -ForegroundColor Cyan
+        $val = Read-Host "  Domain (leave blank to use local CA instead)"
+        $DomainName = $null
+        if ($val -and $val -match '\S') { $DomainName = $val }
+
+        $LeEmail = $null
+        if ($DomainName) {
+            Write-Host ""
+            Write-Host "  Email address is required by Let's Encrypt for expiry notifications." -ForegroundColor Cyan
+            $val = Read-Host "  Email Address"
+            if ($val -and $val -match '\S') { $LeEmail = $val }
+        }
+    } else {
+        $DomainName = $null
+        $LeEmail = $null
+        $HostIp = $null
     }
 
     # Try SSH with the confirmed VM IP to auto-detect namespace
@@ -1258,8 +1286,11 @@ function Run-Setup {
     $UseLetsEncrypt = $false
     $LeCertPath = $null
     $LeKeyPath = $null
+    $SslCert = "null"
+    $SslKey = "null"
 
-    if ($DomainName) {
+    if ($EnableRemote) {
+        if ($DomainName) {
         Write-Host "  Attempting Let's Encrypt certificate for $DomainName..." -ForegroundColor Yellow
 
         $certbotCmd = Get-Command certbot -ErrorAction SilentlyContinue
@@ -1404,20 +1435,12 @@ function Run-Setup {
         $SslCert = "'$LeCertPath'"
         $SslKey = "'$LeKeyPath'"
     }
-
-    # Remote access
-    Write-Host ""
-    $RemoteAccess = Read-Host "  Enable remote access? (y/N)"
-    $EnableRemote = ($RemoteAccess -eq 'y' -or $RemoteAccess -eq 'Y')
+    }
 
     if ($EnableRemote) {
         $DashHost = "0.0.0.0"
-        Write-Host "  Remote access enabled. The dashboard will bind to 0.0.0.0 so localhost, 127.0.0.1, LAN IP, and public IP can all work." -ForegroundColor Green
-        Write-Host "  Dedicated server: allow TCP $DashboardPort in Windows Firewall/cloud firewall." -ForegroundColor Cyan
-        Write-Host "  Home network: port-forward TCP $DashboardPort from your router to this machine's LAN IP." -ForegroundColor Cyan
     } else {
         $DashHost = "127.0.0.1"
-        Write-Host "  Local-only access enabled. Use http(s)://localhost:$DashboardPort or http(s)://127.0.0.1:$DashboardPort." -ForegroundColor Green
     }
 
     $HttpRedirect = $false

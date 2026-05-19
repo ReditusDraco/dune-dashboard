@@ -175,7 +175,7 @@ def create_app(settings_path=None):
         logging.warning(f"Could not create indexes: {e}")
 
     ssh_service = SSHService(
-        host=settings['server'].get('local_ip', settings['server']['host']),
+        host=settings['server']['host'],
         user=settings['server']['user'],
         ssh_key=settings['server'].get('ssh_key')
     )
