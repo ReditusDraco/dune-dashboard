@@ -38,7 +38,6 @@
                     <td>{% if b.is_powered == 'True' %}<span class="badge badge-online">Powered</span>{% elif b.is_powered == 'False' %}<span class="badge" style="background:#666;color:#fff;">Unpowered</span>{% else %}?{% endif %}</td>
                     <td>{{ b.instance_count }}</td>
                     <td style="font-size:11px;font-family:monospace;max-width:200px;word-break:break-all;">{{ b.transform_text or '' }}</td>
-                    <td><button class="btn-delete" data-id="{{ b.id }}" data-type="building" title="Delete">🗑️</button></td>
                 </tr>
                 {% else %}
                 <tr><td colspan="8" class="empty">No buildings found</td></tr>

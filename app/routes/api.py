@@ -608,48 +608,10 @@ def register_api_routes(app, services, settings):
             return jsonify({'success': False, 'error': str(e)})
 
     # Delete vehicle
-    @app.route('/api/vehicles/<int:vehicle_id>', methods=['DELETE'])
-    @auth_req
-    def delete_vehicle(vehicle_id):
-        success, message = vehicle_svc.delete_vehicle(vehicle_id)
+    
         if success:
             return jsonify({'success': True, 'message': message})
         return jsonify({'success': False, 'error': message}), 404 if 'not found' in message.lower() else 500
-
-    # Delete building
-    @app.route('/api/buildings/<int:building_id>', methods=['DELETE'])
-    @auth_req
-    def delete_building(building_id):
-        conn = db.get_connection()
-        if not conn:
-            return jsonify({'success': False, 'error': 'Database connection failed'}), 500
-        cur = None
-        try:
-            cur = conn.cursor()
-            cur.execute("SET session_replication_role = replica")
-            cur.execute("DELETE FROM dune.building_instances WHERE building_id = %s", [building_id])
-            cur.execute("DELETE FROM dune.buildings WHERE id = %s RETURNING id", [building_id])
-            deleted = cur.fetchone()
-            if deleted:
-                cur.execute("DELETE FROM dune.actors WHERE id = %s RETURNING id", [building_id])
-                conn.commit()
-                cur.execute("SET session_replication_role = default")
-                return jsonify({'success': True, 'message': f'Building {building_id} deleted'})
-            else:
-                conn.rollback()
-                cur.execute("SET session_replication_role = default")
-                return jsonify({'success': False, 'error': 'Building not found'}), 404
-        except Exception as e:
-            logger.error(f"Failed to delete building {building_id}: {e}")
-            try:
-                cur.execute("SET session_replication_role = default")
-            except Exception:
-                pass
-            return jsonify({'success': False, 'error': str(e)}), 500
-        finally:
-            if cur:
-                cur.close()
-            db.return_connection(conn)
 
     # Debug endpoints (should be restricted in production)
     @app.route('/api/debug/vehicle_properties/<int:vehicle_id>')

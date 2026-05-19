@@ -57,7 +57,6 @@
                     <td>{% if v.pilot_name %}<span class="badge badge-online">Active</span> <a href="/players/{{ v.pilot_pawn_id }}">{{ v.pilot_name }}</a>{% else %}&mdash;{% endif %}</td>
                     <td>{{ v.map or 'N/A' }}</td>
                     <td style="font-size:11px;font-family:monospace;max-width:250px;word-break:break-all;">{{ v.transform_text or '' }}</td>
-                    <td><button class="btn-delete" data-id="{{ v.id }}" data-type="vehicle" title="Delete">🗑️</button></td>
                 </tr>
                 {% else %}
                 <tr><td colspan="8" class="empty">No vehicles found</td></tr>

@@ -126,33 +126,4 @@ class VehicleService:
             ORDER BY id
         """, [vehicle_id]) or []
 
-    def delete_vehicle(self, vehicle_id):
-        conn = self.db.get_connection()
-        if not conn:
-            return False, "Database connection failed"
-        cur = None
-        try:
-            cur = conn.cursor()
-            cur.execute("SET session_replication_role = replica")
-            cur.execute("DELETE FROM dune.vehicles WHERE id = %s RETURNING id", [vehicle_id])
-            deleted = cur.fetchone()
-            if deleted:
-                cur.execute("DELETE FROM dune.actors WHERE id = %s RETURNING id", [vehicle_id])
-                conn.commit()
-                cur.execute("SET session_replication_role = default")
-                return True, f"Vehicle {vehicle_id} deleted"
-            else:
-                conn.rollback()
-                cur.execute("SET session_replication_role = default")
-                return False, "Vehicle not found"
-        except Exception as e:
-            logger.error(f"Failed to delete vehicle {vehicle_id}: {e}")
-            try:
-                cur.execute("SET session_replication_role = default")
-            except Exception:
-                pass
-            return False, str(e)
-        finally:
-            if cur:
-                cur.close()
-            self.db.return_connection(conn)
+    
