@@ -1735,6 +1735,10 @@ logging:
 }
 
 function Start-Dashboard {
+    param(
+        [switch]$PreserveDebug
+    )
+
     Write-Host ""
     Write-Host "  Starting dashboard..." -ForegroundColor Yellow
     Write-Host ""
@@ -1776,6 +1780,22 @@ print(json.dumps(s))
         return
     }
     $settings = $settingsJson | ConvertFrom-Json
+
+    # Ensure debug logging is disabled for normal start (unless PreserveDebug is set)
+    if (-not $PreserveDebug) {
+        $needsSave = $false
+        if ($settings.logging) {
+            if ($settings.logging.debug_enabled -eq $true) {
+                $settings.logging.debug_enabled = $false
+                $settings.logging.level = "INFO"
+                $needsSave = $true
+            }
+        }
+        if ($needsSave) {
+            $settingsJson = $settings | ConvertTo-Json -Depth 10
+            $settingsJson | python "$env:TEMP\update_settings_debug.py" $settingsFile 2>$null
+        }
+    }
 
     $ServerHost = $settings.server.host
     $SSHUser = $settings.server.user
@@ -2172,6 +2192,19 @@ function Start-DashboardDebug {
     Write-Host "  Starting Dashboard with DEBUG LOGGING enabled" -ForegroundColor Magenta
     Write-Host "  ============================================================" -ForegroundColor Magenta
     Write-Host ""
+    Write-Host "  ⚠️  WARNING: Debug logging can significantly impact performance!" -ForegroundColor Yellow
+    Write-Host "     - Logs every HTTP request/response with full headers" -ForegroundColor Yellow
+    Write-Host "     - Logs all SSH commands and results" -ForegroundColor Yellow
+    Write-Host "     - Logs all database queries" -ForegroundColor Yellow
+    Write-Host "     - Logs all Kubernetes operations" -ForegroundColor Yellow
+    Write-Host "     - Only use this when troubleshooting, not for regular use" -ForegroundColor Yellow
+    Write-Host ""
+
+    $continue = Read-Host "  Continue with debug mode? (y/N)"
+    if ($continue -ne 'y' -and $continue -ne 'Y') {
+        Write-Host "  Cancelled." -ForegroundColor Cyan
+        return
+    }
 
     # Check Python
     if (-not (Test-Python)) {
@@ -2250,8 +2283,8 @@ print('ok')
     Write-Host "  Continuing with dashboard startup..." -ForegroundColor Yellow
     Write-Host ""
 
-    # Now start the dashboard (reuses all the same logic)
-    Start-Dashboard
+    # Now start the dashboard (reuses all the same logic but preserve debug)
+    Start-Dashboard -PreserveDebug
 }
 
 # ── Main Loop ───────────────────────────────────────────────────────────

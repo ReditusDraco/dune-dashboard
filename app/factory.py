@@ -135,18 +135,18 @@ def create_app(settings_path=None):
         
         if debug_mode:
             # Comprehensive debug logging for every request (all sanitized)
-            logger.debug("=" * 60)
-            logger.debug(f"REQUEST: {request.method} {request.path}")
-            logger.debug(f"  User: {sanitize_for_log(user)}")
-            logger.debug(f"  IP: {request.remote_addr}")
-            logger.debug(f"  UA: {sanitize_for_log(request.headers.get('User-Agent', 'Unknown')[:80])}")
-            logger.debug(f"  Referer: {sanitize_for_log(request.headers.get('Referer', 'None'))}")
-            logger.debug(f"  Args: {sanitize_for_log(request.args.to_dict())}")
+            logging.getLogger().debug("=" * 60)
+            logging.getLogger().debug(f"REQUEST: {request.method} {request.path}")
+            logging.getLogger().debug(f"  User: {sanitize_for_log(user)}")
+            logging.getLogger().debug(f"  IP: {request.remote_addr}")
+            logging.getLogger().debug(f"  UA: {sanitize_for_log(request.headers.get('User-Agent', 'Unknown')[:80])}")
+            logging.getLogger().debug(f"  Referer: {sanitize_for_log(request.headers.get('Referer', 'None'))}")
+            logging.getLogger().debug(f"  Args: {sanitize_for_log(request.args.to_dict())}")
             if request.is_json:
-                logger.debug(f"  JSON Body: {sanitize_for_log(request.get_json(silent=True) or {})}")
+                logging.getLogger().debug(f"  JSON Body: {sanitize_for_log(request.get_json(silent=True) or {})}")
             elif request.form:
-                logger.debug(f"  Form: {sanitize_for_log(request.form.to_dict())}")
-            logger.debug(f"  Session: {sanitize_for_log(list(session.keys()) if session else 'None')}")
+                logging.getLogger().debug(f"  Form: {sanitize_for_log(request.form.to_dict())}")
+            logging.getLogger().debug(f"  Session: {sanitize_for_log(list(session.keys()) if session else 'None')}")
             log_request_details(logging.getLogger(), request)
         else:
             logging.debug(f"Request: {request.method} {request.path} from {user}")
@@ -162,12 +162,12 @@ def create_app(settings_path=None):
         
         if debug_mode:
             # Comprehensive debug logging for every response
-            logger.debug(f"RESPONSE: {request.method} {request.path} -> {response.status_code}")
-            logger.debug(f"  Duration: {duration*1000:.1f}ms")
-            logger.debug(f"  Content-Type: {response.content_type}")
-            logger.debug(f"  Content-Length: {response.content_length}")
+            logging.getLogger().debug(f"RESPONSE: {request.method} {request.path} -> {response.status_code}")
+            logging.getLogger().debug(f"  Duration: {duration*1000:.1f}ms")
+            logging.getLogger().debug(f"  Content-Type: {response.content_type}")
+            logging.getLogger().debug(f"  Content-Length: {response.content_length}")
             log_response_details(logging.getLogger(), response, duration * 1000)
-            logger.debug("=" * 60)
+            logging.getLogger().debug("=" * 60)
         else:
             # Only log API requests to avoid noise
             if request.path.startswith('/api') or request.path.startswith('/server'):
