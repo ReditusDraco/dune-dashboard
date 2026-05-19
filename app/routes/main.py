@@ -5,6 +5,7 @@ import logging
 from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 from app.utils.constants import NAV_PAGES, GUILD_ROLES
+from app.utils.debug_logging import sanitize_for_log
 
 logger = logging.getLogger(__name__)
 
