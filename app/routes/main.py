@@ -119,6 +119,7 @@ def register_routes(app, services, settings):
     @app.route('/')
     @login_required
     def overview():
+        logger.debug(f"Page access: / (overview) by user={current_user.id}")
         try:
             counts = player_svc.get_overview_counts()
             data = {
@@ -136,6 +137,7 @@ def register_routes(app, services, settings):
     @app.route('/players')
     @login_required
     def players():
+        logger.debug(f"Page access: /players by user={current_user.id}, args={sanitize_for_log(request.args.to_dict())}")
         try:
             search = request.args.get('search', '')
             faction_id = request.args.get('faction', '')
@@ -207,6 +209,7 @@ def register_routes(app, services, settings):
     @app.route('/vehicles')
     @login_required
     def vehicles():
+        logger.debug(f"Page access: /vehicles by user={current_user.id}")
         try:
             vehicles_list = vehicle_svc.get_all_vehicles()
             return render_template('vehicles.html', vehicles=vehicles_list)
@@ -387,6 +390,7 @@ def register_routes(app, services, settings):
     @app.route('/director')
     @login_required
     def director_page():
+        logger.debug(f"Page access: /director by user={current_user.id}")
         director_port = settings.get('director', {}).get('port', 32479)
         return render_template('director.html', director_port=director_port)
 
@@ -394,6 +398,7 @@ def register_routes(app, services, settings):
     @app.route('/server')
     @login_required
     def server_status():
+        logger.debug(f"Page access: /server by user={current_user.id}")
         try:
             active_servers = db.query("""
                 SELECT server_id, map

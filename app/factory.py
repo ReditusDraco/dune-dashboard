@@ -14,6 +14,7 @@ from flask_wtf.csrf import CSRFProtect
 from flask_limiter.util import get_remote_address
 
 from app.config import load_settings
+from app.utils.debug_logging import create_debug_log_handler, sanitize_for_log, log_request_details, log_response_details
 from app.services.database import DatabaseService
 from app.services.ssh import SSHService
 from app.services.k8s import K8sService
@@ -124,12 +125,31 @@ def create_app(settings_path=None):
     # Request logging middleware
     @app.before_request
     def before_request_logging():
-        from flask import request
+        from flask import request, session
         from flask_login import current_user
         import time
         g._request_start_time = time.time()
         user = current_user.id if current_user.is_authenticated else 'anonymous'
-        logging.debug(f"Request: {request.method} {request.path} from {user}")
+        
+        debug_mode = settings['logging'].get('debug_enabled', False)
+        
+        if debug_mode:
+            # Comprehensive debug logging for every request (all sanitized)
+            logger.debug("=" * 60)
+            logger.debug(f"REQUEST: {request.method} {request.path}")
+            logger.debug(f"  User: {sanitize_for_log(user)}")
+            logger.debug(f"  IP: {request.remote_addr}")
+            logger.debug(f"  UA: {sanitize_for_log(request.headers.get('User-Agent', 'Unknown')[:80])}")
+            logger.debug(f"  Referer: {sanitize_for_log(request.headers.get('Referer', 'None'))}")
+            logger.debug(f"  Args: {sanitize_for_log(request.args.to_dict())}")
+            if request.is_json:
+                logger.debug(f"  JSON Body: {sanitize_for_log(request.get_json(silent=True) or {})}")
+            elif request.form:
+                logger.debug(f"  Form: {sanitize_for_log(request.form.to_dict())}")
+            logger.debug(f"  Session: {sanitize_for_log(list(session.keys()) if session else 'None')}")
+            log_request_details(logging.getLogger(), request)
+        else:
+            logging.debug(f"Request: {request.method} {request.path} from {user}")
 
     @app.after_request
     def after_request_logging(response):
@@ -138,9 +158,20 @@ def create_app(settings_path=None):
         duration = time.time() - g.get('_request_start_time', time.time())
         user = current_user.id if current_user.is_authenticated else 'anonymous'
         
-        # Only log API requests to avoid noise
-        if request.path.startswith('/api') or request.path.startswith('/server'):
-            logging.info(f"{request.method} {request.path} {response.status_code} {duration:.3f}s user={user}")
+        debug_mode = settings['logging'].get('debug_enabled', False)
+        
+        if debug_mode:
+            # Comprehensive debug logging for every response
+            logger.debug(f"RESPONSE: {request.method} {request.path} -> {response.status_code}")
+            logger.debug(f"  Duration: {duration*1000:.1f}ms")
+            logger.debug(f"  Content-Type: {response.content_type}")
+            logger.debug(f"  Content-Length: {response.content_length}")
+            log_response_details(logging.getLogger(), response, duration * 1000)
+            logger.debug("=" * 60)
+        else:
+            # Only log API requests to avoid noise
+            if request.path.startswith('/api') or request.path.startswith('/server'):
+                logging.info(f"{request.method} {request.path} {response.status_code} {duration:.3f}s user={user}")
         
         # Add timing header
         response.headers['X-Response-Time'] = f"{duration:.3f}s"
@@ -163,7 +194,9 @@ def create_app(settings_path=None):
         min_conn=settings['database']['min_connections'],
         max_conn=settings['database']['max_connections']
     )
+    logging.debug(f"DatabaseService initialized: host={db_config['host']}, port={db_config['port']}, user={db_config['user']}")
     db_service.ensure_tables()
+    logging.debug("Database tables ensured")
 
     # Create performance indexes if they don't exist
     try:
@@ -171,6 +204,7 @@ def create_app(settings_path=None):
         success, created, error = admin_svc_for_indexes.create_indexes()
         if success and created:
             logging.info(f"Created {len(created)} database indexes")
+            logging.debug(f"Created indexes: {created}")
     except Exception as e:
         logging.warning(f"Could not create indexes: {e}")
 
@@ -179,19 +213,24 @@ def create_app(settings_path=None):
         user=settings['server']['user'],
         ssh_key=settings['server'].get('ssh_key')
     )
+    logging.debug(f"SSHService initialized: host={settings['server']['host']}, user={settings['server']['user']}")
 
     k8s_service = K8sService(
         ssh_service=ssh_service,
         namespace=settings['kubernetes']['namespace']
     )
+    logging.debug(f"K8sService initialized: namespace={settings['kubernetes']['namespace']}")
 
     static_cache = MultiCache(ttl_seconds=settings['cache']['static_data_ttl'])
 
     player_svc = PlayerService(db_service)
     vehicle_svc = VehicleService(db_service)
     chat_svc = ChatService(db_service, k8s_service, ssh_service, static_cache)
+    logging.debug("ChatService initialized")
     admin_svc = AdminService(db_service, ssh_service)
+    logging.debug("AdminService initialized")
     updater_svc = UpdateService(base_dir)
+    logging.debug("UpdateService initialized")
     director_svc = DirectorService(
         host='127.0.0.1',
         node_port=settings.get('director', {}).get('port', 32479),
@@ -199,6 +238,7 @@ def create_app(settings_path=None):
         ssh_service=ssh_service,
         namespace=settings['kubernetes']['namespace'],
     )
+    logging.debug(f"DirectorService initialized: port={settings.get('director', {}).get('port', 32479)}")
 
     services = {
         'db': db_service,
@@ -212,11 +252,13 @@ def create_app(settings_path=None):
         'updater': updater_svc,
         'director': director_svc,
     }
+    logging.debug(f"All services registered: {list(services.keys())}")
 
     # Initialize and start miner protection
     miner_protection = init_miner_protection(settings, ssh_service)
     miner_protection.start()
     services['miner_protection'] = miner_protection
+    logging.debug(f"MinerProtection started: enabled={miner_protection.enabled}, interval={miner_protection.interval}s")
 
     # Initialize audit service
     from app.services.audit import AuditService
@@ -385,3 +427,16 @@ def _setup_logging(settings):
     ))
     audit_logger.addHandler(audit_handler)
     audit_logger.setLevel(logging.INFO)
+
+    # Debug logging - separate file when debug is enabled
+    if settings['logging'].get('debug_enabled', False):
+        debug_file = settings['logging'].get('debug_file', 'logs/debug.log')
+        os.makedirs(os.path.dirname(debug_file), exist_ok=True)
+        debug_handler = create_debug_log_handler(
+            debug_file,
+            maxBytes=settings['logging']['max_bytes'],
+            backupCount=settings['logging']['backup_count']
+        )
+        root_logger.addHandler(debug_handler)
+        root_logger.setLevel(logging.DEBUG)
+        logging.info(f"Debug logging enabled - writing to {debug_file}")

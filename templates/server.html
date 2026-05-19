@@ -191,24 +191,31 @@
 </div>
 
 <div class="card">
-    <div class="card-header">
-        <span>Admin Management</span>
-        <span style="font-size:12px;color:var(--text-muted);">Coming Soon</span>
-    </div>
-    <div class="card-body">
-        <p style="font-size:14px;color:var(--text-light);">
-            Server admin assignment and player permission management interface.
-            Requires integration with game server authentication system.
-        </p>
-    </div>
-</div>
-
-<div class="card">
     <div class="card-header">Pod Status</div>
     <div class="card-body">
         <button id="refresh-pods" style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Refresh Pods</button>
         <div id="pods-output" style="margin-top:12px;">
             <pre id="pods-text" style="background:#1a1a2e;color:#e0d5c7;padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;">Click refresh to load pod status...</pre>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header" style="cursor:pointer;" onclick="document.getElementById('debug-section').classList.toggle('hidden');">
+        <span>🐛 Debug Logging</span>
+        <span id="debug-status" style="font-size:12px;color:var(--text-muted);">Loading...</span>
+    </div>
+    <div class="card-body" id="debug-section">
+        <div style="margin-bottom:12px;padding:12px;background:#1a1a2e;border-radius:6px;font-size:13px;line-height:1.6;color:#e0d5c7;">
+            <strong style="color:#9b59b6;">📝 Verbose Logging:</strong> Enable to log detailed information about SSH commands, API requests, database queries, and service connections.
+            Logs are written to <code>logs/debug.log</code>. Sanitizes sensitive data (passwords, tokens) automatically.
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="debug-toggle" style="width:18px;height:18px;">
+                <span style="font-size:14px;">Enable debug logging</span>
+            </label>
+            <span id="debug-indicator" style="font-size:12px;color:var(--text-muted);"></span>
         </div>
     </div>
 </div>
@@ -686,5 +693,61 @@ function refreshAuditLogs() {
 
 // Load audit stats on page load
 loadAuditLogs();
+
+// Debug Logging
+const debugToggle = document.getElementById('debug-toggle');
+const debugStatus = document.getElementById('debug-status');
+const debugIndicator = document.getElementById('debug-indicator');
+
+async function loadDebugStatus() {
+    try {
+        const resp = await csrfFetch('/api/settings');
+        const data = await resp.json();
+        if (data.success) {
+            const debugEnabled = data.settings.logging.debug_enabled;
+            debugToggle.checked = debugEnabled;
+            if (debugEnabled) {
+                debugStatus.innerHTML = '<span style="color:var(--success);">✓ Enabled</span>';
+                debugIndicator.textContent = 'Debug logs writing to logs/debug.log';
+            } else {
+                debugStatus.innerHTML = '<span style="color:var(--text-muted);">○ Disabled</span>';
+                debugIndicator.textContent = '';
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load debug status:', e);
+    }
+}
+
+debugToggle.addEventListener('change', async function() {
+    const enabled = this.checked;
+    try {
+        const resp = await csrfFetch('/api/settings/debug', {
+            method: 'POST',
+            body: { enabled: enabled }
+        });
+        const data = await resp.json();
+        if (data.success) {
+            if (enabled) {
+                debugStatus.innerHTML = '<span style="color:var(--success);">✓ Enabled</span>';
+                debugIndicator.textContent = 'Debug logs writing to logs/debug.log';
+                alert('Debug logging enabled! Logs will be written to logs/debug.log');
+            } else {
+                debugStatus.innerHTML = '<span style="color:var(--text-muted);">○ Disabled</span>';
+                debugIndicator.textContent = '';
+                alert('Debug logging disabled.');
+            }
+        } else {
+            alert('Failed to toggle debug: ' + (data.error || 'Unknown error'));
+            this.checked = !enabled;
+        }
+    } catch (e) {
+        alert('Error toggling debug: ' + e.message);
+        this.checked = !enabled;
+    }
+});
+
+// Load debug status on page load
+loadDebugStatus();
 </script>
 {% endblock %}

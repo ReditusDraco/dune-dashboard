@@ -67,6 +67,8 @@ DEFAULTS = {
     'logging': {
         'level': 'INFO',
         'file': 'logs/dashboard.log',
+        'debug_file': 'logs/debug.log',
+        'debug_enabled': False,
         'max_bytes': 10485760,
         'backup_count': 5,
     },
@@ -273,3 +275,41 @@ def load_settings(settings_path=None):
     settings = _validate_server_host(settings)
 
     return settings
+
+
+# Global settings cache for runtime access
+_settings_cache = None
+
+
+def get_settings():
+    """Get current settings (cached for performance)."""
+    global _settings_cache
+    if _settings_cache is None:
+        _settings_cache = load_settings()
+    return _settings_cache
+
+
+def save_settings(settings):
+    """Save settings to YAML file."""
+    global _settings_cache
+    
+    settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.yaml')
+    
+    try:
+        with open(settings_path, 'w') as f:
+            yaml.safe_dump(settings, f, default_flow_style=False, sort_keys=False)
+        
+        # Update cache
+        _settings_cache = settings
+        logger.info(f"Settings saved to {settings_path}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save settings to {settings_path}: {e}")
+        return False
+
+
+def reload_settings():
+    """Force reload settings from file."""
+    global _settings_cache
+    _settings_cache = load_settings()
+    return _settings_cache

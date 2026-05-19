@@ -5,6 +5,7 @@ import threading
 import paramiko
 
 from app.utils.ssh_key import resolve_ssh_key
+from app.utils.debug_logging import sanitize_for_log, log_ssh_command, log_ssh_result
 
 logger = logging.getLogger(__name__)
 
@@ -77,23 +78,35 @@ class SSHService:
         Returns:
             Tuple of (stdout, stderr, return_code).
         """
-        logger.debug("SSH command: %s...", command[:100] if len(command) > 100 else command)
+        cmd_display = command[:150] + '...' if len(command) > 150 else command
+        logger.debug(f"SSH executing: {cmd_display}")
+        
         try:
             client = self._get_client()
             stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
             out = stdout.read().decode('utf-8', errors='replace')
             err = stderr.read().decode('utf-8', errors='replace')
             rc = stdout.channel.recv_exit_status()
+            
+            # Debug logging for result
+            logger.debug(f"SSH result: host={self.host}, user={self.user}, rc={rc}, stdout_len={len(out)}, stderr_len={len(err)}")
+            if err and rc != 0:
+                logger.warning(f"SSH stderr (rc={rc}): {err[:200]}")
+            if out:
+                logger.debug(f"SSH stdout preview: {out[:200]}")
+            
             if rc != 0:
                 cmd_short = command[:80] + '...' if len(command) > 80 else command
                 logger.warning("SSH command failed (rc=%d): cmd=%s err=%s", rc, cmd_short, err[:100] if err else 'none')
             return out, err, rc
         except paramiko.SSHException as e:
-            logger.error("SSH command error: %s", e)
+            logger.error(f"SSH command error ({self.host}): {e}")
+            logger.debug(f"SSH error details: type={type(e).__name__}, args={e.args}")
             self._client = None
             return '', str(e), -1
         except Exception as ex:
-            logger.error("Unexpected SSH command error: %s", ex)
+            logger.error(f"Unexpected SSH command error ({self.host}): {ex}")
+            logger.debug(f"SSH exception details: type={type(ex).__name__}, args={ex.args}")
             self._client = None
             return '', str(ex), -1
 

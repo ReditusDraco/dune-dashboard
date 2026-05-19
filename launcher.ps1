@@ -295,6 +295,10 @@ function Show-Menu {
     Write-Host "      Remove all old Dune Dashboard CA certificates and install a fresh one." -ForegroundColor DarkGray
     Write-Host "      Use this if you have duplicate or expired CA certificates." -ForegroundColor DarkGray
     Write-Host ""
+    Write-Host "  [6] Start Dashboard (Debug Mode)" -ForegroundColor Magenta
+    Write-Host "      Launch dashboard with full debug logging enabled." -ForegroundColor DarkGray
+    Write-Host "      Logs written to logs/debug.log - includes SSH, API, DB, K8s details." -ForegroundColor DarkGray
+    Write-Host ""
     Write-Host "  [Q] Quit" -ForegroundColor White
     Write-Host ""
 }
@@ -2162,6 +2166,74 @@ print(json.dumps(s))
     cmd /c $pkillCmd 2>$null
 }
 
+function Start-DashboardDebug {
+    Write-Host ""
+    Write-Host "  ============================================================" -ForegroundColor Magenta
+    Write-Host "  Starting Dashboard with DEBUG LOGGING enabled" -ForegroundColor Magenta
+    Write-Host "  ============================================================" -ForegroundColor Magenta
+    Write-Host ""
+
+    # Check Python
+    if (-not (Test-Python)) {
+        Write-Host "  Cannot start without Python. Please install Python 3.8+ first." -ForegroundColor Red
+        return
+    }
+
+    # Check settings
+    $settingsFile = Join-Path $ProjectRoot "settings.yaml"
+    if (-not (Test-Path $settingsFile)) {
+        Write-Host "  [ERROR] settings.yaml not found. You need to run setup first." -ForegroundColor Red
+        return
+    }
+
+    # Read current settings
+    $readSettingsScript = @"
+import yaml, json, sys, os
+path = sys.argv[1]
+if not os.path.exists(path):
+    print(json.dumps({}))
+    sys.exit(0)
+with open(path, 'r', encoding='utf-8-sig') as f:
+    s = yaml.safe_load(f) or {}
+print(json.dumps(s))
+"@
+    $readSettingsScript | Out-File -FilePath "$env:TEMP\read_settings_debug.py" -Encoding utf8 -Force
+    $settingsJson = python "$env:TEMP\read_settings_debug.py" $settingsFile 2>$null
+    if (-not $settingsJson) {
+        Write-Host "  [ERROR] Failed to read settings.yaml" -ForegroundColor Red
+        return
+    }
+    $settings = $settingsJson | ConvertFrom-Json
+
+    # Enable debug logging
+    if (-not $settings.logging) {
+        $settings | Add-Member -NotePropertyName "logging" -NotePropertyValue @{}
+    }
+    $settings.logging.debug_enabled = $true
+    $settings.logging.level = "DEBUG"
+
+    # Save updated settings
+    $updateSettingsScript = @"
+import yaml, sys, json
+path = sys.argv[1]
+data = json.loads(sys.stdin.read())
+with open(path, 'w') as f:
+    yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+print('ok')
+"@
+    $updateSettingsScript | Out-File -FilePath "$env:TEMP\update_settings_debug.py" -Encoding utf8 -Force
+    $settingsJson | python "$env:TEMP\update_settings_debug.py" $settingsFile 2>$null
+
+    Write-Host "  [OK] Debug logging enabled in settings.yaml" -ForegroundColor Green
+    Write-Host "  [OK] Log file: logs/debug.log" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Continuing with dashboard startup..." -ForegroundColor Yellow
+    Write-Host ""
+
+    # Now start the dashboard (reuses all the same logic)
+    Start-Dashboard
+}
+
 # ── Main Loop ───────────────────────────────────────────────────────────
 
 Show-Banner
@@ -2176,9 +2248,10 @@ while ($true) {
         "3" { Run-Diagnostics; break }
         "4" { Install-CaCert; break }
         "5" { Clean-CaCerts; break }
+        "6" { Start-DashboardDebug; break }
         "Q" { Write-Host ""; Write-Host "  Goodbye!"; Write-Host ""; exit 0 }
         "q" { Write-Host ""; Write-Host "  Goodbye!"; Write-Host ""; exit 0 }
-        default { Write-Host ""; Write-Host "  Invalid choice. Please enter 1, 2, 3, 4, 5, or Q." -ForegroundColor Yellow; Write-Host "" }
+        default { Write-Host ""; Write-Host "  Invalid choice. Please enter 1, 2, 3, 4, 5, 6, or Q." -ForegroundColor Yellow; Write-Host "" }
     }
 
     Write-Host ""

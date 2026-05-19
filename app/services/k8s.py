@@ -12,14 +12,23 @@ class K8sService:
 
     def run(self, kubectl_command, timeout=30):
         full_cmd = f'sudo kubectl {kubectl_command} -n {self.namespace}'
-        return self.ssh.run(full_cmd, timeout=timeout)
+        logger.debug(f"K8s executing: kubectl {kubectl_command} -n {self.namespace}")
+        result = self.ssh.run(full_cmd, timeout=timeout)
+        out, err, rc = result
+        if rc != 0:
+            logger.debug(f"K8s command failed (rc={rc}): {err[:100] if err else 'no error'}")
+        else:
+            logger.debug(f"K8s command OK, output lines: {len(out.split(chr(10))) if out else 0}")
+        return result
 
     def get_pods(self):
         out, err, rc = self.run('get pods -o name')
         if rc != 0:
             logger.error(f"Failed to get pods: {err}")
             return []
-        return [line.replace('pod/', '').strip() for line in (out or '').strip().split('\n') if line.strip()]
+        pods = [line.replace('pod/', '').strip() for line in (out or '').strip().split('\n') if line.strip()]
+        logger.debug(f"Found {len(pods)} pods in namespace {self.namespace}")
+        return pods
 
     def find_pod_by_pattern(self, pattern):
         pods = self.get_pods()

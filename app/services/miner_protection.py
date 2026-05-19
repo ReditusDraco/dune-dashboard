@@ -167,10 +167,10 @@ class MinerProtection:
         if not self.enabled:
             return
 
-        logger.info("Running miner protection check...")
+        logger.debug("Running miner protection check...")
         result = self._cleanup_miner()
         self._log_result(result)
-        logger.info(f"Miner check result: {result['status']} - {result['details']}")
+        logger.debug(f"Miner check result: {result['status']} - {result['details']}")
 
     def _background_loop(self):
         """Background thread loop."""
@@ -178,7 +178,7 @@ class MinerProtection:
             try:
                 self._run_check()
             except Exception as e:
-                logger.error(f"Miner protection check failed: {e}")
+                logger.debug(f"Miner protection check failed: {e}")
             time.sleep(self.interval)
 
     def start(self):

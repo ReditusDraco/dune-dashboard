@@ -121,14 +121,19 @@ class DatabaseService:
         try:
             conn = self.get_connection()
             if not conn:
+                logger.warning("Database health check: no connection available")
                 return False
             cur = conn.cursor()
             cur.execute('SELECT 1')
             cur.fetchone()
             cur.close()
             self.return_connection(conn)
+            db_host = self.db_config.get('host', 'unknown')
+            db_port = self.db_config.get('port', 'unknown')
+            logger.debug(f"Database health check OK (host={db_host}, port={db_port})")
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Database health check FAILED: {e}")
             return False
 
     def ensure_tables(self):

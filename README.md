@@ -44,6 +44,7 @@ If you're testing this project, grab builds from nightly for the latest features
 - **Settings Migration**: Automatically adds new configuration options to `settings.yaml` when updating, so you never miss a feature.
 - **Cross-Platform**: Works on Windows (`.bat`/`.ps1`) and Linux/macOS (`.sh`).
 - **Organized Logging**: Launcher logs are automatically categorized by type (SSH, K8s, database, etc.) with sensitive data redacted. Old logs are cleaned up after 30 days, oversized files are truncated at 10 MB.
+- **Debug Mode**: Enable verbose debug logging via launcher (option 6) or the Server page UI. Logs detailed information about all HTTP requests/responses, SSH commands, database queries, Kubernetes operations, and service health checks. All sensitive data (passwords, tokens, keys) is automatically sanitized before writing to log files. Debug logs are written to `logs/debug.log`.
 
 ## License
 
@@ -75,6 +76,7 @@ This project is **Source Available** under the [Dune Dashboard Source License (D
     - **[3] Run Diagnostics** — Check your system for common issues
     - **[4] Install CA Certificate** — Install the local CA into Windows Trusted Root store (removes browser SSL warnings)
     - **[5] Clean & Reinstall CA Certificate** — Remove old CA certificates and install a fresh one
+    - **[6] Start Dashboard (Debug Mode)** — Launch with full debug logging enabled
     - **[Q] Quit** — Exit the launcher
 
 3. **First-time Setup** (option 2)

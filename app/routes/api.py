@@ -1133,37 +1133,87 @@ def register_api_routes(app, services, settings):
             'checks': {}
         }
         
+        # Debug logging for connection status checks
+        debug_mode = settings.get('logging', {}).get('debug_enabled', False)
+        
         # Check database
         try:
             db.execute('SELECT 1')
             health['checks']['database'] = {'status': 'ok'}
+            if debug_mode:
+                logger.debug("Health check: Database connection OK")
         except Exception as e:
             health['checks']['database'] = {'status': 'error', 'message': str(e)}
             health['status'] = 'degraded'
+            logger.warning(f"Health check: Database connection FAILED - {e}")
         
         # Check SSH
         try:
             out, err, rc = ssh.run('echo OK')
             if rc == 0 and 'OK' in out:
                 health['checks']['ssh'] = {'status': 'ok'}
+                if debug_mode:
+                    logger.debug(f"Health check: SSH connection OK to {ssh.host}")
             else:
                 health['checks']['ssh'] = {'status': 'error', 'message': 'SSH command failed'}
                 health['status'] = 'degraded'
+                logger.warning(f"Health check: SSH command failed (rc={rc})")
         except Exception as e:
             health['checks']['ssh'] = {'status': 'error', 'message': str(e)}
             health['status'] = 'degraded'
+            logger.warning(f"Health check: SSH connection FAILED - {e}")
         
         # Check Kubernetes
         try:
             out, err, rc = k8s.run('get nodes')
             if rc == 0:
                 health['checks']['kubernetes'] = {'status': 'ok'}
+                if debug_mode:
+                    node_count = len(out.split('\n')) - 1 if out else 0
+                    logger.debug(f"Health check: Kubernetes OK - {node_count} nodes")
             else:
                 health['checks']['kubernetes'] = {'status': 'error', 'message': 'kubectl failed'}
                 health['status'] = 'degraded'
+                logger.warning(f"Health check: kubectl failed - {err[:100]}")
         except Exception as e:
             health['checks']['kubernetes'] = {'status': 'error', 'message': str(e)}
             health['status'] = 'degraded'
+            logger.warning(f"Health check: Kubernetes FAILED - {e}")
+        
+        # Check BGD (Battlegroup Director) pod
+        try:
+            ns = settings.get('kubernetes', {}).get('namespace', '')
+            bgd_out, bgd_err, bgd_rc = k8s.run(f"get pods -n {ns} -l app={ns}-bgd-deploy -o jsonpath='{{.items[*].status.phase}}'")
+            if bgd_rc == 0 and bgd_out:
+                pod_status = bgd_out.strip()
+                if 'Running' in pod_status:
+                    health['checks']['bgd'] = {'status': 'ok', 'phase': pod_status}
+                    if debug_mode:
+                        logger.debug(f"Health check: BGD pod {pod_status}")
+                else:
+                    health['checks']['bgd'] = {'status': 'degraded', 'phase': pod_status}
+                    logger.warning(f"Health check: BGD pod not running - {pod_status}")
+            else:
+                health['checks']['bgd'] = {'status': 'unavailable'}
+                logger.warning("Health check: BGD pod not found")
+        except Exception as e:
+            health['checks']['bgd'] = {'status': 'error', 'message': str(e)}
+            logger.warning(f"Health check: BGD check FAILED - {e}")
+        
+        # Check RabbitMQ (if accessible)
+        try:
+            mq_out, mq_err, mq_rc = k8s.run(f"get pods -n {ns} -l app=rabbitmq -o jsonpath='{{.items[*].status.phase}}'")
+            if mq_rc == 0 and mq_out:
+                mq_status = mq_out.strip()
+                if 'Running' in mq_status:
+                    health['checks']['rabbitmq'] = {'status': 'ok', 'phase': mq_status}
+                    if debug_mode:
+                        logger.debug(f"Health check: RabbitMQ pod {mq_status}")
+                else:
+                    health['checks']['rabbitmq'] = {'status': 'degraded', 'phase': mq_status}
+                    logger.warning(f"Health check: RabbitMQ not running - {mq_status}")
+        except Exception as e:
+            health['checks']['rabbitmq'] = {'status': 'unavailable', 'message': 'RabbitMQ check skipped'}
         
         # Check miner protection
         if miner_protection:
@@ -1182,3 +1232,62 @@ def register_api_routes(app, services, settings):
         
         status_code = 200 if health['status'] == 'healthy' else 503
         return jsonify(health), status_code
+
+    # Settings API - get and update dashboard settings
+    @app.route('/api/settings', methods=['GET'])
+    @login_required
+    def get_settings():
+        """Get current dashboard settings (filtered)."""
+        try:
+            from app.config import get_settings
+            current_settings = get_settings()
+            
+            # Filter out sensitive values
+            safe_settings = {
+                'logging': {
+                    'level': current_settings.get('logging', {}).get('level', 'INFO'),
+                    'debug_enabled': current_settings.get('logging', {}).get('debug_enabled', False),
+                },
+                'miner_protection': {
+                    'enabled': current_settings.get('miner_protection', {}).get('enabled', False),
+                },
+                'shell_enabled': current_settings.get('shell', {}).get('shell_enabled', True),
+            }
+            return jsonify({'success': True, 'settings': safe_settings})
+        except Exception as e:
+            logger.error(f"Failed to get settings: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/settings/debug', methods=['POST'])
+    @login_required
+    def toggle_debug():
+        """Toggle debug logging on/off."""
+        try:
+            from app.config import get_settings, save_settings
+            current_settings = get_settings()
+            data = request.get_json() or {}
+            
+            debug_enabled = data.get('enabled', False)
+            
+            if 'logging' not in current_settings:
+                current_settings['logging'] = {}
+            current_settings['logging']['debug_enabled'] = debug_enabled
+            
+            save_settings(current_settings)
+            
+            # Apply the change to the running logger
+            if debug_enabled:
+                logging.getLogger().setLevel(logging.DEBUG)
+                logger.info("Debug logging enabled via API")
+            else:
+                logging.getLogger().setLevel(logging.INFO)
+                logger.info("Debug logging disabled via API")
+            
+            return jsonify({
+                'success': True, 
+                'debug_enabled': debug_enabled,
+                'message': f"Debug logging {'enabled' if debug_enabled else 'disabled'}"
+            })
+        except Exception as e:
+            logger.error(f"Failed to toggle debug: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
