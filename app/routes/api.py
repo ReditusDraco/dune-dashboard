@@ -45,7 +45,7 @@ def register_api_routes(app, services, settings):
         limiter = Limiter(
             app=app,
             key_func=get_remote_address,
-            default_limits=["2000 per hour"],  # High limit for single admin access
+            default_limits=[],  # Disabled
             storage_uri="memory://",
         )
     else:

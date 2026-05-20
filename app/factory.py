@@ -271,11 +271,11 @@ def create_app(settings_path=None):
 
     socketio = SocketIO(app, cors_allowed_origins=[], async_mode='threading')
 
-    # Initialize rate limiter
+    # Initialize rate limiter (disabled)
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
-        default_limits=["200 per day", "50 per hour"],
+        default_limits=[],
         storage_uri="memory://",
     )
     app.limiter = limiter
@@ -382,6 +382,69 @@ def create_app(settings_path=None):
             logging.info("SSL: Background certificate monitor started")
         except Exception as e:
             logging.debug(f"Could not initialize SSL cert monitor: {e}")
+
+    # Start connection monitor for auto-reconnection on server restart/VM reboot
+    try:
+        def _connection_monitor():
+            """Background thread that monitors and auto-reconnects services."""
+            import time
+            check_interval = 60  # Check every 60 seconds
+            consecutive_failures = 0
+            max_consecutive_failures = 5
+
+            while True:
+                time.sleep(check_interval)
+                try:
+                    ssh_svc = services.get('ssh')
+                    db_svc = services.get('db')
+
+                    # Check SSH connection
+                    ssh_ok = False
+                    if ssh_svc:
+                        try:
+                            ssh_ok = ssh_svc.check_connection()
+                        except Exception:
+                            pass
+
+                    # Check database connection
+                    db_ok = False
+                    if db_svc:
+                        try:
+                            db_ok = db_svc.check_health()
+                        except Exception:
+                            pass
+
+                    if ssh_ok and db_ok:
+                        consecutive_failures = 0
+                        logging.debug("Connection monitor: All services healthy")
+                    else:
+                        consecutive_failures += 1
+                        logging.warning(f"Connection monitor: Service issue detected (failures={consecutive_failures})")
+
+                        # Force SSH reconnection if SSH check failed
+                        if not ssh_ok and ssh_svc:
+                            try:
+                                ssh_svc.close()
+                                logging.info("Connection monitor: SSH connection reset, will reconnect on next request")
+                            except Exception:
+                                pass
+
+                        # Reset database pool if multiple consecutive failures
+                        if not db_ok and db_svc and consecutive_failures >= 3:
+                            try:
+                                db_svc.close_all()
+                                logging.info("Connection monitor: Database pool reset due to connection issues")
+                            except Exception:
+                                pass
+
+                except Exception as e:
+                    logging.debug(f"Connection monitor: Background check failed: {e}")
+
+        conn_monitor_thread = threading.Thread(target=_connection_monitor, daemon=True)
+        conn_monitor_thread.start()
+        logging.info("Connection monitor: Background service health monitor started")
+    except Exception as e:
+        logging.debug(f"Could not initialize connection monitor: {e}")
 
     app.dune_settings = settings
     app.dune_services = services

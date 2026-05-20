@@ -109,7 +109,7 @@ class AdminService:
 
             cur.execute("SELECT ps.account_id FROM dune.player_state ps WHERE ps.player_controller_id = %s", [player_id])
             account_row = cur.fetchone()
-            account_id = account_row[0] if account_row else None
+            account_id = account_row[0] if account_row and isinstance(account_row, (tuple, list)) else (account_row.get('account_id') if account_row else None)
 
             ips_to_unblock = []
             if account_id:
@@ -302,8 +302,8 @@ class AdminService:
                             """, [name, name])
                             row = cur.fetchone()
                             if row:
-                                pid = row[0]
-                                account_id = row[1]
+                                pid = row[0] if isinstance(row, (tuple, list)) else row.get('funcom_id')
+                                account_id = row[1] if isinstance(row, (tuple, list)) else row.get('account_id')
                                 cur.execute("""
                                     INSERT INTO dune.player_ips (player_id, ip_address, updated_at)
                                     VALUES (%s, %s, NOW())
@@ -561,7 +561,7 @@ class AdminService:
                     balance = EXCLUDED.balance
                 RETURNING balance
             """, [player_controller_id, currency_id, new_balance])
-            row = cur.fetchone()
+            cur.fetchone()
             conn.commit()
             audit_logger.info(f"EDIT_CURRENCY: player_controller_id={player_controller_id} currency={currency_id} new_balance={new_balance}")
             return True, {"currency_id": currency_id, "new_balance": new_balance}
@@ -603,8 +603,13 @@ class AdminService:
                 conn.rollback()
                 return False, "Item not found"
             conn.commit()
+            if isinstance(row, dict):
+                value_result = row.get(field)
+            else:
+                field_index = {'id': 0, 'stack_size': 1, 'quality_level': 2, 'is_new': 3}.get(field, 0)
+                value_result = row[field_index]
             audit_logger.info(f"EDIT_ITEM: item_id={item_id} field={field} value={value}")
-            return True, {"item_id": item_id, "field": field, "value": row[field]}
+            return True, {"item_id": item_id, "field": field, "value": value_result}
         except Exception as e:
             logger.error(f"Failed to edit item {item_id}: {e}")
             if conn:
@@ -630,7 +635,7 @@ class AdminService:
             if not row:
                 conn.rollback()
                 return False, "Item not found"
-            template_name = row[0]
+            template_name = row[0] if isinstance(row, (tuple, list)) else row.get('template_id')
             cur.execute("DELETE FROM dune.items WHERE id = %s", [item_id])
             conn.commit()
             audit_logger.info(f"DELETE_ITEM: item_id={item_id} template={template_name}")
@@ -664,7 +669,8 @@ class AdminService:
         try:
             cur = conn.cursor()
             cur.execute("SELECT id FROM dune.inventories WHERE id = %s", [inventory_id])
-            if not cur.fetchone():
+            row = cur.fetchone()
+            if not row or (isinstance(row, dict) and not row.get('id')):
                 conn.rollback()
                 return False, "Inventory not found"
 
@@ -675,7 +681,10 @@ class AdminService:
             """, [inventory_id, template_id, stack_size, quality_level, inventory_id])
             row = cur.fetchone()
             conn.commit()
-            new_item_id = row[0] if row else None
+            if row:
+                new_item_id = row[0] if isinstance(row, (tuple, list)) else row.get('id')
+            else:
+                new_item_id = None
             audit_logger.info(f"ADD_ITEM: inventory_id={inventory_id} template={template_id} stack={stack_size} quality={quality_level} new_item_id={new_item_id}")
             return True, {"item_id": new_item_id, "template_id": template_id}
         except Exception as e:
