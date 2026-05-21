@@ -141,7 +141,7 @@ class PlayerService:
             LEFT JOIN dune.factions f ON pf.faction_id = f.id
             LEFT JOIN dune.guild_members gm ON ps.player_controller_id = gm.player_id
             LEFT JOIN dune.guilds g ON gm.guild_id = g.guild_id
-            LEFT JOIN dune.player_ips pi ON ps.player_controller_id = pi.player_id
+            LEFT JOIN dashboard.player_ips pi ON ps.player_controller_id = pi.player_id
             WHERE {where_clause}
             ORDER BY player_name
             LIMIT %s OFFSET %s

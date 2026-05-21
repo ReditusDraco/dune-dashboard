@@ -192,7 +192,7 @@ def create_app(settings_path=None):
         db_config,
         min_conn=settings['database']['min_connections'],
         max_conn=settings['database']['max_connections'],
-        db_owner=settings['database'].get('owner', 'dune')
+        dashboard_schema=settings['database'].get('dashboard_schema', 'dashboard')
     )
     logging.debug(f"DatabaseService initialized: host={db_config['host']}, port={db_config['port']}, user={db_config['user']}")
     db_service.ensure_tables()
@@ -225,10 +225,7 @@ def create_app(settings_path=None):
 
     player_svc = PlayerService(db_service)
     vehicle_svc = VehicleService(db_service)
-    chat_svc = ChatService(
-        db_service, k8s_service, ssh_service, static_cache,
-        db_owner=settings['database'].get('owner', 'dune')
-    )
+    chat_svc = ChatService(db_service, k8s_service, ssh_service, static_cache)
     logging.debug("ChatService initialized")
     admin_svc = AdminService(db_service, ssh_service)
     logging.debug("AdminService initialized")

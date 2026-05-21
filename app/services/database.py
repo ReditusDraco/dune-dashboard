@@ -10,11 +10,11 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseService:
-    def __init__(self, db_config, min_conn=2, max_conn=10, db_owner='dune'):
+    def __init__(self, db_config, min_conn=2, max_conn=10, dashboard_schema='dashboard'):
         self.db_config = db_config
         self.min_conn = min_conn
         self.max_conn = max_conn
-        self.db_owner = db_owner
+        self.dashboard_schema = dashboard_schema
         self.pool = None
 
     def init_pool(self):
@@ -142,17 +142,19 @@ class DatabaseService:
         if not conn:
             return
         cur = None
+        schema = self.dashboard_schema
         try:
             cur = conn.cursor()
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS dune.player_ips (
+            cur.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {schema}.player_ips (
                     player_id BIGINT PRIMARY KEY,
                     ip_address INET NOT NULL,
                     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
                 )
             """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS dune.bans (
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {schema}.bans (
                     id SERIAL PRIMARY KEY,
                     player_id BIGINT UNIQUE,
                     account_id BIGINT,
@@ -164,8 +166,8 @@ class DatabaseService:
                     active BOOLEAN DEFAULT TRUE
                 )
             """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS dune.player_actions (
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {schema}.player_actions (
                     id SERIAL PRIMARY KEY,
                     player_id BIGINT NOT NULL,
                     action_type VARCHAR(50) NOT NULL,
@@ -176,14 +178,8 @@ class DatabaseService:
                     created_at TIMESTAMP NOT NULL DEFAULT NOW()
                 )
             """)
-            if self.db_owner:
-                from psycopg2 import sql
-                owner_ident = sql.Identifier(self.db_owner).as_string(conn)
-                cur.execute(f"ALTER TABLE IF EXISTS dune.player_ips OWNER TO {owner_ident}")
-                cur.execute(f"ALTER TABLE IF EXISTS dune.bans OWNER TO {owner_ident}")
-                cur.execute(f"ALTER TABLE IF EXISTS dune.player_actions OWNER TO {owner_ident}")
             conn.commit()
-            logger.info("Dashboard tables ensured (player_ips, bans, player_actions)")
+            logger.info(f"Dashboard tables ensured in schema '{schema}' (player_ips, bans, player_actions)")
         except Exception as e:
             logger.warning(f"Failed to ensure dashboard tables: {e}")
             if conn:

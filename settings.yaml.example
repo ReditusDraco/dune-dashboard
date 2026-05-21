@@ -37,7 +37,7 @@ database:
   schema: "dune"
   min_connections: 2
   max_connections: 10
-  owner: "dune"                  # Game server DB user — tables are reassigned to this owner for backup compatibility
+  dashboard_schema: "dashboard"   # Schema for dashboard's own tables (isolated from game DB for backup compatibility)
 
 # Kubernetes
 kubernetes:

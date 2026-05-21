@@ -50,7 +50,7 @@ class AdminService:
             if account_id:
                 if duration_int == 0:
                     cur.execute("""
-                        INSERT INTO dune.bans (player_id, account_id, reason, note, duration, banned_at, expires_at, active)
+                        INSERT INTO dashboard.bans (player_id, account_id, reason, note, duration, banned_at, expires_at, active)
                         VALUES (%s, %s, %s, %s, %s, NOW(), NULL, TRUE)
                         ON CONFLICT (player_id) DO UPDATE SET
                             account_id = EXCLUDED.account_id, reason = EXCLUDED.reason,
@@ -59,7 +59,7 @@ class AdminService:
                     """, [player_id, account_id, reason, note, duration_int])
                 else:
                     cur.execute("""
-                        INSERT INTO dune.bans (player_id, account_id, reason, note, duration, banned_at, expires_at, active)
+                        INSERT INTO dashboard.bans (player_id, account_id, reason, note, duration, banned_at, expires_at, active)
                         VALUES (%s, %s, %s, %s, %s, NOW(), NOW() + INTERVAL '1 minute' * %s, TRUE)
                         ON CONFLICT (player_id) DO UPDATE SET
                             account_id = EXCLUDED.account_id, reason = EXCLUDED.reason,
@@ -69,7 +69,7 @@ class AdminService:
             else:
                 if duration_int == 0:
                     cur.execute("""
-                        INSERT INTO dune.bans (player_id, reason, note, duration, banned_at, expires_at, active)
+                        INSERT INTO dashboard.bans (player_id, reason, note, duration, banned_at, expires_at, active)
                         VALUES (%s, %s, %s, %s, NOW(), NULL, TRUE)
                         ON CONFLICT (player_id) DO UPDATE SET
                             reason = EXCLUDED.reason, note = EXCLUDED.note,
@@ -78,7 +78,7 @@ class AdminService:
                     """, [player_id, reason, note, duration_int])
                 else:
                     cur.execute("""
-                        INSERT INTO dune.bans (player_id, reason, note, duration, banned_at, expires_at, active)
+                        INSERT INTO dashboard.bans (player_id, reason, note, duration, banned_at, expires_at, active)
                         VALUES (%s, %s, %s, %s, NOW(), NOW() + INTERVAL '1 minute' * %s, TRUE)
                         ON CONFLICT (player_id) DO UPDATE SET
                             reason = EXCLUDED.reason, note = EXCLUDED.note,
@@ -106,7 +106,7 @@ class AdminService:
         cur = None
         try:
             cur = conn.cursor()
-            cur.execute("DELETE FROM dune.bans WHERE player_id = %s", [player_id])
+            cur.execute("DELETE FROM dashboard.bans WHERE player_id = %s", [player_id])
             conn.commit()
 
             cur.execute("SELECT ps.account_id FROM dune.player_state ps WHERE ps.player_controller_id = %s", [player_id])
@@ -116,16 +116,16 @@ class AdminService:
             ips_to_unblock = []
             if account_id:
                 all_ips = self.db.query("""
-                    SELECT ip_address FROM dune.player_ips
+                    SELECT ip_address FROM dashboard.player_ips
                     WHERE player_id IN (SELECT player_controller_id FROM dune.player_state WHERE account_id = %s)
                 """, [account_id]) or []
                 ips_to_unblock = [r.get('ip_address') for r in all_ips if r.get('ip_address')]
             else:
-                ip_row = self.db.query("SELECT ip_address FROM dune.player_ips WHERE player_id = %s", [player_id], one=True)
+                ip_row = self.db.query("SELECT ip_address FROM dashboard.player_ips WHERE player_id = %s", [player_id], one=True)
                 if ip_row and ip_row.get('ip_address'):
                     ips_to_unblock.append(ip_row.get('ip_address'))
 
-            cur.execute("INSERT INTO dune.player_actions (player_id, action_type, reason, duration_minutes) VALUES (%s, 'unban', 'Manual unban', 0)", [player_id])
+            cur.execute("INSERT INTO dashboard.player_actions (player_id, action_type, reason, duration_minutes) VALUES (%s, 'unban', 'Manual unban', 0)", [player_id])
             conn.commit()
 
             with self._iptables_lock:
@@ -159,7 +159,7 @@ class AdminService:
             return False, "Player not found"
 
         player_name = player.get('character_name', 'Unknown')
-        ip_row = self.db.query("SELECT ip_address FROM dune.player_ips WHERE player_id = %s", [player_id], one=True)
+        ip_row = self.db.query("SELECT ip_address FROM dashboard.player_ips WHERE player_id = %s", [player_id], one=True)
         player_ip = ip_row.get('ip_address') if ip_row else None
 
         if not player_ip:
@@ -180,7 +180,7 @@ class AdminService:
         thread = threading.Thread(target=temporary_block, args=(player_ip,), daemon=True)
         thread.start()
 
-        self.db.execute("INSERT INTO dune.player_actions (player_id, action_type, reason, duration_minutes, ip_address) VALUES (%s, 'kick', 'Temporary kick', 1, %s)", [player_id, player_ip])
+        self.db.execute("INSERT INTO dashboard.player_actions (player_id, action_type, reason, duration_minutes, ip_address) VALUES (%s, 'kick', 'Temporary kick', 1, %s)", [player_id, player_ip])
         audit_logger.info(f"KICK: player_id={player_id} player_name={player_name} ip={player_ip}")
 
         return True, f"Player {player_name} kicked (IP {player_ip} blocked for 60 seconds)"
@@ -310,14 +310,14 @@ class AdminService:
                                 pid = row[0] if isinstance(row, (tuple, list)) else row.get('funcom_id')
                                 account_id = row[1] if isinstance(row, (tuple, list)) else row.get('account_id')
                                 cur.execute("""
-                                    INSERT INTO dune.player_ips (player_id, ip_address, updated_at)
+                                    INSERT INTO dashboard.player_ips (player_id, ip_address, updated_at)
                                     VALUES (%s, %s, NOW())
                                     ON CONFLICT (player_id) DO UPDATE SET ip_address = EXCLUDED.ip_address, updated_at = NOW()
                                 """, [pid, ip])
                                 updated += 1
 
                                 ban_check = self.db.query("""
-                                    SELECT player_id FROM dune.bans
+                                    SELECT player_id FROM dashboard.bans
                                     WHERE (player_id = %s OR account_id = %s) AND (active = TRUE OR active IS NULL)
                                     LIMIT 1
                                 """, [pid, account_id], one=True)
@@ -344,7 +344,7 @@ class AdminService:
 
     def set_player_ip(self, player_id, ip_address):
         return self.db.execute("""
-            INSERT INTO dune.player_ips (player_id, ip_address, updated_at)
+            INSERT INTO dashboard.player_ips (player_id, ip_address, updated_at)
             VALUES (%s, %s, NOW())
             ON CONFLICT (player_id) DO UPDATE SET ip_address = EXCLUDED.ip_address, updated_at = NOW()
         """, [player_id, ip_address])
@@ -361,19 +361,19 @@ class AdminService:
     def get_bans(self, limit=50):
         return self.db.query("""
             SELECT b.id, b.player_id, b.reason, b.active, b.banned_at, b.expires_at, ps.character_name
-            FROM dune.bans b
+            FROM dashboard.bans b
             LEFT JOIN dune.player_state ps ON b.player_id = ps.player_controller_id
             ORDER BY b.banned_at DESC
             LIMIT %s
         """, [limit]) or []
 
     def get_player_ban(self, player_id):
-        return self.db.query("SELECT reason, note, duration, banned_at, expires_at FROM dune.bans WHERE player_id = %s", [player_id], one=True)
+        return self.db.query("SELECT reason, note, duration, banned_at, expires_at FROM dashboard.bans WHERE player_id = %s", [player_id], one=True)
 
     def get_player_history(self, player_id, limit=20):
         return self.db.query("""
             SELECT action_type, reason, note, duration_minutes, created_at, ip_address
-            FROM dune.player_actions
+            FROM dashboard.player_actions
             WHERE player_id = %s
             ORDER BY created_at DESC
             LIMIT %s
