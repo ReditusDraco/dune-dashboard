@@ -8,11 +8,12 @@ logger = logging.getLogger(__name__)
 
 
 class ChatService:
-    def __init__(self, db_service, k8s_service, ssh_service, cache):
+    def __init__(self, db_service, k8s_service, ssh_service, cache, db_owner='dune'):
         self.db = db_service
         self.k8s = k8s_service
         self.ssh = ssh_service
         self.cache = cache
+        self.db_owner = db_owner
         self.ensured_table = False
 
     def ensure_history_table(self):
@@ -34,6 +35,8 @@ class ChatService:
                 )
             """)
             self.db.execute("CREATE INDEX IF NOT EXISTS idx_chat_history_timestamp ON dune.chat_history (timestamp DESC)")
+            if self.db_owner:
+                self.db.execute("ALTER TABLE IF EXISTS dune.chat_history OWNER TO %s", (self.db_owner,))
             self.ensured_table = True
             logger.info("Chat history table ready")
             return True

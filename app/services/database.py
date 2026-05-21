@@ -10,10 +10,11 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseService:
-    def __init__(self, db_config, min_conn=2, max_conn=10):
+    def __init__(self, db_config, min_conn=2, max_conn=10, db_owner='dune'):
         self.db_config = db_config
         self.min_conn = min_conn
         self.max_conn = max_conn
+        self.db_owner = db_owner
         self.pool = None
 
     def init_pool(self):
@@ -175,6 +176,10 @@ class DatabaseService:
                     created_at TIMESTAMP NOT NULL DEFAULT NOW()
                 )
             """)
+            if self.db_owner:
+                cur.execute("ALTER TABLE IF EXISTS dune.player_ips OWNER TO %s", (self.db_owner,))
+                cur.execute("ALTER TABLE IF EXISTS dune.bans OWNER TO %s", (self.db_owner,))
+                cur.execute("ALTER TABLE IF EXISTS dune.player_actions OWNER TO %s", (self.db_owner,))
             conn.commit()
             logger.info("Dashboard tables ensured (player_ips, bans, player_actions)")
         except Exception as e:
