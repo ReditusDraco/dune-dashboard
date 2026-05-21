@@ -699,8 +699,8 @@ class AdminService:
                 return False, "Inventory not found"
 
             cur.execute("""
-                INSERT INTO dune.items (inventory_id, template_id, stack_size, quality_level, is_new, position_index)
-                VALUES (%s, %s, %s, %s, FALSE, (SELECT COALESCE(MAX(position_index), 0) + 1 FROM dune.items WHERE inventory_id = %s))
+                INSERT INTO dune.items (inventory_id, template_id, stack_size, quality_level, is_new, position_index, stats)
+                VALUES (%s, %s, %s, %s, FALSE, (SELECT COALESCE(MAX(position_index), 0) + 1 FROM dune.items WHERE inventory_id = %s), '{}')
                 RETURNING id
             """, [inventory_id, template_id, stack_size, quality_level, inventory_id])
             row = cur.fetchone()
