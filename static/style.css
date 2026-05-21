@@ -433,36 +433,46 @@ td a:hover { text-decoration: underline; }
 
 .inv-grid-compact {
     grid-template-columns: repeat(5, 1fr);
-    gap: 4px;
+    gap: 3px;
 }
 
 .inv-grid-compact .inv-grid-slot {
-    min-height: 56px;
+    min-height: 48px;
     border-width: 1px;
+    border-radius: 4px;
 }
 
 .inv-grid-compact .inv-slot-icon {
-    font-size: 16px;
+    font-size: 14px;
+    margin-bottom: 1px;
 }
 
 .inv-grid-compact .inv-slot-name {
-    font-size: 7px;
+    font-size: 6px;
 }
 
 .inv-grid-compact .inv-slot-stack {
-    font-size: 8px;
+    font-size: 7px;
     bottom: 1px;
     right: 2px;
+    padding: 0 2px;
 }
 
 .inv-grid-compact .inv-slot-ammo {
-    font-size: 8px;
+    font-size: 7px;
     top: 1px;
     right: 2px;
 }
 
 .inv-grid-compact .inv-slot-durability-bar {
     height: 2px;
+}
+
+.inv-grid-compact .inv-slot-quality {
+    width: 5px;
+    height: 5px;
+    top: 2px;
+    left: 3px;
 }
 
 .inv-grid-slot {
@@ -574,46 +584,47 @@ td a:hover { text-decoration: underline; }
 .inv-equipped-compact {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 4px;
+    gap: 3px;
     margin-bottom: 12px;
 }
 
 .inv-equipped-compact .inv-grid-slot {
-    min-height: 56px;
+    min-height: 48px;
     border-width: 1px;
-    padding: 4px;
+    border-radius: 4px;
+    padding: 3px;
 }
 
 .inv-equipped-compact .inv-slot-icon {
-    font-size: 16px;
+    font-size: 14px;
 }
 
 .inv-equipped-compact .inv-slot-name {
-    font-size: 7px;
+    font-size: 6px;
 }
 
 .inv-equipped-badge {
-    font-size: 7px;
+    font-size: 6px;
     text-transform: uppercase;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.2px;
     color: var(--text-muted);
     font-weight: 600;
     line-height: 1;
-    margin-bottom: 2px;
+    margin-bottom: 1px;
 }
 
 /* Hotbar */
 .inv-hotbar {
     display: grid;
     grid-template-columns: repeat(10, 1fr);
-    gap: 4px;
+    gap: 3px;
     margin-bottom: 12px;
 }
 
 .inv-hotbar-slot {
     aspect-ratio: 1;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 4px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -622,7 +633,7 @@ td a:hover { text-decoration: underline; }
     position: relative;
     transition: all 0.15s;
     background: var(--card-bg);
-    min-height: 52px;
+    min-height: 44px;
     overflow: hidden;
 }
 
@@ -637,14 +648,14 @@ td a:hover { text-decoration: underline; }
 }
 
 .inv-hotbar-slot .inv-slot-icon {
-    font-size: 18px;
+    font-size: 14px;
     line-height: 1;
     margin-bottom: 1px;
     color: var(--text-light);
 }
 
 .inv-hotbar-slot .inv-slot-name {
-    font-size: 7px;
+    font-size: 6px;
     color: var(--text-muted);
     text-align: center;
     line-height: 1.1;
@@ -657,8 +668,8 @@ td a:hover { text-decoration: underline; }
 .inv-hotbar-slot .inv-slot-stack {
     position: absolute;
     bottom: 1px;
-    right: 3px;
-    font-size: 8px;
+    right: 2px;
+    font-size: 7px;
     font-weight: 700;
     color: var(--text);
     background: rgba(255,255,255,0.8);
@@ -669,7 +680,7 @@ td a:hover { text-decoration: underline; }
 .inv-hotbar-slot .inv-slot-empty-icon {
     color: var(--text-muted);
     opacity: 0.3;
-    font-size: 16px;
+    font-size: 14px;
 }
 
 /* Experimental Warning Banner */
@@ -698,22 +709,22 @@ td a:hover { text-decoration: underline; }
 /* Key Items Grid */
 .inv-key-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 4px;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 3px;
     margin-bottom: 12px;
 }
 
 .inv-key-grid-slot {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 8px;
+    gap: 5px;
+    padding: 4px 6px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 4px;
     cursor: pointer;
     transition: all 0.15s;
     background: var(--card-bg);
-    min-height: 32px;
+    min-height: 28px;
     overflow: hidden;
 }
 
@@ -723,13 +734,13 @@ td a:hover { text-decoration: underline; }
 }
 
 .inv-key-grid-slot .inv-slot-icon {
-    font-size: 14px;
+    font-size: 12px;
     flex-shrink: 0;
     color: var(--text-light);
 }
 
 .inv-key-grid-slot .inv-slot-name {
-    font-size: 11px;
+    font-size: 10px;
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -737,7 +748,7 @@ td a:hover { text-decoration: underline; }
 }
 
 .inv-key-stack {
-    font-size: 10px;
+    font-size: 9px;
     color: var(--text-muted);
     flex-shrink: 0;
     font-weight: 600;
