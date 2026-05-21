@@ -513,6 +513,7 @@ td a:hover { text-decoration: underline; }
     line-height: 1;
     margin-bottom: 2px;
     color: var(--text-light);
+    pointer-events: none;
 }
 
 .inv-slot-name {
@@ -524,6 +525,7 @@ td a:hover { text-decoration: underline; }
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    pointer-events: none;
 }
 
 .inv-slot-stack {
@@ -536,6 +538,7 @@ td a:hover { text-decoration: underline; }
     background: rgba(255,255,255,0.8);
     padding: 0 3px;
     border-radius: 2px;
+    pointer-events: none;
 }
 
 .inv-slot-ammo {
@@ -545,6 +548,7 @@ td a:hover { text-decoration: underline; }
     font-size: 9px;
     font-weight: 600;
     color: #e67e22;
+    pointer-events: none;
 }
 
 .inv-slot-durability-bar {
@@ -555,6 +559,7 @@ td a:hover { text-decoration: underline; }
     height: 3px;
     background: var(--border);
     border-radius: 0 0 4px 4px;
+    pointer-events: none;
     overflow: hidden;
 }
 
@@ -562,6 +567,7 @@ td a:hover { text-decoration: underline; }
     height: 100%;
     background: var(--success);
     transition: width 0.2s;
+    pointer-events: none;
 }
 
 .inv-slot-durability-fill.medium { background: #f39c12; }
@@ -574,12 +580,14 @@ td a:hover { text-decoration: underline; }
     width: 6px;
     height: 6px;
     border-radius: 50%;
+    pointer-events: none;
 }
 
 .inv-slot-empty-icon {
     color: var(--text-muted);
     opacity: 0.3;
     font-size: 18px;
+    pointer-events: none;
 }
 
 /* Equipped Items Grid */
@@ -615,6 +623,7 @@ td a:hover { text-decoration: underline; }
     font-weight: 600;
     line-height: 1;
     margin-bottom: 1px;
+    pointer-events: none;
 }
 
 /* Hotbar */
@@ -656,6 +665,7 @@ td a:hover { text-decoration: underline; }
     line-height: 1;
     margin-bottom: 1px;
     color: var(--text-light);
+    pointer-events: none;
 }
 
 .inv-hotbar-slot .inv-slot-name {
@@ -667,6 +677,7 @@ td a:hover { text-decoration: underline; }
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    pointer-events: none;
 }
 
 .inv-hotbar-slot .inv-slot-stack {
@@ -679,12 +690,14 @@ td a:hover { text-decoration: underline; }
     background: rgba(255,255,255,0.8);
     padding: 0 2px;
     border-radius: 2px;
+    pointer-events: none;
 }
 
 .inv-hotbar-slot .inv-slot-empty-icon {
     color: var(--text-muted);
     opacity: 0.3;
     font-size: 14px;
+    pointer-events: none;
 }
 
 /* Experimental Warning Banner */
@@ -741,6 +754,7 @@ td a:hover { text-decoration: underline; }
     font-size: 12px;
     flex-shrink: 0;
     color: var(--text-light);
+    pointer-events: none;
 }
 
 .inv-key-grid-slot .inv-slot-name {
@@ -749,6 +763,7 @@ td a:hover { text-decoration: underline; }
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    pointer-events: none;
 }
 
 .inv-key-stack {
@@ -756,6 +771,7 @@ td a:hover { text-decoration: underline; }
     color: var(--text-muted);
     flex-shrink: 0;
     font-weight: 600;
+    pointer-events: none;
 }
 
 /* Unknown Section */
