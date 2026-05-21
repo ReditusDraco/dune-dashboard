@@ -437,7 +437,9 @@ td a:hover { text-decoration: underline; }
 }
 
 .inv-grid-compact .inv-grid-slot {
-    min-height: 48px;
+    aspect-ratio: auto;
+    height: 48px;
+    min-height: unset;
     border-width: 1px;
     border-radius: 4px;
 }
@@ -589,7 +591,9 @@ td a:hover { text-decoration: underline; }
 }
 
 .inv-equipped-compact .inv-grid-slot {
-    min-height: 48px;
+    aspect-ratio: auto;
+    height: 48px;
+    min-height: unset;
     border-width: 1px;
     border-radius: 4px;
     padding: 3px;
@@ -622,7 +626,8 @@ td a:hover { text-decoration: underline; }
 }
 
 .inv-hotbar-slot {
-    aspect-ratio: 1;
+    aspect-ratio: auto;
+    height: 44px;
     border: 1px solid var(--border);
     border-radius: 4px;
     display: flex;
@@ -633,7 +638,6 @@ td a:hover { text-decoration: underline; }
     position: relative;
     transition: all 0.15s;
     background: var(--card-bg);
-    min-height: 44px;
     overflow: hidden;
 }
 
