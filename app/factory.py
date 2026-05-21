@@ -380,6 +380,21 @@ def create_app(settings_path=None):
         except Exception as e:
             logging.debug(f"Could not initialize SSL cert monitor: {e}")
 
+    # Re-apply firewall rules on startup (restores iptables after VM reboot)
+    try:
+        admin_svc = services.get('admin')
+        k8s_svc = services.get('k8s')
+        if admin_svc and settings.get('firewall'):
+            success, applied, skipped, err = admin_svc.reapply_firewall_rules(settings, k8s_svc)
+            if applied:
+                logging.info(f"Firewall: re-applied rules for ports {applied}")
+            if skipped:
+                logging.info(f"Firewall: skipped {len(skipped)} ports ({', '.join(skipped)})")
+            if err:
+                logging.warning(f"Firewall: reapply error: {err}")
+    except Exception as e:
+        logging.debug(f"Could not reapply firewall rules on startup: {e}")
+
     # Start connection monitor for auto-reconnection on server restart/VM reboot
     try:
         def _connection_monitor():
@@ -388,6 +403,7 @@ def create_app(settings_path=None):
             check_interval = 60  # Check every 60 seconds
             consecutive_failures = 0
             max_consecutive_failures = 5
+            last_ssh_ok = True  # Track SSH state to detect reconnection
 
             while True:
                 time.sleep(check_interval)
@@ -413,6 +429,20 @@ def create_app(settings_path=None):
 
                     if ssh_ok and db_ok:
                         consecutive_failures = 0
+                        # Re-apply firewall rules after SSH reconnection (VM reboot recovery)
+                        if not last_ssh_ok:
+                            try:
+                                admin_svc = services.get('admin')
+                                k8s_svc = services.get('k8s')
+                                if admin_svc and settings.get('firewall'):
+                                    success, applied, skipped, err = admin_svc.reapply_firewall_rules(settings, k8s_svc)
+                                    if applied:
+                                        logging.info(f"Firewall: re-applied rules after reconnect for ports {applied}")
+                                    if skipped:
+                                        logging.info(f"Firewall: skipped {len(skipped)} ports after reconnect")
+                            except Exception as e:
+                                logging.debug(f"Firewall: reapply after reconnect failed: {e}")
+                        last_ssh_ok = True
                         logging.debug("Connection monitor: All services healthy")
                     else:
                         consecutive_failures += 1
@@ -425,6 +455,7 @@ def create_app(settings_path=None):
                                 logging.info("Connection monitor: SSH connection reset, will reconnect on next request")
                             except Exception:
                                 pass
+                        last_ssh_ok = False
 
                         # Reset database pool if multiple consecutive failures
                         if not db_ok and db_svc and consecutive_failures >= 3:

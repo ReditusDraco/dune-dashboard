@@ -429,6 +429,93 @@ class AdminService:
                 cur.close()
             self.db.return_connection(conn)
 
+    def reapply_firewall_rules(self, settings, k8s_service):
+        """Re-apply iptables firewall rules based on settings after VM reboot.
+        Checks current iptables state first to avoid duplicate rules.
+        Returns (success, applied_ports, skipped_ports, error).
+        """
+        firewall_cfg = settings.get('firewall', {})
+        if not firewall_cfg:
+            return True, [], [], None
+
+        # Resolve BGD NodePort
+        bgd_port = None
+        try:
+            ns = settings.get('kubernetes', {}).get('namespace', '')
+            if ns and k8s_service:
+                out, _, rc = k8s_service.run(f'get svc -n {ns} -o wide')
+                if rc == 0 and out:
+                    for line in out.split('\n'):
+                        if '-bgd-svc' in line and 'NodePort' in line:
+                            parts = line.split()
+                            for p in parts:
+                                if ':' in p and p[0].isdigit():
+                                    port_str = p.split(':')[1].split('/')[0]
+                                    bgd_port = int(port_str)
+                                    break
+        except Exception as e:
+            logger.warning(f"Firewall reapply: failed to resolve BGD NodePort: {e}")
+
+        # Build port map: port -> (setting_key, should_block)
+        port_map = {}
+        port_map[18888] = ('block_filebrowser', firewall_cfg.get('block_filebrowser', False))
+        if bgd_port:
+            port_map[bgd_port] = ('block_director', firewall_cfg.get('block_director', False))
+
+        # Check current iptables state
+        active_ports = [str(p) for p in port_map.keys()]
+        all_ports_re = '|'.join(active_ports) if active_ports else 'NONE'
+        try:
+            out, _, _ = self.ssh.run(
+                f'sudo iptables -L INPUT -n 2>/dev/null | grep -E "dpt:({all_ports_re})"; '
+                f'sudo iptables -L FORWARD -n 2>/dev/null | grep -E "dpt:({all_ports_re})"; '
+                f'sudo iptables -t mangle -L PREROUTING -n 2>/dev/null | grep -E "dpt:({all_ports_re})"',
+                timeout=15
+            )
+        except Exception as e:
+            return False, [], [], f"SSH command failed: {e}"
+
+        blocked_ports = set()
+        for line in out.split('\n'):
+            for port_str in active_ports:
+                if f'dpt:{port_str}' in line and 'DROP' in line:
+                    blocked_ports.add(int(port_str))
+
+        # Apply rules for ports that should be blocked but aren't
+        applied = []
+        skipped = []
+        for port, (key, should_block) in port_map.items():
+            if not should_block:
+                skipped.append(f"{port} (setting=False)")
+                continue
+            if port in blocked_ports:
+                skipped.append(f"{port} (already blocked)")
+                continue
+
+            cmd = (
+                f'sudo iptables -I INPUT 1 -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT && '
+                f'sudo iptables -I INPUT 2 -p tcp --dport {port} -j DROP && '
+                f'sudo iptables -I FORWARD 1 -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT && '
+                f'sudo iptables -I FORWARD 2 -p tcp --dport {port} -j DROP && '
+                f'sudo iptables -t mangle -I PREROUTING 1 -p tcp --dport {port} -s 127.0.0.1 -j ACCEPT && '
+                f'sudo iptables -t mangle -I PREROUTING 2 -p tcp --dport {port} -j DROP'
+            )
+            try:
+                out, err, rc = self.ssh.run(cmd, timeout=20)
+                if rc != 0 and 'already exists' not in (out + err):
+                    logger.warning(f"Firewall reapply: failed to block port {port}: {err}")
+                    skipped.append(f"{port} (failed: {err.strip()})")
+                else:
+                    applied.append(port)
+                    logger.info(f"Firewall reapply: blocked port {port}")
+            except Exception as e:
+                logger.warning(f"Firewall reapply: SSH error for port {port}: {e}")
+                skipped.append(f"{port} (SSH error: {e})")
+
+        if applied:
+            logger.info(f"Firewall reapply: applied rules for ports {applied}")
+        return True, applied, skipped, None
+
     def edit_faction(self, player_controller_id, faction_id):
         if player_controller_id is None or faction_id is None:
             return False, "Missing parameters"
