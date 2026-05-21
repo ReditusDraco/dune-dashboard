@@ -40,7 +40,8 @@ class SSHService:
                 self._client = None
 
             client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.WarningPolicy())
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            logger.debug("SSH host key verification policy set to AutoAddPolicy")
 
             connect_kwargs = {
                 'hostname': self.host,

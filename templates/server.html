@@ -221,36 +221,6 @@
 </div>
 
 <div class="card">
-    <div class="card-header" style="cursor:pointer;" onclick="document.getElementById('miner-section').classList.toggle('hidden');">
-        <span>🔒 Miner Protection</span>
-        <span id="miner-status" style="font-size:12px;color:var(--text-muted);">Loading...</span>
-    </div>
-    <div class="card-body" id="miner-section">
-        <div style="margin-bottom:16px;padding:12px;background:#1a1a2e;border-radius:6px;font-size:13px;line-height:1.6;color:#e0d5c7;">
-            <strong style="color:#f39c12;">⚠️ Background Security:</strong> Your server VM may contain a cryptocurrency miner that reinfects after restarts due to external vulnerabilities.
-            This tool automatically detects and removes it. Enable auto-cleanup to run checks every minute. This feature will be removed once the issue is confirmed resolved.
-        </div>
-        <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                <input type="checkbox" id="miner-auto-toggle" checked style="width:18px;height:18px;">
-                <span style="font-size:14px;">Auto-cleanup (runs every 1 minute)</span>
-            </label>
-            <button id="miner-run-btn" style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Run Cleanup Now</button>
-        </div>
-
-        <div style="margin-bottom:12px;">
-            <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-muted);">Recent Checks (last 15)</div>
-            <pre id="miner-logs" style="background:#1a1a2e;color:#e0d5c7;padding:12px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;max-height:120px;">Loading...</pre>
-        </div>
-
-        <div>
-            <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-muted);">Detection History (last 5)</div>
-            <pre id="miner-detections" style="background:#1a1a2e;color:#e0d5c7;padding:12px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;max-height:100px;">No detections</pre>
-        </div>
-    </div>
-</div>
-
-<div class="card">
     <div class="card-header" style="cursor:pointer;" onclick="document.getElementById('audit-section').classList.toggle('hidden');">
         <span>📋 Audit Log Viewer</span>
         <span id="audit-stats" style="font-size:12px;color:var(--text-muted);">Loading...</span>
@@ -540,97 +510,6 @@ async function loadFwStatus() {
 
 document.getElementById('fw-btn-refresh')?.addEventListener('click', loadFwStatus);
 loadFwStatus();
-
-// Miner Protection
-async function loadMinerStatus() {
-    const statusEl = document.getElementById('miner-status');
-    const logsEl = document.getElementById('miner-logs');
-    const detectionsEl = document.getElementById('miner-detections');
-    const toggleEl = document.getElementById('miner-auto-toggle');
-
-    try {
-        // Get status
-        const statusResp = await csrfFetch('/api/security/status');
-        const statusData = await statusResp.json();
-        if (statusData.success) {
-            const s = statusData.status;
-            toggleEl.checked = s.enabled;
-            if (s.last_detection) {
-                statusEl.innerHTML = '<span style="color:var(--danger);">⚠ Miner detected</span>';
-            } else if (s.last_check && s.last_check.includes('idle')) {
-                statusEl.innerHTML = '<span style="color:var(--text-muted);">○ Waiting for battlegroup</span>';
-            } else {
-                statusEl.innerHTML = '<span style="color:var(--success);">✓ Protected</span>';
-            }
-        }
-
-        // Get all logs (reverse so newest is first)
-        const logsResp = await fetch('/api/security/logs?type=all');
-        const logsData = await logsResp.json();
-        if (logsData.success && logsData.logs && logsData.logs.length > 0) {
-            logsEl.textContent = logsData.logs.reverse().join('\n');
-        } else {
-            logsEl.textContent = 'No checks recorded yet';
-        }
-
-        // Get detection history (reverse so newest is first)
-        const detResp = await fetch('/api/security/logs?type=detections');
-        const detData = await detResp.json();
-        if (detData.success && detData.logs && detData.logs.length > 0) {
-            const reversed = [...detData.logs].reverse();
-            detectionsEl.textContent = reversed.map(d => {
-                return `[${d.timestamp}] ${d.details}`;
-            }).join('\n');
-        } else {
-            detectionsEl.textContent = 'No detections';
-        }
-    } catch (e) {
-        statusEl.textContent = 'Error loading status';
-        logsEl.textContent = 'Error: ' + e.message;
-    }
-}
-
-async function runMinerCleanup() {
-    const btn = document.getElementById('miner-run-btn');
-    btn.disabled = true;
-    btn.textContent = 'Running...';
-
-    try {
-        const resp = await csrfFetch('/api/security/cleanup', { method: 'POST' });
-        const data = await resp.json();
-        btn.textContent = data.result && data.result.status === 'cleaned' ? 'Cleaned!' : 'Done';
-        setTimeout(() => {
-            btn.disabled = false;
-            btn.textContent = 'Run Cleanup Now';
-        }, 2000);
-        loadMinerStatus();
-    } catch (e) {
-        btn.textContent = 'Error: ' + e.message;
-        btn.disabled = false;
-    }
-}
-
-async function toggleMinerProtection(enabled) {
-    try {
-        await csrfFetch('/api/security/toggle', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled: enabled })
-        });
-    } catch (e) {
-        console.error('Failed to toggle miner protection:', e);
-    }
-}
-
-// Initialize
-document.getElementById('miner-auto-toggle')?.addEventListener('change', function(e) {
-    toggleMinerProtection(e.target.checked);
-});
-document.getElementById('miner-run-btn')?.addEventListener('click', runMinerCleanup);
-loadMinerStatus();
-
-// Auto-refresh every 30 seconds
-setInterval(loadMinerStatus, 30000);
 
 // Audit Log Viewer
 async function loadAuditLogs(action = '', user = '', severity = '', limit = 100, offset = 0) {

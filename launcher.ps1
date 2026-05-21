@@ -1524,23 +1524,15 @@ function Run-Setup {
     Write-Host ""
     Write-Host "  Your game server has services exposed to the internet without authentication." -ForegroundColor Yellow
     Write-Host "  This is a SECURITY RISK - these services are vulnerable to automated attacks." -ForegroundColor Yellow
-    Write-Host "  PostgreSQL was ALREADY exploited by cryptocurrency mining malware." -ForegroundColor Red
     Write-Host ""
     Write-Host "  Recommended: Block these ports so only localhost/VPN can reach them:" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  [1] PostgreSQL (port 15432)   - VULNERABLE (ALREADY EXPLOITED - default postgres/postgres)" -ForegroundColor Red
-    Write-Host "  [2] File Browser (port 18888) - VULNERABLE (no auth - exposes server files)" -ForegroundColor Yellow
-    Write-Host "  [3] Battlegroup Director (port 31820) - VULNERABLE (no auth - exposes server API)" -ForegroundColor Yellow
+    Write-Host "  [1] File Browser (port 18888) - VULNERABLE (no auth - exposes server files)" -ForegroundColor Yellow
+    Write-Host "  [2] Battlegroup Director (port 31820) - VULNERABLE (no auth - exposes server API)" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "  You can change these anytime from the Server page in the dashboard." -ForegroundColor Cyan
     Write-Host ""
 
-    $val = Read-Host "  Block PostgreSQL (15432)? (Y/n)"
-    $BlockPostgres = -not ($val -eq 'n' -or $val -eq 'N')
-    if ($BlockPostgres) { Write-Host "  Will block port 15432 (PostgreSQL)" -ForegroundColor Green }
-    else { Write-Host "  Skipped - port 15432 will remain open to the internet" -ForegroundColor Red }
-
-    Write-Host ""
     $val = Read-Host "  Block File Browser (18888)? (Y/n)"
     $BlockFileBrowser = -not ($val -eq 'n' -or $val -eq 'N')
     if ($BlockFileBrowser) { Write-Host "  Will block port 18888 (File Browser)" -ForegroundColor Green }
@@ -1623,7 +1615,6 @@ filebrowser:
 firewall:
   block_filebrowser: $BlockFileBrowser
   block_director: $BlockDirector
-  block_postgres: $BlockPostgres
 
 cache:
   chat_pod_ttl: 60
@@ -1685,7 +1676,6 @@ logging:
         $portsToBlock = @()
         if ($BlockFileBrowser) { $portsToBlock += 18888 }
         if ($BlockDirector) { $portsToBlock += 31820 }
-        if ($BlockPostgres) { $portsToBlock += 15432 }
 
         if ($portsToBlock.Count -gt 0) {
             Write-Host ""

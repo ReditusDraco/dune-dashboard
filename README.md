@@ -38,7 +38,7 @@ If you're testing this project, grab builds from nightly for the latest features
 - **File Browser**: Secure SSH-based file browser for server configuration and logs.
 - **Shell Access**: Interactive VM and Kubernetes pod shells directly in the browser.
 - **Admin Tools**: Ban management, IP detection, kick/unban functionality, and player history.
-- **Firewall Security**: Block unauthenticated game server ports (File Browser, Director, PostgreSQL) from external internet access. Applied via iptables on the game server VM across INPUT, FORWARD, and mangle PREROUTING chains to cover both host services and Kubernetes NodePort traffic. Configurable per-port during setup or from the Server page.
+- **Firewall Security**: Block unauthenticated game server ports (File Browser, Director) from external internet access. Applied via iptables on the game server VM across INPUT, FORWARD, and mangle PREROUTING chains to cover both host services and Kubernetes NodePort traffic. Configurable per-port during setup or from the Server page.
 - **Vehicles & Buildings**: Track owned vehicles, modules, and player structures.
 - **Auto-Update**: Background checker polls GitHub for new commits. Safe file replacement preserves your settings, logs, and SSH keys. One-click update from the dashboard.
 - **Remote Access**: Built-in support for HTTPS and binding to `0.0.0.0` for secure remote management.
@@ -214,6 +214,7 @@ DuneDashboard/
 │   └── websocket/       # Socket.IO handlers
 ├── templates/           # Jinja2 HTML templates
 ├── static/              # CSS and frontend assets
+├── scripts/             # Pre-flight utilities (db_check.py)
 ├── launcher.ps1         # Unified launcher (setup, start, diagnostics, CA tools)
 ├── start.sh             # Linux/macOS entry point
 ├── settings.yaml        # Configuration (gitignored)

@@ -52,7 +52,6 @@ DEFAULTS = {
     'firewall': {
         'block_filebrowser': True,
         'block_director': True,
-        'block_postgres': True,
     },
     'cache': {
         'chat_pod_ttl': 60,
@@ -76,12 +75,6 @@ DEFAULTS = {
     'ssl': {
         'check_interval_hours': 24,
         'renewal_days_before_expiry': 30,
-    },
-    'miner_protection': {
-        'enabled': True,
-        'interval_seconds': 60,
-        'log_file': 'logs/miner-protection.log',
-        'max_log_entries': 1000,
     },
     'maps': {
         'default_map': 'HaggaBasin',
@@ -260,7 +253,7 @@ def load_settings(settings_path=None):
     if auth.get('password') and not auth.get('password_hash'):
         try:
             from argon2 import PasswordHasher
-            ph = PasswordHasher()
+            ph = PasswordHasher(time_cost=3, memory_cost=65536)
             settings['auth']['password_hash'] = ph.hash(str(auth['password']))
             del settings['auth']['password']
             password_migrated = True

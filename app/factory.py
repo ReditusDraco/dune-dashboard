@@ -24,7 +24,6 @@ from app.services.chat import ChatService
 from app.services.admin import AdminService
 from app.services.updater import UpdateService
 from app.services.director import DirectorService
-from app.services.miner_protection import init_miner_protection
 from app.utils.cache import MultiCache
 from app.routes.main import register_routes
 from app.routes.api import register_api_routes
@@ -257,12 +256,6 @@ def create_app(settings_path=None):
         'director': director_svc,
     }
     logging.debug(f"All services registered: {list(services.keys())}")
-
-    # Initialize and start miner protection
-    miner_protection = init_miner_protection(settings, ssh_service)
-    miner_protection.start()
-    services['miner_protection'] = miner_protection
-    logging.debug(f"MinerProtection started: enabled={miner_protection.enabled}, interval={miner_protection.interval}s")
 
     # Initialize audit service
     from app.services.audit import AuditService

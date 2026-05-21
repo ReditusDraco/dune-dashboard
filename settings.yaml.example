@@ -59,7 +59,6 @@ filebrowser:
 firewall:
   block_filebrowser: true      # Block port 18888 (filebrowser - has no auth)
   block_director: true         # Block port 31820 (director - has no auth)
-  block_postgres: true         # Block port 15432 (PostgreSQL - default creds)
 
 # Cache (seconds)
 cache:

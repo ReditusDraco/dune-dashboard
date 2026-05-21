@@ -20,6 +20,8 @@ def _validate_ip(ip):
 
 
 class AdminService:
+    _iptables_lock = threading.Lock()
+
     def __init__(self, db_service, ssh_service):
         self.db = db_service
         self.ssh = ssh_service
@@ -126,12 +128,13 @@ class AdminService:
             cur.execute("INSERT INTO dune.player_actions (player_id, action_type, reason, duration_minutes) VALUES (%s, 'unban', 'Manual unban', 0)", [player_id])
             conn.commit()
 
-            for ip in ips_to_unblock:
-                if not _validate_ip(ip):
-                    logger.warning(f"Skipping invalid IP in unban: {ip}")
-                    continue
-                self.ssh.run(f'sudo iptables -D INPUT -s {ip} -j DROP 2>/dev/null')
-                self.ssh.run(f'sudo iptables -D OUTPUT -d {ip} -j DROP 2>/dev/null')
+            with self._iptables_lock:
+                for ip in ips_to_unblock:
+                    if not _validate_ip(ip):
+                        logger.warning(f"Skipping invalid IP in unban: {ip}")
+                        continue
+                    self.ssh.run(f'sudo iptables -D INPUT -s {ip} -j DROP 2>/dev/null')
+                    self.ssh.run(f'sudo iptables -D OUTPUT -d {ip} -j DROP 2>/dev/null')
 
             audit_logger.info(f"UNBAN: player_id={player_id} ips_cleared={len(ips_to_unblock)}")
             return True, f"Player unbanned. Cleared {len(ips_to_unblock)} IP block(s)."
@@ -166,11 +169,13 @@ class AdminService:
             if not _validate_ip(ip):
                 logger.error(f"Invalid IP address for kick: {ip}")
                 return
-            self.ssh.run(f'sudo iptables -I INPUT -s {ip} -j DROP')
-            self.ssh.run(f'sudo iptables -I OUTPUT -d {ip} -j DROP')
+            with self._iptables_lock:
+                self.ssh.run(f'sudo iptables -I INPUT -s {ip} -j DROP')
+                self.ssh.run(f'sudo iptables -I OUTPUT -d {ip} -j DROP')
             time.sleep(60)
-            self.ssh.run(f'sudo iptables -D INPUT -s {ip} -j DROP')
-            self.ssh.run(f'sudo iptables -D OUTPUT -d {ip} -j DROP')
+            with self._iptables_lock:
+                self.ssh.run(f'sudo iptables -D INPUT -s {ip} -j DROP')
+                self.ssh.run(f'sudo iptables -D OUTPUT -d {ip} -j DROP')
 
         thread = threading.Thread(target=temporary_block, args=(player_ip,), daemon=True)
         thread.start()
@@ -319,8 +324,9 @@ class AdminService:
 
                                 if ban_check:
                                     if _validate_ip(ip):
-                                        self.ssh.run(f'sudo iptables -I INPUT -s {ip} -j DROP')
-                                        self.ssh.run(f'sudo iptables -I OUTPUT -d {ip} -j DROP')
+                                        with self._iptables_lock:
+                                            self.ssh.run(f'sudo iptables -I INPUT -s {ip} -j DROP')
+                                            self.ssh.run(f'sudo iptables -I OUTPUT -d {ip} -j DROP')
                                     else:
                                         logger.warning(f"Skipping invalid IP for ban block: {ip}")
 
@@ -346,8 +352,9 @@ class AdminService:
     def emergency_unban(self, ip):
         if not _validate_ip(ip):
             return False, f"Invalid IP address: {ip}"
-        self.ssh.run(f'sudo iptables -D INPUT -s {ip} -j DROP 2>/dev/null')
-        self.ssh.run(f'sudo iptables -D OUTPUT -d {ip} -j DROP 2>/dev/null')
+        with self._iptables_lock:
+            self.ssh.run(f'sudo iptables -D INPUT -s {ip} -j DROP 2>/dev/null')
+            self.ssh.run(f'sudo iptables -D OUTPUT -d {ip} -j DROP 2>/dev/null')
         audit_logger.info(f"EMERGENCY_UNBAN: ip={ip}")
         return True, f"Unblocked {ip}"
 

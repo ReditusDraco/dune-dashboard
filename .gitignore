@@ -88,12 +88,15 @@ find_*.py
 
 # AI-generated analysis docs
 AI_DOCS/
+AI_FULL_PROJECT_ANALYSIS_MODE/
 
 # Version file (generated dynamically)
 VERSION
 
 # Security scripts (contain VM-specific configs)
 scripts/
+# But track the pre-flight database check needed by the launcher
+!scripts/db_check.py
 
 # Audit logs directory
 app/logs/

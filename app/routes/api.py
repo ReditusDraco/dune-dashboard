@@ -158,7 +158,6 @@ def register_api_routes(app, services, settings):
         bgd_port = _get_bgd_nodeport()
         port_map = {
             'filebrowser': {'port': 18888, 'name': 'File Browser'},
-            'postgres': {'port': 15432, 'name': 'PostgreSQL'},
         }
         if bgd_port:
             port_map['director'] = {'port': bgd_port, 'name': 'Battlegroup Director'}
@@ -200,7 +199,7 @@ def register_api_routes(app, services, settings):
     def firewall_block():
         port = request.form.get('port', type=int)
         bgd_port = _get_bgd_nodeport()
-        allowed_ports = {18888, 15432}
+        allowed_ports = {18888}
         if bgd_port:
             allowed_ports.add(bgd_port)
         if port not in allowed_ports:
@@ -221,8 +220,6 @@ def register_api_routes(app, services, settings):
         port_key = None
         if port == 18888:
             port_key = 'block_filebrowser'
-        elif port == 15432:
-            port_key = 'block_postgres'
         elif port == bgd_port:
             port_key = 'block_director'
         if port_key:
@@ -246,7 +243,7 @@ def register_api_routes(app, services, settings):
     def firewall_unblock():
         port = request.form.get('port', type=int)
         bgd_port = _get_bgd_nodeport()
-        allowed_ports = {18888, 15432}
+        allowed_ports = {18888}
         if bgd_port:
             allowed_ports.add(bgd_port)
         if port not in allowed_ports:
@@ -268,8 +265,6 @@ def register_api_routes(app, services, settings):
         port_key = None
         if port == 18888:
             port_key = 'block_filebrowser'
-        elif port == 15432:
-            port_key = 'block_postgres'
         elif port == bgd_port:
             port_key = 'block_director'
         if port_key:
@@ -1043,31 +1038,6 @@ def register_api_routes(app, services, settings):
             'remote_version': updater._latest_sha,
         })
 
-    # Miner Protection API
-    miner_protection = services.get('miner_protection')
-
-    @app.route('/api/security/status', methods=['GET'])
-    @auth_req
-    def api_security_status():
-        """Get miner protection status."""
-        if not miner_protection:
-            return jsonify({'success': False, 'error': 'Miner protection not available'})
-        status = miner_protection.get_status()
-        return jsonify({'success': True, 'status': status})
-
-    @app.route('/api/security/logs', methods=['GET'])
-    @auth_req
-    def api_security_logs():
-        """Get miner protection logs."""
-        if not miner_protection:
-            return jsonify({'success': False, 'error': 'Miner protection not available'})
-        log_type = request.args.get('type', 'all')
-        if log_type == 'detections':
-            logs = miner_protection.get_detection_history()
-        else:
-            logs = miner_protection.get_logs(all_logs=True)
-        return jsonify({'success': True, 'logs': logs})
-
     # Audit logs
     from app.services.audit import AuditService
     audit_svc = AuditService()
@@ -1089,39 +1059,6 @@ def register_api_routes(app, services, settings):
         """Get audit log statistics."""
         stats = audit_svc.get_stats()
         return jsonify({'success': True, 'stats': stats})
-
-    # Add audit logging to miner cleanup and toggle
-    @app.route('/api/security/cleanup', methods=['POST'])
-    @auth_req
-    def api_security_cleanup_with_audit():
-        """Manually run miner cleanup with audit logging."""
-        if not miner_protection:
-            return jsonify({'success': False, 'error': 'Miner protection not available'})
-        result = miner_protection.run_cleanup()
-        audit_svc.log('miner_cleanup', {'result': result}, user='admin', severity='warning')
-        return jsonify({'success': True, 'result': result})
-
-    @app.route('/api/security/toggle', methods=['POST'])
-    @auth_req
-    def api_security_toggle_with_audit():
-        """Toggle miner protection on/off with audit logging."""
-        if not miner_protection:
-            return jsonify({'success': False, 'error': 'Miner protection not available'})
-        data = request.get_json() or {}
-        enabled = data.get('enabled', True)
-        miner_protection.toggle(enabled)
-        audit_svc.log('miner_protection_toggle', {'enabled': enabled}, user='admin', severity='info')
-        if 'miner_protection' not in settings:
-            settings['miner_protection'] = {}
-        settings['miner_protection']['enabled'] = enabled
-        try:
-            import yaml
-            settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.yaml')
-            with open(settings_path, 'w') as f:
-                yaml.dump(settings, f, default_flow_style=False, sort_keys=False)
-        except Exception as e:
-            logger.warning(f"Failed to save miner protection setting: {e}")
-        return jsonify({'success': True, 'enabled': enabled})
 
     # Health check endpoint (no auth required for monitoring systems)
     @app.route('/api/health')
@@ -1215,16 +1152,6 @@ def register_api_routes(app, services, settings):
         except Exception as e:
             health['checks']['rabbitmq'] = {'status': 'unavailable', 'message': 'RabbitMQ check skipped'}
         
-        # Check miner protection
-        if miner_protection:
-            mp_status = miner_protection.get_status()
-            health['checks']['miner_protection'] = {
-                'status': 'ok' if mp_status.get('enabled') else 'disabled',
-                'enabled': mp_status.get('enabled', False)
-            }
-        else:
-            health['checks']['miner_protection'] = {'status': 'not_configured'}
-        
         # Add dashboard uptime
         start_time = getattr(app, '_start_time', None)
         if start_time:
@@ -1247,9 +1174,6 @@ def register_api_routes(app, services, settings):
                 'logging': {
                     'level': current_settings.get('logging', {}).get('level', 'INFO'),
                     'debug_enabled': current_settings.get('logging', {}).get('debug_enabled', False),
-                },
-                'miner_protection': {
-                    'enabled': current_settings.get('miner_protection', {}).get('enabled', False),
                 },
                 'shell_enabled': current_settings.get('shell', {}).get('shell_enabled', True),
             }
