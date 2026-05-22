@@ -488,6 +488,12 @@ def register_routes(app, services, settings):
             logger.exception("Error in server_status route")
             return render_template('server.html', db_error=f"{type(e).__name__}: {e}")
 
+    # Admin Experimental
+    @app.route('/admin-experimental')
+    @login_required
+    def admin_experimental():
+        return render_template('admin_experimental.html')
+
     # Map - shows locations of players, vehicles, buildings
     @app.route('/map')
     @login_required
