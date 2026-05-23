@@ -8,12 +8,11 @@ logger = logging.getLogger(__name__)
 
 
 class ChatService:
-    def __init__(self, db_service, k8s_service, ssh_service, cache, db_owner='dune'):
+    def __init__(self, db_service, k8s_service, ssh_service, cache):
         self.db = db_service
         self.k8s = k8s_service
         self.ssh = ssh_service
         self.cache = cache
-        self.db_owner = db_owner
         self.ensured_table = False
 
     def ensure_history_table(self):
@@ -21,7 +20,7 @@ class ChatService:
             return True
         try:
             self.db.execute("""
-                CREATE TABLE IF NOT EXISTS dune.chat_history (
+                CREATE TABLE IF NOT EXISTS dashboard.chat_history (
                     id SERIAL PRIMARY KEY,
                     timestamp TIMESTAMP DEFAULT NOW(),
                     channel VARCHAR(50),
@@ -34,11 +33,7 @@ class ChatService:
                     is_admin BOOLEAN DEFAULT FALSE
                 )
             """)
-            self.db.execute("CREATE INDEX IF NOT EXISTS idx_chat_history_timestamp ON dune.chat_history (timestamp DESC)")
-            if self.db_owner:
-                from psycopg2 import sql
-                owner_ident = sql.Identifier(self.db_owner).as_string(None)
-                self.db.execute(f"ALTER TABLE IF EXISTS dune.chat_history OWNER TO {owner_ident}")
+            self.db.execute("CREATE INDEX IF NOT EXISTS idx_chat_history_timestamp ON dashboard.chat_history (timestamp DESC)")
             self.ensured_table = True
             logger.info("Chat history table ready")
             return True
@@ -51,7 +46,7 @@ class ChatService:
         loc_y = location.get('Y', 0) if location else 0
         loc_z = location.get('Z', 0) if location else 0
         return self.db.execute("""
-            INSERT INTO dune.chat_history (channel, sender, message, target, location_x, location_y, location_z, is_admin)
+            INSERT INTO dashboard.chat_history (channel, sender, message, target, location_x, location_y, location_z, is_admin)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, [channel, sender, message, target, loc_x, loc_y, loc_z, is_admin])
 
@@ -66,7 +61,7 @@ class ChatService:
             cur = conn.cursor()
             for msg in messages:
                 cur.execute("""
-                    INSERT INTO dune.chat_history (channel, sender, message, target, location_x, location_y, location_z, is_admin)
+                    INSERT INTO dashboard.chat_history (channel, sender, message, target, location_x, location_y, location_z, is_admin)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, [
                     msg['channel'], msg['sender'], msg['message'],
@@ -92,7 +87,7 @@ class ChatService:
         return self.db.query("""
             SELECT id, timestamp, channel, sender, message, target,
                    location_x, location_y, location_z, is_admin
-            FROM dune.chat_history
+            FROM dashboard.chat_history
             ORDER BY timestamp DESC
             LIMIT %s
         """, [limit])
