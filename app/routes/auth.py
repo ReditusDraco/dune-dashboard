@@ -63,8 +63,11 @@ def init_auth(app, settings, limiter=None, audit_svc=None):
             return AdminUser(user_id)
         return None
 
+    def _apply_rate_limit(f):
+        return limiter.limit("10 per minute")(f) if limiter else f
+
     @app.route('/login', methods=['GET', 'POST'])
-    @limiter.limit("10 per minute") if limiter else lambda f: f
+    @_apply_rate_limit
     def login():
         if current_user.is_authenticated:
             return redirect(url_for('overview'))
