@@ -263,7 +263,8 @@ def create_app(settings_path=None):
     import time
     app._start_time = time.time()
 
-    socketio = SocketIO(app, cors_allowed_origins=[], async_mode='threading')
+    cors_origins = "*" if settings['dashboard']['host'] == '0.0.0.0' else []
+    socketio = SocketIO(app, cors_allowed_origins=cors_origins, async_mode='threading')
 
     # Initialize rate limiter (disabled)
     limiter = Limiter(
