@@ -4,9 +4,14 @@ __pycache__/
 *$py.class
 *.egg-info/
 *.egg
-dist/
+dist/*.egg
 build/
 *.whl
+
+# Frontend
+frontend/node_modules/
+frontend/.pnpm-store/
+frontend/.vite/
 
 # Virtual environments
 venv/
@@ -103,3 +108,9 @@ app/logs/
 
 # Local settings with real credentials
 app/settings.yaml
+
+# Node artifacts
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
