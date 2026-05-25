@@ -1,4 +1,10 @@
 import { useState, useEffect } from 'react'
+import {
+  Box, Flex, Text, Heading, SimpleGrid,
+  Card, Spinner, Progress, Separator, HStack, Circle, VStack
+} from '@chakra-ui/react'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts'
+import { FiUsers, FiActivity, FiShield, FiServer, FiMap, FiDollarSign, FiFileText, FiDatabase, FiTerminal, FiRadio, FiMessageSquare } from 'react-icons/fi'
 import client from '../../api/client'
 import { useApp } from '../../stores/AppContext'
 
@@ -13,10 +19,26 @@ interface Metrics {
   total_flavor_text: number
 }
 
+const STAT_CARDS = [
+  { key: 'total_players', label: 'Total Players', icon: FiUsers, color: 'primary' },
+  { key: 'online_players', label: 'Online', icon: FiActivity, color: 'success' },
+  { key: 'guild_count', label: 'Guilds', icon: FiShield, color: 'info' },
+  { key: 'active_guilds', label: 'Active Guilds', icon: FiShield, color: 'warning' },
+  { key: 'server_count', label: 'Servers', icon: FiServer, color: 'primary' },
+  { key: 'partition_count', label: 'Partitions', icon: FiMap, color: 'info' },
+  { key: 'total_worth', label: 'Total Worth', icon: FiDollarSign, color: 'success' },
+  { key: 'total_flavor_text', label: 'Flavor Text', icon: FiFileText, color: 'warning' },
+] as const
+
+function formatValue(key: string, value: number): string {
+  if (key === 'total_worth') return '$' + Math.round(value).toLocaleString()
+  return value.toLocaleString()
+}
+
 export default function Overview() {
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [loading, setLoading] = useState(true)
-  const { dispatch } = useApp()
+  const { state } = useApp()
 
   useEffect(() => {
     async function load() {
@@ -42,87 +64,223 @@ export default function Overview() {
     return () => es.close()
   }, [])
 
-  const statCards = metrics
+  const onlineRatio = metrics
     ? [
-        { label: 'Total Players', value: metrics.total_players.toLocaleString(), icon: '👥' },
-        { label: 'Online Players', value: metrics.online_players.toLocaleString(), icon: '🟢' },
-        { label: 'Guilds', value: metrics.guild_count.toLocaleString(), icon: '🛡️' },
-        { label: 'Active Guilds', value: metrics.active_guilds.toLocaleString(), icon: '⚔️' },
-        { label: 'Servers', value: metrics.server_count.toLocaleString(), icon: '🖥️' },
-        { label: 'Partitions', value: metrics.partition_count.toLocaleString(), icon: '🗺️' },
-        { label: 'Total Worth', value: '$' + Math.round(metrics.total_worth).toLocaleString(), icon: '💰' },
-        { label: 'Flavor Text', value: metrics.total_flavor_text.toLocaleString(), icon: '📝' },
-      ]
+      { name: 'Online', value: metrics.online_players, color: 'var(--chakra-colors-success-DEFAULT)' },
+      { name: 'Offline', value: Math.max(0, metrics.total_players - metrics.online_players), color: 'var(--chakra-colors-border-DEFAULT)' },
+    ]
     : []
 
+  const guildRatio = metrics
+    ? [
+      { name: 'Active', value: metrics.active_guilds, color: 'var(--chakra-colors-warning-DEFAULT)' },
+      { name: 'Inactive', value: Math.max(0, metrics.guild_count - metrics.active_guilds), color: 'var(--chakra-colors-border-DEFAULT)' },
+    ]
+    : []
+
+  const healthItems = [
+    { label: 'Database', key: 'database' as const, icon: FiDatabase },
+    { label: 'SSH Tunnel', key: 'ssh' as const, icon: FiTerminal },
+    { label: 'BG Director', key: 'bgd' as const, icon: FiRadio },
+    { label: 'RMQ Game', key: 'rmq' as const, icon: FiMessageSquare },
+  ]
+
   return (
-    <div>
-      <h1 className="font-serif text-3xl text-primary mb-6">Dashboard Overview</h1>
+    <Box>
+      <Heading
+        as="h1"
+        fontSize="3xl"
+        fontFamily="Playfair Display, serif"
+        color="primary.DEFAULT"
+        mb={6}
+      >
+        Dashboard Overview
+      </Heading>
 
       {loading ? (
-        <div className="text-text-muted">Loading metrics...</div>
+        <Flex align="center" justify="center" py={16}>
+          <VStack gap={3}>
+            <Spinner size="lg" color="primary.DEFAULT" />
+            <Text color="fg.muted" fontSize="sm">Loading metrics...</Text>
+          </VStack>
+        </Flex>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {statCards.map((card) => (
-            <div
-              key={card.label}
-              className="bg-card-bg border border-border rounded-lg p-5 shadow-card"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-2xl">{card.icon}</span>
-              </div>
-              <div className="text-2xl font-bold text-text-primary mb-1">{card.value}</div>
-              <div className="text-sm text-text-muted">{card.label}</div>
-            </div>
-          ))}
-        </div>
+        <>
+          <SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} gap={4}>
+            {STAT_CARDS.map(({ key, label, icon: Icon, color }) => (
+              <Card.Root
+                key={key}
+                bg="card.bg"
+                borderWidth="1px"
+                borderColor="border"
+                borderRadius="xl"
+                boxShadow="card"
+                _hover={{ transform: 'translateY(-2px)', boxShadow: 'lg' }}
+                transition="all 0.2s"
+              >
+                <Card.Body p={5}>
+                  <Flex justify="space-between" align="start" mb={2}>
+                    <Box
+                      w={10}
+                      h={10}
+                      borderRadius="lg"
+                      bg={`${color}.subtle`}
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      color={`${color}.DEFAULT`}
+                    >
+                      <Icon size={20} />
+                    </Box>
+                  </Flex>
+                  <Text
+                    fontSize="2xl"
+                    fontWeight="bold"
+                    color="fg"
+                    fontFamily="Roboto Mono, monospace"
+                  >
+                    {metrics ? formatValue(key, metrics[key as keyof Metrics]) : '-'}
+                  </Text>
+                  <Text fontSize="xs" color="fg.muted" mt={1}>
+                    {label}
+                  </Text>
+                </Card.Body>
+              </Card.Root>
+            ))}
+          </SimpleGrid>
+
+          <SimpleGrid columns={{ base: 1, lg: 2 }} gap={6} mt={8}>
+            <Card.Root bg="card.bg" borderWidth="1px" borderColor="border" borderRadius="xl" boxShadow="card">
+              <Card.Header borderBottomWidth="1px" borderColor="border" px={5} py={4}>
+                <Text fontFamily="Playfair Display, serif" fontSize="lg" color="primary.DEFAULT" fontWeight="semibold">
+                  Player Activity
+                </Text>
+              </Card.Header>
+              <Card.Body p={5}>
+                {metrics && onlineRatio.length > 0 ? (
+                  <Flex align="center" gap={8}>
+                    <Box w="160px" h="160px">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={onlineRatio}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={45}
+                            outerRadius={70}
+                            paddingAngle={4}
+                            dataKey="value"
+                            stroke="none"
+                          >
+                            {onlineRatio.map((entry, i) => (
+                              <Cell key={i} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <RechartsTooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </Box>
+                    <VStack align="stretch" gap={4} flex={1}>
+                      <Box>
+                        <Flex justify="space-between" mb={1}>
+                          <Text fontSize="sm" color="fg">Online</Text>
+                          <Text fontSize="sm" fontWeight="semibold" color="success.DEFAULT">
+                            {Math.round((metrics.online_players / Math.max(1, metrics.total_players)) * 100)}%
+                          </Text>
+                        </Flex>
+                        <Progress.Root value={Math.round((metrics.online_players / Math.max(1, metrics.total_players)) * 100)} size="sm" borderRadius="full">
+                          <Progress.Track bg="border">
+                            <Progress.Range bg="success.DEFAULT" />
+                          </Progress.Track>
+                        </Progress.Root>
+                      </Box>
+                      <Box>
+                        <Text fontSize="2xs" color="fg.muted" textTransform="uppercase" letterSpacing="wider">
+                          {metrics.online_players.toLocaleString()} of {metrics.total_players.toLocaleString()} players online
+                        </Text>
+                      </Box>
+                    </VStack>
+                  </Flex>
+                ) : (
+                  <Text color="fg.muted" fontSize="sm" textAlign="center">No player data</Text>
+                )}
+              </Card.Body>
+            </Card.Root>
+
+            <Card.Root bg="card.bg" borderWidth="1px" borderColor="border" borderRadius="xl" boxShadow="card">
+              <Card.Header borderBottomWidth="1px" borderColor="border" px={5} py={4}>
+                <Text fontFamily="Playfair Display, serif" fontSize="lg" color="primary.DEFAULT" fontWeight="semibold">
+                  System Health
+                </Text>
+              </Card.Header>
+              <Card.Body p={5}>
+                <VStack align="stretch" gap={4}>
+                  {healthItems.map(({ label, icon: Icon }) => (
+                    <Flex key={label} align="center" justify="space-between">
+                      <Flex align="center" gap={3}>
+                        <Box
+                          w={8}
+                          h={8}
+                          borderRadius="md"
+                          bg={`${state.connectionStatus[label.toLowerCase().replace(' ', '_') as keyof typeof state.connectionStatus] || state.connectionStatus.database ? 'success' : 'danger'}.subtle`}
+                          display="flex"
+                          alignItems="center"
+                          justifyContent="center"
+                        >
+                          <Icon size={14} />
+                        </Box>
+                        <Text fontSize="sm" color="fg">{label}</Text>
+                      </Flex>
+                      <Flex align="center" gap={2}>
+                        <Circle
+                          size="8px"
+                          bg={state.connectionStatus[label.toLowerCase().includes('database') ? 'database' : label.toLowerCase().includes('ssh') ? 'ssh' : label.toLowerCase().includes('bg') ? 'bgd' : 'rmq' as keyof typeof state.connectionStatus] ? 'success.DEFAULT' : 'danger.DEFAULT'}
+                        />
+                        <Text fontSize="xs" color="fg.muted">
+                          {state.connectionStatus[label.toLowerCase().includes('database') ? 'database' : label.toLowerCase().includes('ssh') ? 'ssh' : label.toLowerCase().includes('bg') ? 'bgd' : 'rmq' as keyof typeof state.connectionStatus] ? 'Connected' : 'Disconnected'}
+                        </Text>
+                      </Flex>
+                    </Flex>
+                  ))}
+                </VStack>
+              </Card.Body>
+            </Card.Root>
+          </SimpleGrid>
+
+          <Card.Root bg="card.bg" borderWidth="1px" borderColor="border" borderRadius="xl" boxShadow="card" mt={6}>
+            <Card.Header borderBottomWidth="1px" borderColor="border" px={5} py={4}>
+              <Text fontFamily="Playfair Display, serif" fontSize="lg" color="primary.DEFAULT" fontWeight="semibold">
+                Quick Actions
+              </Text>
+            </Card.Header>
+            <Card.Body p={5}>
+              <SimpleGrid columns={{ base: 2, md: 4 }} gap={3}>
+                {['Broadcast Message', 'Player Search', 'Guild Lookup', 'Server Status'].map((label) => (
+                  <Box
+                    key={label}
+                    as="button"
+                    px={4}
+                    py={3}
+                    bg="primary.subtle"
+                    borderWidth="1px"
+                    borderColor="primary.subtle"
+                    borderRadius="lg"
+                    color="primary.DEFAULT"
+                    fontSize="sm"
+                    fontWeight="medium"
+                    _hover={{ bg: 'primary.DEFAULT', color: 'white', borderColor: 'primary.DEFAULT' }}
+                    transition="all 0.15s"
+                    textAlign="left"
+                    cursor="pointer"
+                  >
+                    {label}
+                  </Box>
+                ))}
+              </SimpleGrid>
+            </Card.Body>
+          </Card.Root>
+        </>
       )}
-
-      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card-bg border border-border rounded-lg p-5 shadow-card">
-          <h2 className="font-serif text-xl text-primary mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <QuickAction label="Broadcast Message" onClick={() => {}} />
-            <QuickAction label="Player Search" onClick={() => {}} />
-            <QuickAction label="Guild Lookup" onClick={() => {}} />
-            <QuickAction label="Server Restart" onClick={() => {}} />
-          </div>
-        </div>
-
-        <div className="bg-card-bg border border-border rounded-lg p-5 shadow-card">
-          <h2 className="font-serif text-xl text-primary mb-4">System Health</h2>
-          <div className="space-y-3">
-            <HealthRow label="Database" status="ok" detail="Connected" />
-            <HealthRow label="SSH Tunnel" status="ok" detail="Connected" />
-            <HealthRow label="BG Director" status="ok" detail="Connected" />
-            <HealthRow label="RMQ Game" status="ok" detail="Connected" />
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function QuickAction({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="px-4 py-3 bg-primary/10 border border-primary/20 rounded-lg text-primary text-sm font-medium hover:bg-primary/20 transition-colors text-left"
-    >
-      {label}
-    </button>
-  )
-}
-
-function HealthRow({ label, status, detail }: { label: string; status: 'ok' | 'warn' | 'error'; detail: string }) {
-  const dotColor = status === 'ok' ? '#27ae60' : status === 'warn' ? '#f39c12' : '#c0392b'
-  return (
-    <div className="flex items-center justify-between text-sm">
-      <div className="flex items-center gap-2">
-        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: dotColor }} />
-        <span className="text-text-secondary">{label}</span>
-      </div>
-      <span className="text-text-muted">{detail}</span>
-    </div>
+    </Box>
   )
 }

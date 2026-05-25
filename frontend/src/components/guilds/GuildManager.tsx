@@ -1,5 +1,17 @@
 import { useState } from 'react'
 import useSWR from 'swr'
+import {
+  Box,
+  Heading,
+  Input,
+  HStack,
+  VStack,
+  SimpleGrid,
+  Button,
+  Table,
+  Text,
+} from '@chakra-ui/react'
+import { FiSearch, FiTrash2, FiAlertTriangle } from 'react-icons/fi'
 import client from '../../api/client'
 import { useApp } from '../../stores/AppContext'
 import DataTable from '../common/DataTable'
@@ -22,6 +34,19 @@ interface GuildMember {
   role_name: string
   player_name: string
   online_status: string
+}
+
+function InfoRow({ label, value }: { label: string; value: any }) {
+  return (
+    <Box>
+      <Text fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">
+        {label}
+      </Text>
+      <Text fontFamily="Roboto Mono, monospace" color="fg">
+        {value ?? 'N/A'}
+      </Text>
+    </Box>
+  )
 }
 
 export default function GuildManager() {
@@ -82,23 +107,38 @@ export default function GuildManager() {
   const guildList: Guild[] = guilds?.success ? guilds.data : []
 
   return (
-    <div>
-      <h1 className="font-serif text-3xl text-primary mb-6">Guild Manager</h1>
+    <Box>
+      <Heading as="h1" fontSize="3xl" fontFamily="Playfair Display, serif" color="primary.DEFAULT" mb={6}>
+        Guild Manager
+      </Heading>
 
-      <div className="mb-6">
-        <div className="relative max-w-md">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search guilds..."
-            className="w-full bg-card-bg border border-border rounded-lg px-4 py-2.5 pl-10 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-          />
-          <svg className="absolute left-3 top-3 w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0" />
-          </svg>
-        </div>
-      </div>
+      <Box position="relative" maxW="md" mb={6}>
+        <Box
+          position="absolute"
+          left={3}
+          top="50%"
+          transform="translateY(-50%)"
+          color="fg.muted"
+          zIndex={1}
+          pointerEvents="none"
+        >
+          <FiSearch size={16} />
+        </Box>
+        <Input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search guilds..."
+          pl={10}
+          bg="card.bg"
+          borderColor="border"
+          borderRadius="lg"
+          fontSize="sm"
+          color="fg"
+          _placeholder={{ color: 'fg.muted' }}
+          _focus={{ borderColor: 'primary.DEFAULT' }}
+        />
+      </Box>
 
       <DataTable
         columns={[
@@ -108,65 +148,173 @@ export default function GuildManager() {
           { header: 'Online', accessor: 'online_count' },
         ]}
         data={guildList}
-        onRowClick={(row) => { setSelected(row); loadDetail(row.guild_id) }}
+        onRowClick={(row) => {
+          setSelected(row as any)
+          loadDetail((row as any).guild_id)
+        }}
         loading={isLoading}
       />
 
-      <Modal open={!!selected} title={selected?.guild_name || ''} onClose={() => { setSelected(null); setDetail(null) }} maxWidth="700px">
+      <Modal
+        open={!!selected}
+        title={selected?.guild_name || ''}
+        onClose={() => {
+          setSelected(null)
+          setDetail(null)
+        }}
+      >
         {selected && detail && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
+          <VStack gap={4} align="stretch">
+            <SimpleGrid columns={2} gap={4}>
               <InfoRow label="Guild ID" value={selected.guild_id} />
               <InfoRow label="Members" value={selected.member_count} />
               <InfoRow label="Faction" value={selected.faction_name || 'None'} />
               <InfoRow label="Description" value={selected.guild_description || 'None'} />
-            </div>
+            </SimpleGrid>
 
-            <div className="border-t border-border pt-4">
-              <h4 className="text-text-muted text-xs uppercase tracking-wider mb-3">Members</h4>
-              <div className="overflow-x-auto rounded-lg border border-border max-h-64 overflow-y-auto">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-card-bg">
-                    <tr className="border-b border-border">
-                      <th className="text-left px-3 py-2 text-text-muted text-[11px] uppercase">Name</th>
-                      <th className="text-left px-3 py-2 text-text-muted text-[11px] uppercase">Role</th>
-                      <th className="text-left px-3 py-2 text-text-muted text-[11px] uppercase">Status</th>
-                      <th className="text-left px-3 py-2 text-text-muted text-[11px] uppercase">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(detail.members || []).map((m: GuildMember) => (
-                      <tr key={m.player_id} className="border-b border-border last:border-0">
-                        <td className="px-3 py-2">{m.player_name}</td>
-                        <td className="px-3 py-2"><span className="px-2 py-0.5 rounded text-[10px] bg-primary/10 text-primary border border-primary/20">{m.role_name}</span></td>
-                        <td className="px-3 py-2 text-xs">{m.online_status}</td>
-                        <td className="px-3 py-2 flex gap-1">
-                          <button onClick={() => handleMemberAction('promote', m.player_id, 90)} className="text-[10px] text-primary hover:underline">Promote</button>
-                          <button onClick={() => handleMemberAction('demote', m.player_id, 50)} className="text-[10px] text-text-muted hover:underline">Demote</button>
-                          <button onClick={() => handleMemberAction('remove', m.player_id)} className="text-[10px] text-danger hover:underline">Remove</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <Box borderTopWidth="1px" borderColor="border" pt={4}>
+              <Text fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted" mb={3}>
+                Members
+              </Text>
+              <Table.ScrollArea borderWidth="1px" borderColor="border" borderRadius="lg" maxH="64">
+                <Table.Root size="sm" variant="line" stickyHeader>
+                  <Table.Header>
+                    <Table.Row bg="bg.subtle">
+                      <Table.ColumnHeader
+                        fontSize="2xs"
+                        textTransform="uppercase"
+                        letterSpacing="wider"
+                        color="fg.muted"
+                      >
+                        Name
+                      </Table.ColumnHeader>
+                      <Table.ColumnHeader
+                        fontSize="2xs"
+                        textTransform="uppercase"
+                        letterSpacing="wider"
+                        color="fg.muted"
+                      >
+                        Role
+                      </Table.ColumnHeader>
+                      <Table.ColumnHeader
+                        fontSize="2xs"
+                        textTransform="uppercase"
+                        letterSpacing="wider"
+                        color="fg.muted"
+                      >
+                        Status
+                      </Table.ColumnHeader>
+                      <Table.ColumnHeader
+                        fontSize="2xs"
+                        textTransform="uppercase"
+                        letterSpacing="wider"
+                        color="fg.muted"
+                      >
+                        Actions
+                      </Table.ColumnHeader>
+                    </Table.Row>
+                  </Table.Header>
+                  <Table.Body>
+                    {(detail.members || []).length === 0 ? (
+                      <Table.Row>
+                        <Table.Cell colSpan={4} textAlign="center" py={8}>
+                          <VStack gap={2} color="fg.muted">
+                            <FiAlertTriangle size={24} />
+                            <Text fontSize="sm">No members found</Text>
+                          </VStack>
+                        </Table.Cell>
+                      </Table.Row>
+                    ) : (
+                      (detail.members || []).map((m: GuildMember) => (
+                        <Table.Row
+                          key={m.player_id}
+                          borderBottomWidth="1px"
+                          borderColor="border"
+                          _hover={{ bg: 'bg.subtle' }}
+                          transition="all 0.15s"
+                        >
+                          <Table.Cell py={2} px={3}>
+                            {m.player_name}
+                          </Table.Cell>
+                          <Table.Cell py={2} px={3}>
+                            <Text
+                              as="span"
+                              fontSize="2xs"
+                              bg="primary.subtle"
+                              color="primary.DEFAULT"
+                              borderWidth="1px"
+                              borderColor="primary.DEFAULT/20"
+                              borderRadius="full"
+                              px={2}
+                              py={0.5}
+                            >
+                              {m.role_name}
+                            </Text>
+                          </Table.Cell>
+                          <Table.Cell py={2} px={3} fontSize="xs">
+                            {m.online_status}
+                          </Table.Cell>
+                          <Table.Cell py={2} px={3}>
+                            <HStack gap={1}>
+                              <Button
+                                variant="ghost"
+                                size="xs"
+                                fontSize="2xs"
+                                color="primary.DEFAULT"
+                                _hover={{ textDecoration: 'underline' }}
+                                onClick={() => handleMemberAction('promote', m.player_id, 90)}
+                              >
+                                Promote
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="xs"
+                                fontSize="2xs"
+                                color="fg.muted"
+                                _hover={{ textDecoration: 'underline', color: 'fg' }}
+                                onClick={() => handleMemberAction('demote', m.player_id, 50)}
+                              >
+                                Demote
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="xs"
+                                fontSize="2xs"
+                                color="danger.DEFAULT"
+                                _hover={{ textDecoration: 'underline' }}
+                                onClick={() => handleMemberAction('remove', m.player_id)}
+                              >
+                                Remove
+                              </Button>
+                            </HStack>
+                          </Table.Cell>
+                        </Table.Row>
+                      ))
+                    )}
+                  </Table.Body>
+                </Table.Root>
+              </Table.ScrollArea>
+            </Box>
 
-            <div className="flex gap-2 pt-4 border-t border-border">
-              <button onClick={handleDisband} className="px-3 py-1.5 rounded text-xs font-medium bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20">Disband Guild</button>
-            </div>
-          </div>
+            <Box borderTopWidth="1px" borderColor="border" pt={4}>
+              <Button
+                variant="outline"
+                size="xs"
+                borderColor="danger.DEFAULT/30"
+                color="danger.DEFAULT"
+                bg="danger.subtle"
+                borderRadius="lg"
+                _hover={{ bg: 'danger.subtle/80' }}
+                transition="all 0.15s"
+                onClick={handleDisband}
+              >
+                <FiTrash2 size={12} style={{ marginRight: 6 }} />
+                Disband Guild
+              </Button>
+            </Box>
+          </VStack>
         )}
       </Modal>
-    </div>
-  )
-}
-
-function InfoRow({ label, value }: { label: string; value: any }) {
-  return (
-    <div>
-      <div className="text-text-muted text-xs uppercase tracking-wider">{label}</div>
-      <div className="text-text-primary font-mono">{value ?? 'N/A'}</div>
-    </div>
+    </Box>
   )
 }

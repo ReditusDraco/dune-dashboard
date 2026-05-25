@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import useSWR from 'swr'
+import { Box, Heading, Input, Flex } from '@chakra-ui/react'
+import { FiSearch } from 'react-icons/fi'
 import client from '../../api/client'
 import { useApp } from '../../stores/AppContext'
 import DataTable from '../common/DataTable'
@@ -30,23 +32,33 @@ export default function Buildings() {
   const buildingList: Building[] = buildingsData?.success ? buildingsData.data : []
 
   return (
-    <div>
-      <h1 className="font-serif text-3xl text-primary mb-6">Buildings</h1>
+    <Box>
+      <Heading as="h1" fontFamily="Playfair Display, serif" color="primary.DEFAULT" fontSize="2xl" mb={6}>
+        Buildings
+      </Heading>
 
-      <div className="mb-6">
-        <div className="relative max-w-md">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search buildings..."
-            className="w-full bg-card-bg border border-border rounded-lg px-4 py-2.5 pl-10 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-          />
-          <svg className="absolute left-3 top-3 w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0" />
-          </svg>
-        </div>
-      </div>
+      <Box position="relative" maxW="md" mb={6}>
+        <Input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search buildings..."
+          bg="card.bg"
+          borderColor="border"
+          borderRadius="lg"
+          px={4}
+          py={2.5}
+          pl={10}
+          fontSize="sm"
+          color="fg"
+          _placeholder={{ color: 'fg.muted' }}
+          _focus={{ borderColor: 'primary.DEFAULT', boxShadow: '0 0 0 1px var(--chakra-colors-primary-DEFAULT)' }}
+          _focusVisible={{ outline: 'none' }}
+        />
+        <Box position="absolute" left={3} top="50%" transform="translateY(-50%)" color="fg.muted">
+          <FiSearch size={16} />
+        </Box>
+      </Box>
 
       <DataTable
         columns={[
@@ -56,10 +68,10 @@ export default function Buildings() {
           {
             header: 'Power',
             accessor: (row) => (
-              <div className="flex gap-1">
+              <Flex gap={1}>
                 {row.is_powered ? <Badge label="Powered" variant="success" /> : <Badge label="Unpowered" variant="default" />}
                 {row.power_level != null && <Badge label={`Lv ${row.power_level}`} variant="default" />}
-              </div>
+              </Flex>
             ),
           },
           { header: 'Instances', accessor: 'instance_count' },
@@ -67,6 +79,6 @@ export default function Buildings() {
         data={buildingList}
         loading={isLoading}
       />
-    </div>
+    </Box>
   )
 }

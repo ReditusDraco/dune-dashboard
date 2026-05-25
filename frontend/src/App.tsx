@@ -1,5 +1,8 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { AppProvider } from './stores/AppContext'
+import { ChakraProvider, defaultSystem } from '@chakra-ui/react'
+import { AppProvider, useApp } from './stores/AppContext'
+import { injectThemeVars } from './themes/inject'
 import { useRealtime } from './hooks/useRealtime'
 import AppShell from './components/layout/AppShell'
 import Overview from './components/overview/Overview'
@@ -17,15 +20,22 @@ import Terminal from './components/shell/Terminal'
 import FileBrowser from './components/files/FileBrowser'
 import Director from './components/director/Director'
 import Settings from './components/settings/Settings'
+import Experimental from './components/experimental/Experimental'
 
 function RealtimeInit() {
   useRealtime()
   return null
 }
 
-function App() {
+function ThemedApp() {
+  const { state } = useApp()
+
+  useEffect(() => {
+    injectThemeVars(state.faction, state.colorMode)
+  }, [state.faction, state.colorMode])
+
   return (
-    <AppProvider>
+    <ChakraProvider value={defaultSystem}>
       <BrowserRouter>
         <RealtimeInit />
         <AppShell>
@@ -45,11 +55,18 @@ function App() {
             <Route path="/files" element={<FileBrowser />} />
             <Route path="/director" element={<Director />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/experimental" element={<Experimental />} />
           </Routes>
         </AppShell>
       </BrowserRouter>
-    </AppProvider>
+    </ChakraProvider>
   )
 }
 
-export default App
+export default function App() {
+  return (
+    <AppProvider>
+      <ThemedApp />
+    </AppProvider>
+  )
+}

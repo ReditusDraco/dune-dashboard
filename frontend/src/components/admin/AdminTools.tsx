@@ -1,4 +1,9 @@
 import { useState } from 'react'
+import {
+  Box, Flex, Heading, Text, Button, Input, Select, Textarea,
+  SimpleGrid, Card, Tabs, Table, VStack, createListCollection,
+} from '@chakra-ui/react'
+import { FiAlertTriangle } from 'react-icons/fi'
 import client from '../../api/client'
 import { useApp } from '../../stores/AppContext'
 
@@ -6,46 +11,96 @@ const SCOPE_OPTIONS = ['all', 'server', 'partition']
 const SERVER_OPTIONS = ['na', 'eu', 'sea', 'sa', 'oc']
 const PARTITION_OPTIONS = ['parrish', 'sietch', 'bazar']
 
+const serverCollection = createListCollection({
+  items: SERVER_OPTIONS.map((s) => ({ value: s, label: s.toUpperCase() })),
+})
+
+const partitionCollection = createListCollection({
+  items: PARTITION_OPTIONS.map((p) => ({ value: p, label: p })),
+})
+
+const itemFieldCollection = createListCollection({
+  items: [
+    { value: 'stack_size', label: 'stack_size' },
+    { value: 'quality_level', label: 'quality_level' },
+    { value: 'durability', label: 'durability' },
+    { value: 'ammo', label: 'ammo' },
+  ],
+})
+
+const demoStateCollection = createListCollection({
+  items: [
+    { value: 'true', label: 'Demo' },
+    { value: 'false', label: 'Normal' },
+  ],
+})
+
+const limitCollection = createListCollection({
+  items: [10, 25, 50, 100, 250].map((n) => ({ value: String(n), label: `${n} entries` })),
+})
+
 export default function AdminTools() {
   const [tab, setTab] = useState<'broadcast' | 'economy' | 'world' | 'character' | 'functions' | 'raw' | 'audit'>('broadcast')
   const { dispatch } = useApp()
 
   return (
-    <div>
-      <h1 className="font-serif text-3xl text-primary mb-6">Admin Tools</h1>
+    <Box>
+      <Heading as="h1" fontFamily="Playfair Display, serif" fontSize="3xl" color="primary.DEFAULT" mb={6}>
+        Admin Tools
+      </Heading>
 
-      <div className="flex gap-1 mb-6 border-b border-border overflow-x-auto no-scrollbar">
-        {([
-          { key: 'broadcast', label: 'Broadcast' },
-          { key: 'economy', label: 'Economy' },
-          { key: 'world', label: 'World' },
-          { key: 'character', label: 'Character' },
-          { key: 'functions', label: 'Functions' },
-          { key: 'raw', label: 'Raw Query' },
-          { key: 'audit', label: 'Audit Log' },
-        ] as const).map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key as any)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-              tab === t.key
-                ? 'text-primary border-primary'
-                : 'text-text-muted border-transparent hover:text-text-primary'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs.Root value={tab} onValueChange={(e) => setTab(e.value as any)} mb={6}>
+        <Tabs.List borderBottomWidth="1px" borderColor="border" overflowX="auto">
+          {([
+            { key: 'broadcast', label: 'Broadcast' },
+            { key: 'economy', label: 'Economy' },
+            { key: 'world', label: 'World' },
+            { key: 'character', label: 'Character' },
+            { key: 'functions', label: 'Functions' },
+            { key: 'raw', label: 'Raw Query' },
+            { key: 'audit', label: 'Audit Log' },
+          ] as const).map((t) => (
+            <Tabs.Trigger
+              key={t.key}
+              value={t.key}
+              px={4}
+              py={2.5}
+              fontSize="sm"
+              fontWeight="medium"
+              whiteSpace="nowrap"
+              _selected={{ color: 'primary.DEFAULT', borderColor: 'primary.DEFAULT' }}
+              color="fg.muted"
+              borderBottomWidth="2px"
+              borderColor="transparent"
+            >
+              {t.label}
+            </Tabs.Trigger>
+          ))}
+        </Tabs.List>
 
-      {tab === 'broadcast' && <BroadcastTab dispatch={dispatch} />}
-      {tab === 'economy' && <EconomyTab dispatch={dispatch} />}
-      {tab === 'world' && <WorldTab dispatch={dispatch} />}
-      {tab === 'character' && <CharacterTab dispatch={dispatch} />}
-      {tab === 'functions' && <FunctionsTab dispatch={dispatch} />}
-      {tab === 'raw' && <RawQueryTab dispatch={dispatch} />}
-      {tab === 'audit' && <AuditLogTab dispatch={dispatch} />}
-    </div>
+        <Tabs.Content value="broadcast" pt={4}>
+          <BroadcastTab dispatch={dispatch} />
+        </Tabs.Content>
+        <Tabs.Content value="economy" pt={4}>
+          <EconomyTab dispatch={dispatch} />
+        </Tabs.Content>
+        <Tabs.Content value="world" pt={4}>
+          <WorldTab dispatch={dispatch} />
+        </Tabs.Content>
+        <Tabs.Content value="character" pt={4}>
+          <CharacterTab dispatch={dispatch} />
+        </Tabs.Content>
+        <Tabs.Content value="functions" pt={4}>
+          <FunctionsTab dispatch={dispatch} />
+        </Tabs.Content>
+        <Tabs.Content value="raw" pt={4}>
+          <RawQueryTab dispatch={dispatch} />
+        </Tabs.Content>
+        <Tabs.Content value="audit" pt={4}>
+          <AuditLogTab dispatch={dispatch} />
+        </Tabs.Content>
+      </Tabs.Root>
+    </Box>
   )
 }
 
@@ -81,55 +136,94 @@ function BroadcastTab({ dispatch }: { dispatch: any }) {
   }
 
   return (
-    <div className="max-w-xl">
-      <div className="bg-card-bg border border-border rounded-lg p-5 space-y-4">
-        <div>
-          <label className="block text-sm text-text-muted mb-2">Scope</label>
-          <div className="flex gap-2">
-            {SCOPE_OPTIONS.map((s) => (
-              <button
-                key={s}
-                onClick={() => setScope(s)}
-                className={`px-3 py-1.5 rounded text-xs font-medium border capitalize ${
-                  scope === s
-                    ? 'bg-primary/10 border-primary text-primary'
-                    : 'bg-card-bg border-border text-text-muted hover:text-text-primary'
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
+    <Box maxW="xl">
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <VStack gap={4} align="stretch">
+            <Box>
+              <Text fontSize="sm" color="fg.muted" mb={2}>Scope</Text>
+              <Flex gap={2}>
+                {SCOPE_OPTIONS.map((s) => (
+                  <Button
+                    key={s}
+                    onClick={() => setScope(s)}
+                    size="xs"
+                    textTransform="capitalize"
+                    variant={scope === s ? 'solid' : 'outline'}
+                    bg={scope === s ? 'primary.subtle' : 'transparent'}
+                    color={scope === s ? 'primary.DEFAULT' : 'fg.muted'}
+                    borderColor={scope === s ? 'primary.DEFAULT' : 'border'}
+                    borderRadius="md"
+                    _hover={{ color: 'fg' }}
+                  >
+                    {s}
+                  </Button>
+                ))}
+              </Flex>
+            </Box>
 
-        {scope !== 'all' && (
-          <div>
-            <label className="block text-sm text-text-muted mb-2">Server</label>
-            <select value={server} onChange={(e) => setServer(e.target.value)} className="bg-card-bg border border-border rounded px-3 py-2 text-sm text-text-primary">
-              {SERVER_OPTIONS.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}
-            </select>
-          </div>
-        )}
+            {scope !== 'all' && (
+              <Box>
+                <Text fontSize="sm" color="fg.muted" mb={2}>Server</Text>
+                <Select.Root collection={serverCollection} value={[server]} onValueChange={(e) => setServer(e.value[0])}>
+                  <Select.Trigger bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm">
+                    <Select.ValueText />
+                  </Select.Trigger>
+                  <Select.Content>
+                    {serverCollection.items.map((item) => (
+                      <Select.Item item={item} key={item.value}>{item.label}</Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Root>
+              </Box>
+            )}
 
-        {scope === 'partition' && (
-          <div>
-            <label className="block text-sm text-text-muted mb-2">Partition</label>
-            <select value={partition} onChange={(e) => setPartition(e.target.value)} className="bg-card-bg border border-border rounded px-3 py-2 text-sm text-text-primary">
-              {PARTITION_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
-        )}
+            {scope === 'partition' && (
+              <Box>
+                <Text fontSize="sm" color="fg.muted" mb={2}>Partition</Text>
+                <Select.Root collection={partitionCollection} value={[partition]} onValueChange={(e) => setPartition(e.value[0])}>
+                  <Select.Trigger bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm">
+                    <Select.ValueText />
+                  </Select.Trigger>
+                  <Select.Content>
+                    {partitionCollection.items.map((item) => (
+                      <Select.Item item={item} key={item.value}>{item.label}</Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Root>
+              </Box>
+            )}
 
-        <div>
-          <label className="block text-sm text-text-muted mb-2">Message</label>
-          <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={4} className="w-full bg-card-bg border border-border rounded-lg px-4 py-3 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary resize-y" placeholder="Enter broadcast message..." />
-        </div>
+            <Box>
+              <Text fontSize="sm" color="fg.muted" mb={2}>Message</Text>
+              <Textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={4}
+                bg="card.bg"
+                borderColor="border"
+                borderRadius="lg"
+                fontSize="sm"
+                resize="vertical"
+                placeholder="Enter broadcast message..."
+                _placeholder={{ color: 'fg.muted' }}
+              />
+            </Box>
 
-        <button onClick={handleSend} disabled={sending || !message.trim()} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark disabled:opacity-50 transition-colors">
-          {sending ? 'Sending...' : 'Send Broadcast'}
-        </button>
-      </div>
-    </div>
+            <Button
+              onClick={handleSend}
+              disabled={sending || !message.trim()}
+              colorPalette="primary"
+              borderRadius="lg"
+              fontSize="sm"
+              fontWeight="medium"
+            >
+              {sending ? 'Sending...' : 'Send Broadcast'}
+            </Button>
+          </VStack>
+        </Card.Body>
+      </Card.Root>
+    </Box>
   )
 }
 
@@ -152,30 +246,72 @@ function EconomyTab({ dispatch }: { dispatch: any }) {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="bg-card-bg border border-border rounded-lg p-5 space-y-3">
-        <h3 className="font-medium text-text-primary">Add Item</h3>
-        <input value={playerId} onChange={(e) => setPlayerId(e.target.value)} placeholder="Player ID" className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        <input value={itemForm.template_id} onChange={(e) => setItemForm({ ...itemForm, template_id: e.target.value })} placeholder="Template ID" className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        <input value={itemForm.stack_size} onChange={(e) => setItemForm({ ...itemForm, stack_size: e.target.value })} placeholder="Stack Size" className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        <input value={itemForm.quality} onChange={(e) => setItemForm({ ...itemForm, quality: e.target.value })} placeholder="Quality" className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        <input value={itemForm.inventory_id} onChange={(e) => setItemForm({ ...itemForm, inventory_id: e.target.value })} placeholder="Inventory ID" className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        <button onClick={() => post('/items/add', { player_id: parseInt(playerId), template_id: itemForm.template_id, stack_size: parseInt(itemForm.stack_size), quality_level: parseInt(itemForm.quality), inventory_id: parseInt(itemForm.inventory_id) || undefined })} className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary">Add Item</button>
-      </div>
+    <SimpleGrid columns={{ base: 1, lg: 2 }} gap={6}>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <VStack gap={3} align="stretch">
+            <Text fontWeight="medium">Add Item</Text>
+            <Input value={playerId} onChange={(e) => setPlayerId(e.target.value)} placeholder="Player ID" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            <Input value={itemForm.template_id} onChange={(e) => setItemForm({ ...itemForm, template_id: e.target.value })} placeholder="Template ID" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            <Input value={itemForm.stack_size} onChange={(e) => setItemForm({ ...itemForm, stack_size: e.target.value })} placeholder="Stack Size" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            <Input value={itemForm.quality} onChange={(e) => setItemForm({ ...itemForm, quality: e.target.value })} placeholder="Quality" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            <Input value={itemForm.inventory_id} onChange={(e) => setItemForm({ ...itemForm, inventory_id: e.target.value })} placeholder="Inventory ID" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            <Button
+              onClick={() => post('/items/add', { player_id: parseInt(playerId), template_id: itemForm.template_id, stack_size: parseInt(itemForm.stack_size), quality_level: parseInt(itemForm.quality), inventory_id: parseInt(itemForm.inventory_id) || undefined })}
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="primary.DEFAULT"
+              borderColor="primary.DEFAULT"
+            >
+              Add Item
+            </Button>
+          </VStack>
+        </Card.Body>
+      </Card.Root>
 
-      <div className="bg-card-bg border border-border rounded-lg p-5 space-y-3">
-        <h3 className="font-medium text-text-primary">Edit Item</h3>
-        <input value={editForm.item_id} onChange={(e) => setEditForm({ ...editForm, item_id: e.target.value })} placeholder="Item ID" className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        <select value={editForm.field} onChange={(e) => setEditForm({ ...editForm, field: e.target.value })} className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm">
-          {['stack_size', 'quality_level', 'durability', 'ammo'].map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-        <input value={editForm.value} onChange={(e) => setEditForm({ ...editForm, value: e.target.value })} placeholder="New value" className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        <div className="flex gap-2">
-          <button onClick={() => post(`/items/${editForm.item_id}`, { [editForm.field]: editForm.value })} className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary">Update</button>
-          <button onClick={() => post(`/items/${editForm.item_id}`, {})} className="px-3 py-1.5 rounded text-xs bg-danger/10 border border-danger/30 text-danger">Delete</button>
-        </div>
-      </div>
-    </div>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <VStack gap={3} align="stretch">
+            <Text fontWeight="medium">Edit Item</Text>
+            <Input value={editForm.item_id} onChange={(e) => setEditForm({ ...editForm, item_id: e.target.value })} placeholder="Item ID" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            <Select.Root collection={itemFieldCollection} value={[editForm.field]} onValueChange={(e) => setEditForm({ ...editForm, field: e.value[0] })}>
+              <Select.Trigger bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm">
+                <Select.ValueText />
+              </Select.Trigger>
+              <Select.Content>
+                {itemFieldCollection.items.map((item) => (
+                  <Select.Item item={item} key={item.value}>{item.label}</Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+            <Input value={editForm.value} onChange={(e) => setEditForm({ ...editForm, value: e.target.value })} placeholder="New value" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            <Flex gap={2}>
+              <Button
+                onClick={() => post(`/items/${editForm.item_id}`, { [editForm.field]: editForm.value })}
+                size="xs"
+                variant="outline"
+                borderRadius="md"
+                color="primary.DEFAULT"
+                borderColor="primary.DEFAULT"
+              >
+                Update
+              </Button>
+              <Button
+                onClick={() => post(`/items/${editForm.item_id}`, {})}
+                size="xs"
+                variant="outline"
+                borderRadius="md"
+                color="danger.DEFAULT"
+                borderColor="danger.DEFAULT"
+              >
+                Delete
+              </Button>
+            </Flex>
+          </VStack>
+        </Card.Body>
+      </Card.Root>
+    </SimpleGrid>
   )
 }
 
@@ -196,32 +332,80 @@ function WorldTab({ dispatch }: { dispatch: any }) {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="bg-card-bg border border-border rounded-lg p-5 space-y-3">
-        <h3 className="font-medium text-text-primary">Teleport Player</h3>
-        <input value={tpForm.fls_id} onChange={(e) => setTpForm({ ...tpForm, fls_id: e.target.value })} placeholder="FLS ID / Account ID" className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        <input value={tpForm.partition} onChange={(e) => setTpForm({ ...tpForm, partition: e.target.value })} placeholder="Partition ID" className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        <div className="grid grid-cols-3 gap-2">
-          <input type="number" value={tpForm.x} onChange={(e) => setTpForm({ ...tpForm, x: e.target.value })} placeholder="X" className="bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-          <input type="number" value={tpForm.y} onChange={(e) => setTpForm({ ...tpForm, y: e.target.value })} placeholder="Y" className="bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-          <input type="number" value={tpForm.z} onChange={(e) => setTpForm({ ...tpForm, z: e.target.value })} placeholder="Z" className="bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        </div>
-        <button onClick={() => post('/teleport', { fls_id: parseInt(tpForm.fls_id), partition_id: tpForm.partition, x: parseFloat(tpForm.x) || 0, y: parseFloat(tpForm.y) || 0, z: parseFloat(tpForm.z) || 0 })} className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary">Teleport</button>
-      </div>
+    <SimpleGrid columns={{ base: 1, lg: 2 }} gap={6}>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <VStack gap={3} align="stretch">
+            <Text fontWeight="medium">Teleport Player</Text>
+            <Input value={tpForm.fls_id} onChange={(e) => setTpForm({ ...tpForm, fls_id: e.target.value })} placeholder="FLS ID / Account ID" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            <Input value={tpForm.partition} onChange={(e) => setTpForm({ ...tpForm, partition: e.target.value })} placeholder="Partition ID" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            <Flex gap={2}>
+              <Input type="number" value={tpForm.x} onChange={(e) => setTpForm({ ...tpForm, x: e.target.value })} placeholder="X" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+              <Input type="number" value={tpForm.y} onChange={(e) => setTpForm({ ...tpForm, y: e.target.value })} placeholder="Y" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+              <Input type="number" value={tpForm.z} onChange={(e) => setTpForm({ ...tpForm, z: e.target.value })} placeholder="Z" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            </Flex>
+            <Button
+              onClick={() => post('/teleport', { fls_id: parseInt(tpForm.fls_id), partition_id: tpForm.partition, x: parseFloat(tpForm.x) || 0, y: parseFloat(tpForm.y) || 0, z: parseFloat(tpForm.z) || 0 })}
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="primary.DEFAULT"
+              borderColor="primary.DEFAULT"
+            >
+              Teleport
+            </Button>
+          </VStack>
+        </Card.Body>
+      </Card.Root>
 
-      <div className="bg-card-bg border border-border rounded-lg p-5 space-y-3">
-        <h3 className="font-medium text-text-primary">Spice Control</h3>
-        <div className="flex gap-2">
-          <button onClick={() => post('/spice/reset', {})} className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary">Reset Spice Fields</button>
-          <button onClick={() => post('/spice/spawn', {})} className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary">Force Spawn</button>
-        </div>
-      </div>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <VStack gap={3} align="stretch">
+            <Text fontWeight="medium">Spice Control</Text>
+            <Flex gap={2}>
+              <Button
+                onClick={() => post('/spice/reset', {})}
+                size="xs"
+                variant="outline"
+                borderRadius="md"
+                color="primary.DEFAULT"
+                borderColor="primary.DEFAULT"
+              >
+                Reset Spice Fields
+              </Button>
+              <Button
+                onClick={() => post('/spice/spawn', {})}
+                size="xs"
+                variant="outline"
+                borderRadius="md"
+                color="primary.DEFAULT"
+                borderColor="primary.DEFAULT"
+              >
+                Force Spawn
+              </Button>
+            </Flex>
+          </VStack>
+        </Card.Body>
+      </Card.Root>
 
-      <div className="bg-card-bg border border-border rounded-lg p-5 space-y-3">
-        <h3 className="font-medium text-text-primary">Partitions</h3>
-        <button onClick={() => client.get('/partitions').then((r) => dispatch({ type: 'ADD_TOAST', payload: { message: `Partitions loaded`, type: 'info' } }))} className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary">List Partitions</button>
-      </div>
-    </div>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <VStack gap={3} align="stretch">
+            <Text fontWeight="medium">Partitions</Text>
+            <Button
+              onClick={() => client.get('/partitions').then((r) => dispatch({ type: 'ADD_TOAST', payload: { message: 'Partitions loaded', type: 'info' } }))}
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="primary.DEFAULT"
+              borderColor="primary.DEFAULT"
+            >
+              List Partitions
+            </Button>
+          </VStack>
+        </Card.Body>
+      </Card.Root>
+    </SimpleGrid>
   )
 }
 
@@ -244,32 +428,86 @@ function CharacterTab({ dispatch }: { dispatch: any }) {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="bg-card-bg border border-border rounded-lg p-5 space-y-3">
-        <h3 className="font-medium text-text-primary">Rename Character</h3>
-        <input value={charId} onChange={(e) => setCharId(e.target.value)} placeholder="Account ID / Character ID" className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New Name" className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        <button onClick={() => post(`/characters/${charId}/name`, { name: newName })} className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary">Rename</button>
-      </div>
+    <SimpleGrid columns={{ base: 1, lg: 2 }} gap={6}>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <VStack gap={3} align="stretch">
+            <Text fontWeight="medium">Rename Character</Text>
+            <Input value={charId} onChange={(e) => setCharId(e.target.value)} placeholder="Account ID / Character ID" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New Name" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            <Button
+              onClick={() => post(`/characters/${charId}/name`, { name: newName })}
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="primary.DEFAULT"
+              borderColor="primary.DEFAULT"
+            >
+              Rename
+            </Button>
+          </VStack>
+        </Card.Body>
+      </Card.Root>
 
-      <div className="bg-card-bg border border-border rounded-lg p-5 space-y-3">
-        <h3 className="font-medium text-text-primary">Demo State</h3>
-        <input value={charId} onChange={(e) => setCharId(e.target.value)} placeholder="Account ID" className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm" />
-        <select value={demoState} onChange={(e) => setDemoState(e.target.value)} className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm">
-          <option value="true">Demo</option>
-          <option value="false">Normal</option>
-        </select>
-        <button onClick={() => post(`/accounts/${charId}/demo`, { demo: demoState === 'true' })} className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary">Set Demo State</button>
-      </div>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <VStack gap={3} align="stretch">
+            <Text fontWeight="medium">Demo State</Text>
+            <Input value={charId} onChange={(e) => setCharId(e.target.value)} placeholder="Account ID" bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm" />
+            <Select.Root collection={demoStateCollection} value={[demoState]} onValueChange={(e) => setDemoState(e.value[0])}>
+              <Select.Trigger bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm">
+                <Select.ValueText />
+              </Select.Trigger>
+              <Select.Content>
+                {demoStateCollection.items.map((item) => (
+                  <Select.Item item={item} key={item.value}>{item.label}</Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+            <Button
+              onClick={() => post(`/accounts/${charId}/demo`, { demo: demoState === 'true' })}
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="primary.DEFAULT"
+              borderColor="primary.DEFAULT"
+            >
+              Set Demo State
+            </Button>
+          </VStack>
+        </Card.Body>
+      </Card.Root>
 
-      <div className="bg-card-bg border border-border rounded-lg p-5 space-y-3">
-        <h3 className="font-medium text-text-primary">Danger Zone</h3>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => { if (confirm('Delete character?')) post(`/characters/${charId}`, {}) }} className="px-3 py-1.5 rounded text-xs bg-danger/10 border border-danger/30 text-danger">Delete Character</button>
-          <button onClick={() => { if (confirm('Delete account?')) post(`/accounts/${charId}`, {}) }} className="px-3 py-1.5 rounded text-xs bg-danger/10 border border-danger/30 text-danger">Delete Account</button>
-        </div>
-      </div>
-    </div>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <VStack gap={3} align="stretch">
+            <Text fontWeight="medium">Danger Zone</Text>
+            <Flex wrap="wrap" gap={2}>
+              <Button
+                onClick={() => { if (confirm('Delete character?')) post(`/characters/${charId}`, {}) }}
+                size="xs"
+                variant="outline"
+                borderRadius="md"
+                color="danger.DEFAULT"
+                borderColor="danger.DEFAULT"
+              >
+                Delete Character
+              </Button>
+              <Button
+                onClick={() => { if (confirm('Delete account?')) post(`/accounts/${charId}`, {}) }}
+                size="xs"
+                variant="outline"
+                borderRadius="md"
+                color="danger.DEFAULT"
+                borderColor="danger.DEFAULT"
+              >
+                Delete Account
+              </Button>
+            </Flex>
+          </VStack>
+        </Card.Body>
+      </Card.Root>
+    </SimpleGrid>
   )
 }
 
@@ -299,28 +537,79 @@ function FunctionsTab({ dispatch }: { dispatch: any }) {
   }
 
   return (
-    <div className="max-w-2xl">
-      <div className="bg-card-bg border border-border rounded-lg p-5 space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-text-muted mb-2">Schema (optional)</label>
-            <input value={schema} onChange={(e) => setSchema(e.target.value)} className="w-full bg-card-bg border border-border rounded-lg px-4 py-2 text-sm text-text-primary" placeholder="e.g., public" />
-          </div>
-          <div>
-            <label className="block text-sm text-text-muted mb-2">Function Name</label>
-            <input value={funcName} onChange={(e) => setFuncName(e.target.value)} className="w-full bg-card-bg border border-border rounded-lg px-4 py-2 text-sm text-text-primary" placeholder="e.g., get_player_stats" />
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm text-text-muted mb-2">Arguments (JSON)</label>
-          <textarea value={args} onChange={(e) => setArgs(e.target.value)} rows={4} className="w-full bg-card-bg border border-border rounded-lg px-4 py-3 text-sm font-mono text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary resize-y" />
-        </div>
-        <button onClick={handleExecute} disabled={running || !funcName} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark disabled:opacity-50 transition-colors">
-          {running ? 'Running...' : 'Execute'}
-        </button>
-        {result && <pre className="mt-4 text-xs font-mono bg-code-bg p-4 rounded overflow-auto text-text-secondary">{result}</pre>}
-      </div>
-    </div>
+    <Box maxW="2xl">
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <VStack gap={4} align="stretch">
+            <SimpleGrid columns={2} gap={4}>
+              <Box>
+                <Text fontSize="sm" color="fg.muted" mb={2}>Schema (optional)</Text>
+                <Input
+                  value={schema}
+                  onChange={(e) => setSchema(e.target.value)}
+                  bg="card.bg"
+                  borderColor="border"
+                  borderRadius="lg"
+                  fontSize="sm"
+                  placeholder="e.g., public"
+                />
+              </Box>
+              <Box>
+                <Text fontSize="sm" color="fg.muted" mb={2}>Function Name</Text>
+                <Input
+                  value={funcName}
+                  onChange={(e) => setFuncName(e.target.value)}
+                  bg="card.bg"
+                  borderColor="border"
+                  borderRadius="lg"
+                  fontSize="sm"
+                  placeholder="e.g., get_player_stats"
+                />
+              </Box>
+            </SimpleGrid>
+            <Box>
+              <Text fontSize="sm" color="fg.muted" mb={2}>Arguments (JSON)</Text>
+              <Textarea
+                value={args}
+                onChange={(e) => setArgs(e.target.value)}
+                rows={4}
+                bg="card.bg"
+                borderColor="border"
+                borderRadius="lg"
+                fontSize="sm"
+                fontFamily="Roboto Mono, monospace"
+                resize="vertical"
+              />
+            </Box>
+            <Button
+              onClick={handleExecute}
+              disabled={running || !funcName}
+              colorPalette="primary"
+              borderRadius="lg"
+              fontSize="sm"
+              fontWeight="medium"
+            >
+              {running ? 'Running...' : 'Execute'}
+            </Button>
+            {result && (
+              <Box
+                as="pre"
+                mt={4}
+                fontSize="xs"
+                fontFamily="Roboto Mono, monospace"
+                bg="code.bg"
+                p={4}
+                borderRadius="md"
+                overflow="auto"
+                color="fg.muted"
+              >
+                {result}
+              </Box>
+            )}
+          </VStack>
+        </Card.Body>
+      </Card.Root>
+    </Box>
   )
 }
 
@@ -347,19 +636,59 @@ function RawQueryTab({ dispatch }: { dispatch: any }) {
   }
 
   return (
-    <div className="max-w-3xl">
-      <div className="bg-card-bg border border-border rounded-lg p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <label className="text-sm text-text-muted">SQL Query (Read-Only SELECT)</label>
-          <span className="text-[10px] text-text-muted uppercase tracking-wider bg-danger/10 px-2 py-0.5 rounded border border-danger/20">Read Only</span>
-        </div>
-        <textarea value={query} onChange={(e) => setQuery(e.target.value)} rows={6} className="w-full bg-card-bg border border-border rounded-lg px-4 py-3 text-sm font-mono text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary resize-y" placeholder="SELECT * FROM public.characters LIMIT 10;" />
-        <button onClick={handleRun} disabled={running || !query.trim()} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark disabled:opacity-50 transition-colors">
-          {running ? 'Running...' : 'Run Query'}
-        </button>
-        {result && <pre className="mt-4 text-xs font-mono bg-code-bg p-4 rounded overflow-auto text-text-secondary">{result}</pre>}
-      </div>
-    </div>
+    <Box maxW="3xl">
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <VStack gap={4} align="stretch">
+            <Flex align="center" justify="space-between">
+              <Text fontSize="sm" color="fg.muted">SQL Query (Read-Only SELECT)</Text>
+              <Text fontSize="10px" color="danger.DEFAULT" textTransform="uppercase" letterSpacing="wider" bg="danger.subtle" px={2} py={0.5} borderRadius="md" borderWidth="1px" borderColor="danger.DEFAULT">
+                <FiAlertTriangle style={{ display: 'inline', marginRight: 4 }} />
+                Read Only
+              </Text>
+            </Flex>
+            <Textarea
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              rows={6}
+              bg="card.bg"
+              borderColor="border"
+              borderRadius="lg"
+              fontSize="sm"
+              fontFamily="Roboto Mono, monospace"
+              resize="vertical"
+              placeholder="SELECT * FROM public.characters LIMIT 10;"
+              _placeholder={{ color: 'fg.muted' }}
+            />
+            <Button
+              onClick={handleRun}
+              disabled={running || !query.trim()}
+              colorPalette="primary"
+              borderRadius="lg"
+              fontSize="sm"
+              fontWeight="medium"
+            >
+              {running ? 'Running...' : 'Run Query'}
+            </Button>
+            {result && (
+              <Box
+                as="pre"
+                mt={4}
+                fontSize="xs"
+                fontFamily="Roboto Mono, monospace"
+                bg="code.bg"
+                p={4}
+                borderRadius="md"
+                overflow="auto"
+                color="fg.muted"
+              >
+                {result}
+              </Box>
+            )}
+          </VStack>
+        </Card.Body>
+      </Card.Root>
+    </Box>
   )
 }
 
@@ -381,39 +710,74 @@ function AuditLogTab({ dispatch }: { dispatch: any }) {
   }
 
   return (
-    <div>
-      <div className="flex items-center gap-4 mb-4">
-        <button onClick={load} disabled={loading} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark disabled:opacity-50 transition-colors">
+    <Box>
+      <Flex align="center" gap={4} mb={4}>
+        <Button
+          onClick={load}
+          disabled={loading}
+          colorPalette="primary"
+          borderRadius="lg"
+          fontSize="sm"
+          fontWeight="medium"
+        >
           {loading ? 'Loading...' : 'Load Logs'}
-        </button>
-        <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="bg-card-bg border border-border rounded px-3 py-2 text-sm text-text-primary">
-          {[10, 25, 50, 100, 250].map((n) => <option key={n} value={n}>{n} entries</option>)}
-        </select>
-      </div>
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Time</th>
-              <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Admin</th>
-              <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Action</th>
-              <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Target</th>
-              <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Details</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.map((log, i) => (
-              <tr key={i} className="border-b border-border last:border-0 hover:bg-hover/50">
-                <td className="px-4 py-3 text-text-muted text-xs">{new Date(log.timestamp).toLocaleString()}</td>
-                <td className="px-4 py-3">{log.admin_name}</td>
-                <td className="px-4 py-3"><span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20">{log.action}</span></td>
-                <td className="px-4 py-3">{log.target_type}: {log.target_id}</td>
-                <td className="px-4 py-3 text-xs text-text-muted max-w-md truncate">{JSON.stringify(log.details)}</td>
-              </tr>
+        </Button>
+        <Select.Root collection={limitCollection} value={[String(limit)]} onValueChange={(e) => setLimit(Number(e.value[0]))}>
+          <Select.Trigger bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm">
+            <Select.ValueText />
+          </Select.Trigger>
+          <Select.Content>
+            {limitCollection.items.map((item) => (
+              <Select.Item item={item} key={item.value}>{item.label}</Select.Item>
             ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+          </Select.Content>
+        </Select.Root>
+      </Flex>
+      <Box overflowX="auto" borderRadius="lg" borderWidth="1px" borderColor="border">
+        <Table.Root variant="line" size="sm">
+          <Table.Header>
+            <Table.Row borderBottomWidth="1px" borderColor="border">
+              <Table.ColumnHeader textTransform="uppercase" fontSize="11px" color="fg.muted" fontWeight="semibold" px={4} py={3}>Time</Table.ColumnHeader>
+              <Table.ColumnHeader textTransform="uppercase" fontSize="11px" color="fg.muted" fontWeight="semibold" px={4} py={3}>Admin</Table.ColumnHeader>
+              <Table.ColumnHeader textTransform="uppercase" fontSize="11px" color="fg.muted" fontWeight="semibold" px={4} py={3}>Action</Table.ColumnHeader>
+              <Table.ColumnHeader textTransform="uppercase" fontSize="11px" color="fg.muted" fontWeight="semibold" px={4} py={3}>Target</Table.ColumnHeader>
+              <Table.ColumnHeader textTransform="uppercase" fontSize="11px" color="fg.muted" fontWeight="semibold" px={4} py={3}>Details</Table.ColumnHeader>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {logs.map((log, i) => (
+              <Table.Row
+                key={i}
+                borderBottomWidth="1px"
+                borderColor="border"
+                _last={{ borderBottomWidth: 0 }}
+                _hover={{ bg: 'bg.subtle' }}
+              >
+                <Table.Cell px={4} py={3} color="fg.muted" fontSize="xs">{new Date(log.timestamp).toLocaleString()}</Table.Cell>
+                <Table.Cell px={4} py={3}>{log.admin_name}</Table.Cell>
+                <Table.Cell px={4} py={3}>
+                  <Text
+                    as="span"
+                    px={2}
+                    py={0.5}
+                    borderRadius="md"
+                    fontSize="11px"
+                    fontWeight="semibold"
+                    bg="primary.subtle"
+                    color="primary.DEFAULT"
+                    borderWidth="1px"
+                    borderColor="primary.DEFAULT"
+                  >
+                    {log.action}
+                  </Text>
+                </Table.Cell>
+                <Table.Cell px={4} py={3}>{log.target_type}: {log.target_id}</Table.Cell>
+                <Table.Cell px={4} py={3} fontSize="xs" color="fg.muted" maxW="md" truncate>{JSON.stringify(log.details)}</Table.Cell>
+              </Table.Row>
+            ))}
+          </Table.Body>
+        </Table.Root>
+      </Box>
+    </Box>
   )
 }

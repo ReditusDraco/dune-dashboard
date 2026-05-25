@@ -1,30 +1,70 @@
+import { ReactNode } from 'react'
+import {
+  Dialog,
+  Portal,
+  IconButton,
+} from '@chakra-ui/react'
+import { FiX } from 'react-icons/fi'
+
 interface ModalProps {
   open: boolean
-  title: string
   onClose: () => void
-  children: React.ReactNode
-  maxWidth?: string
+  title: string
+  children: ReactNode
 }
 
-export default function Modal({ open, title, onClose, children, maxWidth = '500px' }: ModalProps) {
-  if (!open) return null
+export default function Modal({ open, onClose, title, children }: ModalProps) {
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div
-        className="bg-card-bg border border-border rounded-xl shadow-2xl w-full mx-4"
-        style={{ maxWidth }}
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="font-serif text-lg text-text-primary">{title}</h3>
-          <button
-            onClick={onClose}
-            className="text-text-muted hover:text-text-primary text-xl leading-none"
+    <Dialog.Root open={open} onOpenChange={(e) => { if (!e.open) onClose() }}>
+      <Portal>
+        <Dialog.Backdrop bg="black/60" backdropFilter="blur(4px)" />
+        <Dialog.Positioner>
+          <Dialog.Content
+            bg="card.bg"
+            border="1px solid"
+            borderColor="border"
+            borderRadius="xl"
+            boxShadow="card"
+            maxW="600px"
+            w="full"
+            mx={4}
           >
-            &times;
-          </button>
-        </div>
-        <div className="p-5 max-h-[80vh] overflow-auto">{children}</div>
-      </div>
-    </div>
+            <Dialog.Header
+              display="flex"
+              alignItems="center"
+              justifyContent="space-between"
+              borderBottom="1px solid"
+              borderColor="border"
+              px={6}
+              py={4}
+            >
+              <Dialog.Title
+                fontSize="lg"
+                fontWeight="semibold"
+                fontFamily="Playfair Display, serif"
+                color="primary.DEFAULT"
+              >
+                {title}
+              </Dialog.Title>
+              <Dialog.CloseTrigger asChild>
+                <IconButton
+                  aria-label="Close"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onClose}
+                  color="fg.muted"
+                  _hover={{ color: 'fg' }}
+                >
+                  <FiX />
+                </IconButton>
+              </Dialog.CloseTrigger>
+            </Dialog.Header>
+            <Dialog.Body px={6} py={4}>
+              {children}
+            </Dialog.Body>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Portal>
+    </Dialog.Root>
   )
 }

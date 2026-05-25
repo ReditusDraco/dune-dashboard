@@ -1,5 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import useSWR from 'swr'
+import {
+  Box, Flex, Text, Heading, Tabs, Card, Button,
+  Table, Spinner, Badge as ChakraBadge, Separator, SimpleGrid
+} from '@chakra-ui/react'
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, BarChart, Bar, Cell
+} from 'recharts'
+import { FiRefreshCw, FiPlus, FiMinus, FiServer, FiCpu, FiHardDrive, FiShield, FiRadio } from 'react-icons/fi'
 import client from '../../api/client'
 import { useApp } from '../../stores/AppContext'
 import Badge from '../common/Badge'
@@ -27,6 +36,14 @@ interface MetricPoint {
   memory_percent: number
 }
 
+const TAB_ICONS: Record<string, React.ElementType> = {
+  pods: FiServer,
+  deployments: FiRefreshCw,
+  metrics: FiCpu,
+  firewall: FiShield,
+  rmq: FiRadio,
+}
+
 export default function ServerControl() {
   const [tab, setTab] = useState<'pods' | 'deployments' | 'metrics' | 'firewall' | 'rmq'>('pods')
   const { dispatch } = useApp()
@@ -49,8 +66,9 @@ export default function ServerControl() {
       } else {
         dispatch({ type: 'ADD_TOAST', payload: { message: res.data.error || 'Failed', type: 'error' } })
       }
-    } catch (e: any) {
-      dispatch({ type: 'ADD_TOAST', payload: { message: e.response?.data?.error || 'Failed', type: 'error' } })
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } } }
+      dispatch({ type: 'ADD_TOAST', payload: { message: err.response?.data?.error || 'Failed', type: 'error' } })
     }
   }
 
@@ -62,180 +80,254 @@ export default function ServerControl() {
       } else {
         dispatch({ type: 'ADD_TOAST', payload: { message: res.data.error || 'Failed', type: 'error' } })
       }
-    } catch (e: any) {
-      dispatch({ type: 'ADD_TOAST', payload: { message: e.response?.data?.error || 'Failed', type: 'error' } })
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } } }
+      dispatch({ type: 'ADD_TOAST', payload: { message: err.response?.data?.error || 'Failed', type: 'error' } })
     }
   }
 
+  const chartData = metricList.map((m) => ({
+    time: new Date(m.timestamp).toLocaleTimeString(),
+    cpu: m.cpu_percent,
+    memory: m.memory_percent,
+  }))
+
   return (
-    <div>
-      <h1 className="font-serif text-3xl text-primary mb-6">Server Control</h1>
+    <Box>
+      <Heading as="h1" fontSize="3xl" fontFamily="Playfair Display, serif" color="primary.DEFAULT" mb={6}>
+        Server Control
+      </Heading>
 
-      <div className="flex gap-1 mb-6 border-b border-border">
-        {(['pods', 'deployments', 'metrics', 'firewall', 'rmq'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors capitalize ${
-              tab === t
-                ? 'text-primary border-primary'
-                : 'text-text-muted border-transparent hover:text-text-primary'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+      <Tabs.Root
+        value={tab}
+        onValueChange={(e) => setTab(e.value as typeof tab)}
+        variant="line"
+        mb={6}
+      >
+        <Tabs.List borderBottomWidth="1px" borderColor="border" gap={0}>
+          {(['pods', 'deployments', 'metrics', 'firewall', 'rmq'] as const).map((t) => {
+            const Icon = TAB_ICONS[t]
+            return (
+              <Tabs.Trigger
+                key={t}
+                value={t}
+                px={4}
+                py={2.5}
+                fontSize="sm"
+                fontWeight="medium"
+                textTransform="capitalize"
+                color="fg.muted"
+                borderBottom="2px solid transparent"
+                _selected={{
+                  color: 'primary.DEFAULT',
+                  borderColor: 'primary.DEFAULT',
+                }}
+                transition="all 0.15s"
+                gap={2}
+              >
+                <Icon size={14} />
+                {t}
+              </Tabs.Trigger>
+            )
+          })}
+        </Tabs.List>
 
-      {tab === 'pods' && (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Name</th>
-                <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Namespace</th>
-                <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Status</th>
-                <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Restarts</th>
-                <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Age</th>
-                <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {podList.map((pod) => (
-                <tr key={pod.name} className="border-b border-border last:border-0 hover:bg-hover/50">
-                  <td className="px-4 py-3 font-mono text-xs">{pod.name}</td>
-                  <td className="px-4 py-3">{pod.namespace}</td>
-                  <td className="px-4 py-3">
-                    <Badge
-                      label={pod.status}
-                      variant={pod.status === 'Running' ? 'success' : pod.status === 'Pending' ? 'warning' : 'danger'}
-                    />
-                  </td>
-                  <td className="px-4 py-3">{pod.restarts}</td>
-                  <td className="px-4 py-3">{pod.age}</td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => handleRestart(pod.name)}
-                      className="text-xs text-primary hover:underline"
-                    >
-                      Restart
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+        <Tabs.Content value="pods" pt={4}>
+          <Table.ScrollArea borderWidth="1px" borderColor="border" borderRadius="lg">
+            <Table.Root variant="line" size="sm" stickyHeader>
+              <Table.Header>
+                <Table.Row bg="bg.subtle">
+                  <Table.ColumnHeader fontSize="2xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">Name</Table.ColumnHeader>
+                  <Table.ColumnHeader fontSize="2xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">Namespace</Table.ColumnHeader>
+                  <Table.ColumnHeader fontSize="2xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">Status</Table.ColumnHeader>
+                  <Table.ColumnHeader fontSize="2xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">Restarts</Table.ColumnHeader>
+                  <Table.ColumnHeader fontSize="2xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">Age</Table.ColumnHeader>
+                  <Table.ColumnHeader fontSize="2xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">Actions</Table.ColumnHeader>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {podList.map((pod) => (
+                  <Table.Row key={pod.name} _hover={{ bg: 'bg.subtle' }}>
+                    <Table.Cell fontFamily="Roboto Mono, monospace" fontSize="xs">{pod.name}</Table.Cell>
+                    <Table.Cell fontSize="sm">{pod.namespace}</Table.Cell>
+                    <Table.Cell>
+                      <Badge
+                        label={pod.status}
+                        variant={pod.status === 'Running' ? 'success' : pod.status === 'Pending' ? 'warning' : 'danger'}
+                      />
+                    </Table.Cell>
+                    <Table.Cell fontSize="sm">{pod.restarts}</Table.Cell>
+                    <Table.Cell fontSize="sm">{pod.age}</Table.Cell>
+                    <Table.Cell>
+                      <Button variant="ghost" size="xs" color="primary.DEFAULT" onClick={() => handleRestart(pod.name)}>
+                        Restart
+                      </Button>
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Root>
+          </Table.ScrollArea>
+        </Tabs.Content>
 
-      {tab === 'deployments' && (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Name</th>
-                <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Namespace</th>
-                <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Replicas</th>
-                <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Available</th>
-                <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {deploymentList.map((dep) => (
-                <tr key={dep.name} className="border-b border-border last:border-0 hover:bg-hover/50">
-                  <td className="px-4 py-3 font-mono text-xs">{dep.name}</td>
-                  <td className="px-4 py-3">{dep.namespace}</td>
-                  <td className="px-4 py-3">{dep.replicas}</td>
-                  <td className="px-4 py-3">{dep.available}</td>
-                  <td className="px-4 py-3 flex gap-2">
-                    <button
-                      onClick={() => handleScale(dep.name, dep.replicas + 1)}
-                      className="text-xs px-2 py-1 bg-primary/10 border border-primary/20 rounded text-primary"
-                    >
-                      +1
-                    </button>
-                    <button
-                      onClick={() => handleScale(dep.name, Math.max(0, dep.replicas - 1))}
-                      className="text-xs px-2 py-1 bg-primary/10 border border-primary/20 rounded text-primary"
-                    >
-                      -1
-                    </button>
-                    <button
-                      onClick={() => handleRestart(dep.name)}
-                      className="text-xs px-2 py-1 bg-danger/10 border border-danger/20 rounded text-danger"
-                    >
-                      Restart
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+        <Tabs.Content value="deployments" pt={4}>
+          <Table.ScrollArea borderWidth="1px" borderColor="border" borderRadius="lg">
+            <Table.Root variant="line" size="sm" stickyHeader>
+              <Table.Header>
+                <Table.Row bg="bg.subtle">
+                  <Table.ColumnHeader fontSize="2xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">Name</Table.ColumnHeader>
+                  <Table.ColumnHeader fontSize="2xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">Namespace</Table.ColumnHeader>
+                  <Table.ColumnHeader fontSize="2xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">Replicas</Table.ColumnHeader>
+                  <Table.ColumnHeader fontSize="2xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">Available</Table.ColumnHeader>
+                  <Table.ColumnHeader fontSize="2xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">Actions</Table.ColumnHeader>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {deploymentList.map((dep) => (
+                  <Table.Row key={dep.name} _hover={{ bg: 'bg.subtle' }}>
+                    <Table.Cell fontFamily="Roboto Mono, monospace" fontSize="xs">{dep.name}</Table.Cell>
+                    <Table.Cell fontSize="sm">{dep.namespace}</Table.Cell>
+                    <Table.Cell fontSize="sm">{dep.replicas}</Table.Cell>
+                    <Table.Cell fontSize="sm">{dep.available}</Table.Cell>
+                    <Table.Cell>
+                      <Flex gap={1}>
+                        <Button variant="outline" size="xs" borderColor="primary.DEFAULT" color="primary.DEFAULT" onClick={() => handleScale(dep.name, dep.replicas + 1)}>
+                          <FiPlus size={12} />
+                        </Button>
+                        <Button variant="outline" size="xs" borderColor="border" color="fg.muted" onClick={() => handleScale(dep.name, Math.max(0, dep.replicas - 1))}>
+                          <FiMinus size={12} />
+                        </Button>
+                        <Button variant="outline" size="xs" borderColor="danger.DEFAULT" color="danger.DEFAULT" onClick={() => handleRestart(dep.name)}>
+                          Restart
+                        </Button>
+                      </Flex>
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Root>
+          </Table.ScrollArea>
+        </Tabs.Content>
 
-      {tab === 'metrics' && (
-        <div className="bg-card-bg border border-border rounded-lg p-5">
-          <h3 className="text-text-muted text-xs uppercase tracking-wider mb-4">Server Metrics (24h)</h3>
+        <Tabs.Content value="metrics" pt={4}>
           {metricList.length === 0 ? (
-            <div className="text-text-muted text-sm">No metrics available</div>
+            <Card.Root bg="card.bg" borderWidth="1px" borderColor="border" borderRadius="xl">
+              <Card.Body p={8} textAlign="center">
+                <Flex direction="column" align="center" gap={3}>
+                  <FiCpu size={40} style={{ opacity: 0.3 }} />
+                  <Text color="fg.muted">No metrics available</Text>
+                </Flex>
+              </Card.Body>
+            </Card.Root>
           ) : (
-            <div className="space-y-2">
-              {metricList.slice(-20).map((m, i) => (
-                <div key={i} className="flex items-center gap-4 text-sm">
-                  <span className="text-text-muted w-32">{new Date(m.timestamp).toLocaleTimeString()}</span>
-                  <div className="flex-1 flex items-center gap-2">
-                    <span className="text-text-muted w-8">CPU</span>
-                    <div className="flex-1 h-2 bg-border rounded overflow-hidden">
-                      <div
-                        className="h-full bg-primary"
-                        style={{ width: `${Math.min(100, m.cpu_percent)}%` }}
-                      />
-                    </div>
-                    <span className="text-text-secondary w-10 text-right">{m.cpu_percent}%</span>
-                  </div>
-                  <div className="flex-1 flex items-center gap-2">
-                    <span className="text-text-muted w-12">Mem</span>
-                    <div className="flex-1 h-2 bg-border rounded overflow-hidden">
-                      <div
-                        className="h-full bg-success"
-                        style={{ width: `${Math.min(100, m.memory_percent)}%` }}
-                      />
-                    </div>
-                    <span className="text-text-secondary w-10 text-right">{m.memory_percent}%</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+            <SimpleGrid columns={{ base: 1, lg: 2 }} gap={6}>
+              <Card.Root bg="card.bg" borderWidth="1px" borderColor="border" borderRadius="xl" boxShadow="card">
+                <Card.Header borderBottomWidth="1px" borderColor="border" px={5} py={4}>
+                  <Flex align="center" gap={2}>
+                    <Box w={3} h={3} borderRadius="full" bg="primary.DEFAULT" />
+                    <Text fontFamily="Playfair Display, serif" fontSize="md" color="primary.DEFAULT" fontWeight="semibold">
+                      CPU Usage (24h)
+                    </Text>
+                  </Flex>
+                </Card.Header>
+                <Card.Body p={4}>
+                  <Box w="full" h="280px">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData}>
+                        <defs>
+                          <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="var(--chakra-colors-primary-DEFAULT)" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="var(--chakra-colors-primary-DEFAULT)" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--chakra-colors-border-DEFAULT)" />
+                        <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'var(--chakra-colors-fg-muted)' }} interval="preserveStartEnd" />
+                        <YAxis tick={{ fontSize: 10, fill: 'var(--chakra-colors-fg-muted)' }} unit="%" />
+                        <Tooltip contentStyle={{ background: 'var(--chakra-colors-card-bg)', border: '1px solid var(--chakra-colors-border-DEFAULT)', borderRadius: '8px', fontSize: '12px' }} />
+                        <Area type="monotone" dataKey="cpu" stroke="var(--chakra-colors-primary-DEFAULT)" fill="url(#cpuGrad)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </Box>
+                </Card.Body>
+              </Card.Root>
 
-      {tab === 'firewall' && (
-        <div className="bg-card-bg border border-border rounded-lg p-5">
-          <h3 className="text-text-muted text-xs uppercase tracking-wider mb-4">Firewall Status</h3>
-          {firewall?.success ? (
-            <pre className="text-xs text-text-secondary font-mono bg-code-bg p-4 rounded overflow-auto">
-              {JSON.stringify(firewall.data, null, 2)}
-            </pre>
-          ) : (
-            <div className="text-text-muted text-sm">No firewall data available</div>
+              <Card.Root bg="card.bg" borderWidth="1px" borderColor="border" borderRadius="xl" boxShadow="card">
+                <Card.Header borderBottomWidth="1px" borderColor="border" px={5} py={4}>
+                  <Flex align="center" gap={2}>
+                    <Box w={3} h={3} borderRadius="full" bg="success.DEFAULT" />
+                    <Text fontFamily="Playfair Display, serif" fontSize="md" color="primary.DEFAULT" fontWeight="semibold">
+                      Memory Usage (24h)
+                    </Text>
+                  </Flex>
+                </Card.Header>
+                <Card.Body p={4}>
+                  <Box w="full" h="280px">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData}>
+                        <defs>
+                          <linearGradient id="memGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="var(--chakra-colors-success-DEFAULT)" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="var(--chakra-colors-success-DEFAULT)" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--chakra-colors-border-DEFAULT)" />
+                        <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'var(--chakra-colors-fg-muted)' }} interval="preserveStartEnd" />
+                        <YAxis tick={{ fontSize: 10, fill: 'var(--chakra-colors-fg-muted)' }} unit="%" />
+                        <Tooltip contentStyle={{ background: 'var(--chakra-colors-card-bg)', border: '1px solid var(--chakra-colors-border-DEFAULT)', borderRadius: '8px', fontSize: '12px' }} />
+                        <Area type="monotone" dataKey="memory" stroke="var(--chakra-colors-success-DEFAULT)" fill="url(#memGrad)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </Box>
+                </Card.Body>
+              </Card.Root>
+            </SimpleGrid>
           )}
-        </div>
-      )}
+        </Tabs.Content>
 
-      {tab === 'rmq' && (
-        <div className="bg-card-bg border border-border rounded-lg p-5">
-          <h3 className="text-text-muted text-xs uppercase tracking-wider mb-4">RMQ Overview</h3>
-          {rmq?.success ? (
-            <pre className="text-xs text-text-secondary font-mono bg-code-bg p-4 rounded overflow-auto">
-              {JSON.stringify(rmq.data, null, 2)}
-            </pre>
-          ) : (
-            <div className="text-text-muted text-sm">No RMQ data available</div>
-          )}
-        </div>
-      )}
-    </div>
+        <Tabs.Content value="firewall" pt={4}>
+          <Card.Root bg="card.bg" borderWidth="1px" borderColor="border" borderRadius="xl" boxShadow="card">
+            <Card.Header borderBottomWidth="1px" borderColor="border" px={5} py={4}>
+              <Flex align="center" gap={2}>
+                <FiShield size={16} color="currentColor" />
+                <Text fontFamily="Playfair Display, serif" fontSize="md" color="primary.DEFAULT" fontWeight="semibold">
+                  Firewall Status
+                </Text>
+              </Flex>
+            </Card.Header>
+            <Card.Body p={5}>
+              {firewall?.success ? (
+                <Box as="pre" fontSize="xs" color="fg" fontFamily="Roboto Mono, monospace" bg="code.bg" p={4} borderRadius="lg" overflow="auto">
+                  {JSON.stringify(firewall.data, null, 2)}
+                </Box>
+              ) : (
+                <Text color="fg.muted" fontSize="sm">No firewall data available</Text>
+              )}
+            </Card.Body>
+          </Card.Root>
+        </Tabs.Content>
+
+        <Tabs.Content value="rmq" pt={4}>
+          <Card.Root bg="card.bg" borderWidth="1px" borderColor="border" borderRadius="xl" boxShadow="card">
+            <Card.Header borderBottomWidth="1px" borderColor="border" px={5} py={4}>
+              <Flex align="center" gap={2}>
+                <FiRadio size={16} color="currentColor" />
+                <Text fontFamily="Playfair Display, serif" fontSize="md" color="primary.DEFAULT" fontWeight="semibold">
+                  RMQ Overview
+                </Text>
+              </Flex>
+            </Card.Header>
+            <Card.Body p={5}>
+              {rmq?.success ? (
+                <Box as="pre" fontSize="xs" color="fg" fontFamily="Roboto Mono, monospace" bg="code.bg" p={4} borderRadius="lg" overflow="auto">
+                  {JSON.stringify(rmq.data, null, 2)}
+                </Box>
+              ) : (
+                <Text color="fg.muted" fontSize="sm">No RMQ data available</Text>
+              )}
+            </Card.Body>
+          </Card.Root>
+        </Tabs.Content>
+      </Tabs.Root>
+    </Box>
   )
 }

@@ -48,7 +48,7 @@ def list_players():
     from app.factory import get_services
     svc = get_services()["player"]
     results = svc.search(term, limit=limit)
-    return jsonify(ApiResponse(success=True, data=[r.model_dump() for r in results]).model_dump())
+    return jsonify(ApiResponse(success=True, data=results).model_dump())
 
 
 @api_bp.route("/players/search", methods=["POST"])
@@ -59,7 +59,7 @@ def search_players():
     from app.factory import get_services
     svc = get_services()["player"]
     results = svc.search(term)
-    return jsonify(ApiResponse(success=True, data=[r.model_dump() for r in results]).model_dump())
+    return jsonify(ApiResponse(success=True, data=results).model_dump())
 
 
 @api_bp.route("/players/<int:account_id>", methods=["GET"])
@@ -73,7 +73,7 @@ def get_player(account_id):
             success=False,
             error=ErrorDetail(code="NotFound", message="Player not found"),
         ).model_dump()), 404
-    return jsonify(ApiResponse(success=True, data=detail.model_dump()).model_dump())
+    return jsonify(ApiResponse(success=True, data=detail).model_dump())
 
 
 @api_bp.route("/players/<int:account_id>/inventory", methods=["GET"])
@@ -82,7 +82,7 @@ def get_player_inventory(account_id):
     from app.factory import get_services
     svc = get_services()["economy"]
     inventories = svc.get_inventory(account_id)
-    return jsonify(ApiResponse(success=True, data=[inv.model_dump() for inv in inventories]).model_dump())
+    return jsonify(ApiResponse(success=True, data=inventories).model_dump())
 
 
 @api_bp.route("/players/<int:account_id>/currency", methods=["GET"])
@@ -91,14 +91,15 @@ def get_player_currency(account_id):
     from app.factory import get_services
     player_svc = get_services()["player"]
     detail = player_svc.get_detail(account_id)
-    if not detail or not detail.player_controller_id:
+    pid = detail.get("player_controller_id") if detail else None
+    if not pid:
         return jsonify(ApiResponse(
             success=False,
             error=ErrorDetail(code="NotFound", message="Player controller not found"),
         ).model_dump()), 404
     econ = get_services()["economy"]
-    currency = econ.get_currency(detail.player_controller_id)
-    return jsonify(ApiResponse(success=True, data=[c.model_dump() for c in currency]).model_dump())
+    currency = econ.get_currency(pid)
+    return jsonify(ApiResponse(success=True, data=currency).model_dump())
 
 
 @api_bp.route("/players/<int:account_id>/vitals", methods=["GET"])
@@ -107,14 +108,15 @@ def get_player_vitals(account_id):
     from app.factory import get_services
     player_svc = get_services()["player"]
     detail = player_svc.get_detail(account_id)
-    if not detail or not detail.player_pawn_id:
+    pawn_id = detail.get("player_pawn_id") if detail else None
+    if not pawn_id:
         return jsonify(ApiResponse(
             success=False,
             error=ErrorDetail(code="NotFound", message="Player pawn not found"),
         ).model_dump()), 404
     econ = get_services()["economy"]
-    vitals = econ.get_vitals(detail.player_pawn_id)
-    return jsonify(ApiResponse(success=True, data=vitals.model_dump()).model_dump())
+    vitals = econ.get_vitals(pawn_id)
+    return jsonify(ApiResponse(success=True, data=vitals).model_dump())
 
 
 # ── Economy Mutations ────────────────────────────────────────────
@@ -238,7 +240,7 @@ def list_guilds():
     guilds = svc.list_all()
     if term:
         guilds = [g for g in guilds if term.lower() in g.guild_name.lower()]
-    return jsonify(ApiResponse(success=True, data=[g.model_dump() for g in guilds[:limit]]).model_dump())
+    return jsonify(ApiResponse(success=True, data=guilds[:limit]).model_dump())
 
 
 @api_bp.route("/guilds/<int:guild_id>", methods=["GET"])
@@ -252,7 +254,7 @@ def get_guild(guild_id):
             success=False,
             error=ErrorDetail(code="NotFound", message="Guild not found"),
         ).model_dump()), 404
-    return jsonify(ApiResponse(success=True, data=guild.model_dump()).model_dump())
+    return jsonify(ApiResponse(success=True, data=guild).model_dump())
 
 
 @api_bp.route("/guilds/<int:guild_id>", methods=["DELETE"])
@@ -305,7 +307,7 @@ def list_partitions():
     from app.factory import get_services
     svc = get_services()["world"]
     partitions = svc.get_partitions(map_name)
-    return jsonify(ApiResponse(success=True, data=[p.model_dump() for p in partitions]).model_dump())
+    return jsonify(ApiResponse(success=True, data=partitions).model_dump())
 
 
 @api_bp.route("/teleport", methods=["POST"])
@@ -498,20 +500,19 @@ def list_vehicles():
     term = request.args.get("q", "")
     limit = int(request.args.get("limit", 100))
     rows = db.execute_readonly(
-        """SELECT a.id, a.class, a.map, c.character_name as owner_name
+        """SELECT a.id, a.class, a.map
            FROM dune.actors a
            JOIN dune.vehicle_instances vi ON a.id = vi.actor_id
-           LEFT JOIN public.characters c ON vi.owner_id = c.id
-           WHERE a.class ILIKE %s OR c.character_name ILIKE %s
+           WHERE a.class ILIKE %s
            ORDER BY a.id DESC LIMIT %s""",
-        [f"%{term}%", f"%{term}%", limit],
+        [f"%{term}%", limit],
     )
     vehicles = [{
         "id": r["id"],
         "class_name": r["class"],
         "display_name": (r["class"] or "").split("/")[-1].replace("_C", "").replace("BP_", "").replace("_", " "),
         "map": r["map"],
-        "owner_name": r["owner_name"] or "Unknown",
+        "owner_name": "Unknown",
     } for r in rows]
     return jsonify(ApiResponse(success=True, data=vehicles).model_dump())
 
@@ -546,20 +547,18 @@ def list_buildings():
     limit = int(request.args.get("limit", 100))
     rows = db.execute_readonly(
         """SELECT a.id, a.class, a.map, a.properties->>'m_bIsPowered' as is_powered,
-                  a.properties->>'m_PowerLevel' as power_level,
-                  c.character_name as owner_name
+                  a.properties->>'m_PowerLevel' as power_level
            FROM dune.actors a
            JOIN dune.buildings b ON a.id = b.id
-           LEFT JOIN public.characters c ON b.owner_id = c.id
-           WHERE a.class ILIKE %s OR c.character_name ILIKE %s
+           WHERE a.class ILIKE %s
            ORDER BY a.id DESC LIMIT %s""",
-        [f"%{term}%", f"%{term}%", limit],
+        [f"%{term}%", limit],
     )
     buildings = [{
         "id": r["id"],
         "class_name": r["class"],
         "map": r["map"],
-        "owner_name": r["owner_name"] or "Unknown",
+        "owner_name": "Unknown",
         "is_powered": r.get("is_powered") == "True",
         "power_level": r.get("power_level"),
         "instance_count": 1,
@@ -577,17 +576,18 @@ def list_accounts():
     term = request.args.get("q", "")
     limit = int(request.args.get("limit", 100))
     rows = db.execute_readonly(
-        """SELECT a.id, a.email, a.funcom_id,
-                  (SELECT COUNT(*) FROM public.characters c WHERE c.account_id = a.id) as character_count,
-                  a.is_demo, a.is_cheater, a.last_login
-           FROM public.accounts a
+        """SELECT a.id, COALESCE(a.email, '') as email, a.funcom_id,
+                  (SELECT COUNT(*) FROM dune.player_state ps WHERE ps.account_id = a.id) as character_count,
+                  COALESCE(a.is_demo, false) as is_demo, COALESCE(a.is_cheater, false) as is_cheater,
+                  NULL as last_login
+           FROM dune.accounts a
            WHERE a.email ILIKE %s OR a.funcom_id ILIKE %s
-           ORDER BY a.last_login DESC NULLS LAST LIMIT %s""",
+           LIMIT %s""",
         [f"%{term}%", f"%{term}%", limit],
     )
     accounts = [{
         "id": r["id"],
-        "email": r["email"],
+        "email": r.get("email") or "",
         "funcom_id": r["funcom_id"],
         "character_count": r["character_count"],
         "is_demo": r["is_demo"],
@@ -845,14 +845,14 @@ def get_stats():
     try:
         stats = db.execute_readonly("""
             SELECT
-                (SELECT COUNT(*) FROM public.characters) AS total_players,
-                (SELECT COUNT(*) FROM public.characters WHERE is_online = true) AS online_players,
-                (SELECT COUNT(*) FROM public.guilds) AS guild_count,
-                (SELECT COUNT(*) FROM public.guilds WHERE active = true) AS active_guilds,
-                (SELECT COUNT(*) FROM public.game_servers) AS server_count,
-                (SELECT COUNT(*) FROM public.partitions) AS partition_count,
-                (SELECT COALESCE(SUM(worth), 0) FROM public.player_economy) AS total_worth,
-                (SELECT COUNT(*) FROM public.flavor_text) AS total_flavor_text
+                (SELECT COUNT(*) FROM dune.player_state) AS total_players,
+                (SELECT COUNT(*) FROM dune.player_state WHERE online_status::text = 'Online') AS online_players,
+                (SELECT COUNT(*) FROM dune.guilds) AS guild_count,
+                (SELECT 0) AS active_guilds,
+                (SELECT COUNT(*) FROM dune.accounts) AS server_count,
+                (SELECT 0) AS partition_count,
+                (SELECT 0) AS total_worth,
+                (SELECT 0) AS total_flavor_text
         """)
         return jsonify(ApiResponse(success=True, data=stats[0] if stats else {}).model_dump())
     except Exception as e:
