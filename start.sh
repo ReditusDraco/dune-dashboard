@@ -374,15 +374,25 @@ print(s.get('server', {}).get('host', 'NOT SET'))
 
 run_setup() {
     echo ""
-    echo "  Starting setup..."
+    echo "  Setup is currently only available via the Windows PowerShell launcher."
     echo ""
-
-    if [ -f "$PROJECT_ROOT/setup.sh" ]; then
-        chmod +x "$PROJECT_ROOT/setup.sh"
-        bash "$PROJECT_ROOT/setup.sh"
-    else
-        echo "  [ERROR] setup.sh not found."
-    fi
+    echo "  To configure the dashboard:"
+    echo "    1. Run setup on a Windows machine: .\launcher.ps1 -> option 2"
+    echo "    2. Or create settings.yaml manually. Copy settings.yaml.example:"
+    echo "       cp $PROJECT_ROOT/settings.yaml.example $PROJECT_ROOT/settings.yaml"
+    echo "    3. Edit settings.yaml with your server details:"
+    echo "       nano $PROJECT_ROOT/settings.yaml"
+    echo ""
+    echo "  Required settings:"
+    echo "    - server.host       : Game server VM IP"
+    echo "    - server.user       : SSH username"
+    echo "    - server.ssh_key    : Path to SSH private key"
+    echo "    - database.port     : Local port for DB tunnel"
+    echo "    - dashboard.port    : Web UI port (default 5050)"
+    echo "    - kubernetes.namespace : K8s namespace"
+    echo ""
+    echo "  Press Enter to return to the main menu..."
+    read -r
 }
 
 start_dashboard() {
