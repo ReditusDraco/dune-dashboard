@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useSWR from 'swr'
+import { Box, Heading, Input, Button, HStack } from '@chakra-ui/react'
+import { FiSearch } from 'react-icons/fi'
 import client from '../../api/client'
 import { useApp } from '../../stores/AppContext'
 import { useDebounce } from '../../hooks/useDebounce'
@@ -60,23 +62,35 @@ export default function PlayerExplorer() {
   const playerList: Player[] = players?.success ? players.data : []
 
   return (
-    <div>
-      <h1 className="font-serif text-3xl text-primary mb-6">Player Explorer</h1>
+    <Box>
+      <Heading as="h1" fontFamily="Playfair Display, serif" fontSize="3xl" color="primary.DEFAULT" mb={6}>
+        Player Explorer
+      </Heading>
 
-      <div className="mb-6">
-        <div className="relative max-w-md">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, email, or Funcom ID..."
-            className="w-full bg-card-bg border border-border rounded-lg px-4 py-2.5 pl-10 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-          />
-          <svg className="absolute left-3 top-3 w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0" />
-          </svg>
-        </div>
-      </div>
+      <Box mb={6} maxW="md" position="relative">
+        <Box
+          position="absolute"
+          left={3}
+          top="50%"
+          transform="translateY(-50%)"
+          zIndex={1}
+          color="fg.muted"
+        >
+          <FiSearch size={16} />
+        </Box>
+        <Input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, email, or Funcom ID..."
+          pl={10}
+          bg="card.bg"
+          borderColor="border"
+          borderRadius="lg"
+          fontSize="sm"
+          _placeholder={{ color: 'fg.muted' }}
+        />
+      </Box>
 
       <DataTable
         columns={[
@@ -84,9 +98,9 @@ export default function PlayerExplorer() {
           {
             header: 'Status',
             accessor: (row) => (
-              <Badge
-                label={row.online_status}
-                variant={row.online_status === 'Online' ? 'success' : 'default'}
+                <Badge
+                label={(row as any).online_status}
+                variant={(row as any).online_status === 'Online' ? 'success' : 'default'}
               />
             ),
           },
@@ -96,20 +110,34 @@ export default function PlayerExplorer() {
           {
             header: 'Quick Actions',
             accessor: (row) => (
-              <div className="flex gap-2">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleAction(row.account_id || row.player_controller_id || 0, 'cheater', { cheat_type: 'exploit' }) }}
-                  className="text-[10px] text-primary hover:underline"
+              <HStack gap={2}>
+                <Button
+                  onClick={(e) => { e.stopPropagation(); handleAction((row as any).account_id || (row as any).player_controller_id || 0, 'cheater', { cheat_type: 'exploit' }) }}
+                  variant="ghost"
+                  size="xs"
+                  color="primary.DEFAULT"
+                  fontSize="10px"
+                  p={0}
+                  h="auto"
+                  minW="auto"
+                  _hover={{ textDecoration: 'underline' }}
                 >
                   Cheater
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleAction(row.account_id || row.player_controller_id || 0, 'tags', { add: ['reviewed'] }) }}
-                  className="text-[10px] text-primary hover:underline"
+                </Button>
+                <Button
+                  onClick={(e) => { e.stopPropagation(); handleAction((row as any).account_id || (row as any).player_controller_id || 0, 'tags', { add: ['reviewed'] }) }}
+                  variant="ghost"
+                  size="xs"
+                  color="primary.DEFAULT"
+                  fontSize="10px"
+                  p={0}
+                  h="auto"
+                  minW="auto"
+                  _hover={{ textDecoration: 'underline' }}
                 >
                   Tag
-                </button>
-              </div>
+                </Button>
+              </HStack>
             ),
           },
         ]}
@@ -117,6 +145,6 @@ export default function PlayerExplorer() {
         onRowClick={(row) => navigate(`/players/${row.account_id || row.player_controller_id || 0}`)}
         loading={isLoading}
       />
-    </div>
+    </Box>
   )
 }

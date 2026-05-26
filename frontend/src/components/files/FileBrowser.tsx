@@ -1,4 +1,18 @@
 import { useState, useEffect } from 'react'
+import {
+  Box,
+  Heading,
+  Button,
+  Flex,
+  HStack,
+  Table,
+  Text,
+  Spinner,
+  Dialog,
+  Portal,
+  IconButton,
+} from '@chakra-ui/react'
+import { FiX, FiFolder, FiFile } from 'react-icons/fi'
 import client from '../../api/client'
 import { useApp } from '../../stores/AppContext'
 
@@ -52,107 +66,208 @@ export default function FileBrowser() {
   const breadcrumbs = path.split('/').filter(Boolean)
 
   return (
-    <div>
-      <h1 className="font-serif text-3xl text-primary mb-6">File Browser</h1>
+    <Box>
+      <Heading as="h1" fontFamily="Playfair Display, serif" color="primary.DEFAULT" fontSize="2xl" mb={6}>
+        File Browser
+      </Heading>
 
-      <div className="flex items-center gap-2 mb-4 text-sm">
-        <button
+      <HStack gap={1} mb={4} fontSize="sm">
+        <Button
+          variant="ghost"
+          size="sm"
+          color="primary.DEFAULT"
+          fontWeight="normal"
+          _hover={{ textDecoration: 'underline' }}
           onClick={() => load('/')}
-          className="text-primary hover:underline"
         >
           /
-        </button>
+        </Button>
         {breadcrumbs.map((crumb, i) => {
           const crumbPath = '/' + breadcrumbs.slice(0, i + 1).join('/')
           return (
-            <span key={i} className="flex items-center gap-2">
-              <span className="text-text-muted">/</span>
-              <button
+            <HStack key={i} gap={1}>
+              <Text color="fg.muted">/</Text>
+              <Button
+                variant="ghost"
+                size="sm"
+                color="primary.DEFAULT"
+                fontWeight="normal"
+                _hover={{ textDecoration: 'underline' }}
                 onClick={() => load(crumbPath)}
-                className="text-primary hover:underline"
               >
                 {crumb}
-              </button>
-            </span>
+              </Button>
+            </HStack>
           )
         })}
-      </div>
+      </HStack>
 
-      <div className="bg-card-bg border border-border rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Name</th>
-              <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Size</th>
-              <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Modified</th>
-              <th className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {path !== '/' && (
-              <tr
-                className="border-b border-border hover:bg-hover/50 cursor-pointer"
-                onClick={() => {
-                  const parent = path.substring(0, path.lastIndexOf('/')) || '/'
-                  load(parent)
-                }}
-              >
-                <td className="px-4 py-3 text-text-primary">..</td>
-                <td className="px-4 py-3">-</td>
-                <td className="px-4 py-3">-</td>
-                <td className="px-4 py-3">-</td>
-              </tr>
-            )}
-            {loading ? (
-              <tr><td colSpan={4} className="px-4 py-8 text-center text-text-muted">Loading...</td></tr>
-            ) : (
-              files.map((f) => (
-                <tr
-                  key={f.path}
-                  className="border-b border-border last:border-0 hover:bg-hover/50 cursor-pointer"
-                  onClick={() => f.is_dir && load(f.path)}
+      <Box bg="card.bg" borderWidth="1px" borderColor="border" borderRadius="xl" overflow="hidden" boxShadow="card">
+        <Table.ScrollArea>
+          <Table.Root variant="line" size="sm">
+            <Table.Header>
+              <Table.Row bg="bg.subtle">
+                <Table.ColumnHeader px={4} py={3} fontSize="2xs" fontWeight="semibold" color="fg.muted" textTransform="uppercase" letterSpacing="wider">
+                  Name
+                </Table.ColumnHeader>
+                <Table.ColumnHeader px={4} py={3} fontSize="2xs" fontWeight="semibold" color="fg.muted" textTransform="uppercase" letterSpacing="wider">
+                  Size
+                </Table.ColumnHeader>
+                <Table.ColumnHeader px={4} py={3} fontSize="2xs" fontWeight="semibold" color="fg.muted" textTransform="uppercase" letterSpacing="wider">
+                  Modified
+                </Table.ColumnHeader>
+                <Table.ColumnHeader px={4} py={3} fontSize="2xs" fontWeight="semibold" color="fg.muted" textTransform="uppercase" letterSpacing="wider">
+                  Actions
+                </Table.ColumnHeader>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {path !== '/' && (
+                <Table.Row
+                  cursor="pointer"
+                  _hover={{ bg: 'bg.subtle' }}
+                  borderBottomWidth="1px"
+                  borderColor="border"
+                  transition="all 0.15s"
+                  onClick={() => {
+                    const parent = path.substring(0, path.lastIndexOf('/')) || '/'
+                    load(parent)
+                  }}
                 >
-                  <td className="px-4 py-3 text-text-primary">
-                    {f.is_dir ? '📁' : '📄'} {f.name}
-                  </td>
-                  <td className="px-4 py-3 text-text-muted">{f.is_dir ? '-' : formatBytes(f.size)}</td>
-                  <td className="px-4 py-3 text-text-muted">{new Date(f.mod_time).toLocaleString()}</td>
-                  <td className="px-4 py-3">
-                    {!f.is_dir && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); view(f.path) }}
-                        className="text-xs text-primary hover:underline"
-                      >
-                        View
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                  <Table.Cell px={4} py={3} color="fg">
+                    ..
+                  </Table.Cell>
+                  <Table.Cell px={4} py={3}>-</Table.Cell>
+                  <Table.Cell px={4} py={3}>-</Table.Cell>
+                  <Table.Cell px={4} py={3}>-</Table.Cell>
+                </Table.Row>
+              )}
+              {loading ? (
+                <Table.Row>
+                  <Table.Cell colSpan={4} textAlign="center" py={8}>
+                    <Flex align="center" justify="center" gap={2} color="fg.muted">
+                      <Spinner size="sm" />
+                      <Text fontSize="sm">Loading...</Text>
+                    </Flex>
+                  </Table.Cell>
+                </Table.Row>
+              ) : files.length === 0 ? (
+                <Table.Row>
+                  <Table.Cell colSpan={4} textAlign="center" py={8} color="fg.muted" fontSize="sm">
+                    <Flex direction="column" align="center" gap={1}>
+                      <FiFolder size={24} />
+                      <Text>This directory is empty</Text>
+                    </Flex>
+                  </Table.Cell>
+                </Table.Row>
+              ) : (
+                files.map((f, i) => (
+                  <Table.Row
+                    key={f.path}
+                    cursor="pointer"
+                    _hover={{ bg: 'bg.subtle' }}
+                    borderBottomWidth="1px"
+                    borderColor="border"
+                    bg={i % 2 === 0 ? 'transparent' : 'bg.subtle'}
+                    transition="all 0.15s"
+                    onClick={() => f.is_dir && load(f.path)}
+                  >
+                    <Table.Cell px={4} py={3} color="fg">
+                      <Flex align="center" gap={2}>
+                        {f.is_dir ? <FiFolder size={16} /> : <FiFile size={16} />}
+                        {f.name}
+                      </Flex>
+                    </Table.Cell>
+                    <Table.Cell px={4} py={3} color="fg.muted">{f.is_dir ? '-' : formatBytes(f.size)}</Table.Cell>
+                    <Table.Cell px={4} py={3} color="fg.muted">{new Date(f.mod_time).toLocaleString()}</Table.Cell>
+                    <Table.Cell px={4} py={3}>
+                      {!f.is_dir && (
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          color="primary.DEFAULT"
+                          _hover={{ textDecoration: 'underline' }}
+                          onClick={(e) => { e.stopPropagation(); view(f.path) }}
+                        >
+                          View
+                        </Button>
+                      )}
+                    </Table.Cell>
+                  </Table.Row>
+                ))
+              )}
+            </Table.Body>
+          </Table.Root>
+        </Table.ScrollArea>
+      </Box>
 
-      {viewFile && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-card-bg border border-border rounded-xl shadow-2xl w-full mx-4 max-w-4xl max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <h3 className="font-serif text-lg text-text-primary truncate">{viewFile.path}</h3>
-              <button
-                onClick={() => setViewFile(null)}
-                className="text-text-muted hover:text-text-primary text-xl leading-none"
+      <Dialog.Root open={!!viewFile} onOpenChange={(details) => { if (!details.open) setViewFile(null) }}>
+        <Portal>
+          <Dialog.Backdrop bg="black/60" backdropFilter="blur(4px)" />
+          <Dialog.Positioner>
+            <Dialog.Content
+              bg="card.bg"
+              borderWidth="1px"
+              borderColor="border"
+              borderRadius="xl"
+              boxShadow="card"
+              maxW="4xl"
+              w="full"
+              mx={4}
+              maxH="80vh"
+              display="flex"
+              flexDirection="column"
+            >
+              <Dialog.Header
+                display="flex"
+                alignItems="center"
+                justifyContent="space-between"
+                borderBottomWidth="1px"
+                borderColor="border"
+                px={5}
+                py={4}
               >
-                &times;
-              </button>
-            </div>
-            <pre className="p-5 overflow-auto flex-1 text-xs font-mono text-text-secondary bg-code-bg">
-              {viewFile.content}
-            </pre>
-          </div>
-        </div>
-      )}
-    </div>
+                <Dialog.Title
+                  fontSize="lg"
+                  fontFamily="Playfair Display, serif"
+                  color="primary.DEFAULT"
+                  truncate
+                >
+                  {viewFile?.path}
+                </Dialog.Title>
+                <Dialog.CloseTrigger asChild>
+                  <IconButton
+                    aria-label="Close"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setViewFile(null)}
+                    color="fg.muted"
+                    _hover={{ color: 'fg' }}
+                  >
+                    <FiX />
+                  </IconButton>
+                </Dialog.CloseTrigger>
+              </Dialog.Header>
+              <Dialog.Body p={5} overflow="auto" flex={1}>
+                <Box
+                  as="pre"
+                  fontSize="xs"
+                  fontFamily="Roboto Mono, monospace"
+                  color="fg"
+                  bg="code.bg"
+                  p={4}
+                  borderRadius="md"
+                  overflow="auto"
+                  whiteSpace="pre-wrap"
+                >
+                  {viewFile?.content}
+                </Box>
+              </Dialog.Body>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Portal>
+      </Dialog.Root>
+    </Box>
   )
 }
 

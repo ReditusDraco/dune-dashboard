@@ -1,4 +1,6 @@
 import { ReactNode, useState } from 'react'
+import { Table, Flex, Text, Spinner } from '@chakra-ui/react'
+import { FiChevronUp, FiChevronDown } from 'react-icons/fi'
 
 interface Column<T> {
   header: string
@@ -35,16 +37,14 @@ export default function DataTable<T extends object>({
   if (sortCol) {
     const col = columns.find((c) => c.header === sortCol)
     if (col && typeof col.accessor === 'string') {
-      sorted.sort((a: any, b: any) => {
-        const av = a[col.accessor]
-        const bv = b[col.accessor]
+      sorted.sort((a, b) => {
+        const av = (a as any)[col.accessor as string]
+        const bv = (b as any)[col.accessor as string]
         if (av == null && bv == null) return 0
         if (av == null) return sortDir === 'asc' ? 1 : -1
         if (bv == null) return sortDir === 'asc' ? -1 : 1
         if (typeof av === 'string') {
-          return sortDir === 'asc'
-            ? av.localeCompare(bv)
-            : bv.localeCompare(av)
+          return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
         }
         if (typeof av === 'number') {
           return sortDir === 'asc' ? av - bv : bv - av
@@ -54,64 +54,86 @@ export default function DataTable<T extends object>({
     }
   }
 
+  const getCellValue = (row: T, col: Column<T>): string => {
+    if (typeof col.accessor === 'function') return ''
+    return String((row as any)[col.accessor] ?? '')
+  }
+
+  const getCellNode = (row: T, col: Column<T>): ReactNode => {
+    if (typeof col.accessor === 'function') return col.accessor(row)
+    return String((row as any)[col.accessor] ?? '')
+  }
+
   return (
-    <div className="overflow-x-auto rounded-lg border border-border">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border">
+    <Table.ScrollArea borderWidth="1px" borderColor="border" borderRadius="lg">
+      <Table.Root variant="line" size="sm" stickyHeader>
+        <Table.Header>
+          <Table.Row bg="bg.subtle">
             {columns.map((col) => (
-              <th
+              <Table.ColumnHeader
                 key={col.header}
-                className="text-left px-4 py-3 text-text-muted font-semibold text-[11px] uppercase tracking-wider cursor-pointer hover:text-text-primary select-none"
-                style={{ width: col.width }}
                 onClick={() => handleSort(col.header)}
+                cursor="pointer"
+                userSelect="none"
+                textTransform="uppercase"
+                fontSize="2xs"
+                letterSpacing="wider"
+                fontWeight="semibold"
+                color="fg.muted"
+                py={3}
+                px={4}
+                _hover={{ color: 'fg' }}
+                style={{ width: col.width }}
               >
-                <div className="flex items-center gap-1">
+                <Flex align="center" gap={1}>
                   {col.header}
                   {sortCol === col.header && (
-                    <span className="text-primary">
-                      {sortDir === 'asc' ? ' ▲' : ' ▼'}
-                    </span>
+                    <Text as="span" color="primary.DEFAULT">
+                      {sortDir === 'asc' ? <FiChevronUp size={10} /> : <FiChevronDown size={10} />}
+                    </Text>
                   )}
-                </div>
-              </th>
+                </Flex>
+              </Table.ColumnHeader>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
           {loading ? (
-            <tr>
-              <td colSpan={columns.length} className="px-4 py-8 text-center text-text-muted">
-                Loading...
-              </td>
-            </tr>
+            <Table.Row>
+              <Table.Cell colSpan={columns.length} textAlign="center" py={8}>
+                <Flex align="center" justify="center" gap={2} color="fg.muted">
+                  <Spinner size="sm" />
+                  <Text fontSize="sm">Loading...</Text>
+                </Flex>
+              </Table.Cell>
+            </Table.Row>
           ) : sorted.length === 0 ? (
-            <tr>
-              <td colSpan={columns.length} className="px-4 py-8 text-center text-text-muted">
+            <Table.Row>
+              <Table.Cell colSpan={columns.length} textAlign="center" py={8} color="fg.muted" fontSize="sm">
                 No results found
-              </td>
-            </tr>
+              </Table.Cell>
+            </Table.Row>
           ) : (
             sorted.map((row, i) => (
-              <tr
+              <Table.Row
                 key={i}
                 onClick={() => onRowClick?.(row)}
-                className={`border-b border-border last:border-0 transition-colors ${
-                  onRowClick ? 'cursor-pointer hover:bg-hover' : 'hover:bg-hover/50'
-                }`}
+                cursor={onRowClick ? 'pointer' : 'default'}
+                _hover={{ bg: 'bg.subtle' }}
+                borderBottomWidth="1px"
+                borderColor="border"
+                bg={i % 2 === 0 ? 'transparent' : 'bg.subtle'}
               >
                 {columns.map((col) => (
-                  <td key={col.header} className="px-4 py-3 whitespace-nowrap">
-                    {typeof col.accessor === 'function'
-                      ? col.accessor(row)
-                      : String(row[col.accessor] ?? '')}
-                  </td>
+                  <Table.Cell key={col.header} py={2.5} px={4} fontSize="sm">
+                    {getCellNode(row, col)}
+                  </Table.Cell>
                 ))}
-              </tr>
+              </Table.Row>
             ))
           )}
-        </tbody>
-      </table>
-    </div>
+        </Table.Body>
+      </Table.Root>
+    </Table.ScrollArea>
   )
 }

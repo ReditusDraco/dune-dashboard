@@ -1,20 +1,33 @@
+import { Badge as ChakraBadge } from '@chakra-ui/react'
+
 interface BadgeProps {
   label: string
-  variant?: 'default' | 'success' | 'warning' | 'danger'
+  variant?: 'default' | 'success' | 'warning' | 'danger' | 'info'
+}
+
+const variantMap: Record<string, { bg: string; color: string }> = {
+  default: { bg: 'primary.subtle', color: 'primary.DEFAULT' },
+  success: { bg: 'success.subtle', color: 'success.DEFAULT' },
+  warning: { bg: 'warning.subtle', color: 'warning.DEFAULT' },
+  danger: { bg: 'danger.subtle', color: 'danger.DEFAULT' },
+  info: { bg: 'info.subtle', color: 'info.DEFAULT' },
 }
 
 export default function Badge({ label, variant = 'default' }: BadgeProps) {
-  const classes: Record<string, string> = {
-    default: 'bg-primary/10 text-primary border-primary/20',
-    success: 'bg-success/10 text-success border-success/20',
-    warning: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-    danger: 'bg-danger/10 text-danger border-danger/20',
-  }
+  const colors = variantMap[variant] ?? variantMap.default
+
   return (
-    <span
-      className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold border uppercase tracking-wide ${classes[variant]}`}
+    <ChakraBadge
+      variant="subtle"
+      bg={colors.bg}
+      color={colors.color}
+      borderRadius="full"
+      px={2.5}
+      py={0.5}
+      fontSize="xs"
+      fontWeight="medium"
     >
       {label}
-    </span>
+    </ChakraBadge>
   )
 }

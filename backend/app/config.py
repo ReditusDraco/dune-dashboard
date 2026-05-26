@@ -54,7 +54,7 @@ DEFAULTS = {
         "game_host": "127.0.0.1",
         "game_port": 32021,
         "username": "admin",
-        "password": "@5bkR636nz3TxML@",
+        "password": None,
         "vhost": "%2f",
     },
     "filebrowser": {
@@ -189,7 +189,7 @@ def _find_missing_keys(defaults, current, path=""):
 def load_settings(settings_path=None):
     """Load settings from YAML file with defaults and env var overrides."""
     if settings_path is None:
-        settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "settings.yaml")
+        settings_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "settings.yaml")
 
     settings = copy.deepcopy(DEFAULTS)
 
@@ -267,7 +267,7 @@ def get_settings():
 def save_settings(settings):
     """Save settings to YAML file."""
     global _settings_cache
-    settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "settings.yaml")
+    settings_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "settings.yaml")
     try:
         with open(settings_path, "w") as f:
             yaml.safe_dump(settings, f, default_flow_style=False, sort_keys=False)

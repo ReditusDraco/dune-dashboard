@@ -1,15 +1,31 @@
 import { useState } from 'react'
 import useSWR from 'swr'
+import {
+  Box,
+  Heading,
+  Tabs,
+  Button,
+  Input,
+  Textarea,
+  Field,
+  Text,
+  VStack,
+  HStack,
+  Spinner,
+  Flex,
+} from '@chakra-ui/react'
 import client from '../../api/client'
 import { useApp } from '../../stores/AppContext'
 
 const fetcher = (url: string) => client.get(url).then((r) => r.data)
 
 export default function Director() {
-  const [tab, setTab] = useState<'battlegroup' | 'config' | 'transfer' | 'fls'>('battlegroup')
+  const [tab, setTab] = useState('battlegroup')
   const { dispatch } = useApp()
 
-  const { data: bgData } = useSWR('/director/battlegroup', fetcher, { refreshInterval: 15000 })
+  const { data: bgData, isLoading: bgLoading } = useSWR('/director/battlegroup', fetcher, {
+    refreshInterval: 15000,
+  })
 
   const handlePost = async (endpoint: string, payload: any) => {
     try {
@@ -25,111 +41,211 @@ export default function Director() {
   }
 
   return (
-    <div>
-      <h1 className="font-serif text-3xl text-primary mb-6">Director Control</h1>
+    <Box>
+      <Heading as="h1" fontSize="3xl" fontFamily="Playfair Display, serif" color="primary.DEFAULT" mb={6}>
+        Director Control
+      </Heading>
 
-      <div className="flex gap-1 mb-6 border-b border-border">
-        {([
-          { key: 'battlegroup', label: 'Battlegroup' },
-          { key: 'config', label: 'Config' },
-          { key: 'transfer', label: 'Transfer' },
-          { key: 'fls', label: 'FLS' },
-        ] as const).map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key as any)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              tab === t.key
-                ? 'text-primary border-primary'
-                : 'text-text-muted border-transparent hover:text-text-primary'
-            }`}
+      <Tabs.Root value={tab} onValueChange={(e) => setTab(e.value)} variant="line" mb={6}>
+        <Tabs.List borderBottomWidth="1px" borderColor="border">
+          <Tabs.Trigger value="battlegroup" fontWeight="medium">
+            Battlegroup
+          </Tabs.Trigger>
+          <Tabs.Trigger value="config" fontWeight="medium">
+            Config
+          </Tabs.Trigger>
+          <Tabs.Trigger value="transfer" fontWeight="medium">
+            Transfer
+          </Tabs.Trigger>
+          <Tabs.Trigger value="fls" fontWeight="medium">
+            FLS
+          </Tabs.Trigger>
+        </Tabs.List>
+
+        <Tabs.Content value="battlegroup" pt={6}>
+          <Box
+            bg="card.bg"
+            borderWidth="1px"
+            borderColor="border"
+            borderRadius="xl"
+            boxShadow="card"
+            p={5}
           >
-            {t.label}
-          </button>
-        ))}
-      </div>
+            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted" mb={4}>
+              Battlegroup State
+            </Text>
+            {bgLoading ? (
+              <Flex align="center" gap={2} color="fg.muted">
+                <Spinner size="sm" />
+                <Text fontSize="sm">Loading battlegroup data...</Text>
+              </Flex>
+            ) : bgData?.success ? (
+              <Box
+                as="pre"
+                fontSize="xs"
+                color="fg"
+                fontFamily="Roboto Mono, monospace"
+                bg="code.bg"
+                p={4}
+                borderRadius="lg"
+                overflow="auto"
+                maxH="60vh"
+              >
+                {JSON.stringify(bgData.data, null, 2)}
+              </Box>
+            ) : (
+              <Text color="fg.muted">Loading battlegroup data...</Text>
+            )}
+          </Box>
+        </Tabs.Content>
 
-      {tab === 'battlegroup' && (
-        <div className="bg-card-bg border border-border rounded-lg p-5">
-          <h3 className="text-text-muted text-xs uppercase tracking-wider mb-4">Battlegroup State</h3>
-          {bgData?.success ? (
-            <pre className="text-xs text-text-secondary font-mono bg-code-bg p-4 rounded overflow-auto max-h-[60vh]">
-              {JSON.stringify(bgData.data, null, 2)}
-            </pre>
-          ) : (
-            <div className="text-text-muted">Loading battlegroup data...</div>
-          )}
-        </div>
-      )}
+        <Tabs.Content value="config" pt={6}>
+          <Box
+            bg="card.bg"
+            borderWidth="1px"
+            borderColor="border"
+            borderRadius="xl"
+            boxShadow="card"
+            p={5}
+            maxW="xl"
+          >
+            <VStack gap={4} align="stretch">
+              <Text fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">
+                Update Config
+              </Text>
 
-      {tab === 'config' && (
-        <div className="bg-card-bg border border-border rounded-lg p-5 space-y-4 max-w-xl">
-          <h3 className="text-text-muted text-xs uppercase tracking-wider mb-4">Update Config</h3>
-          <div>
-            <label className="block text-sm text-text-muted mb-2">Map Name</label>
-            <input
-              id="config-map"
-              className="w-full bg-card-bg border border-border rounded-lg px-4 py-2 text-sm"
-              placeholder="e.g., HaggaBasin"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-text-muted mb-2">Config JSON</label>
-            <textarea
-              id="config-json"
-              rows={6}
-              className="w-full bg-card-bg border border-border rounded-lg px-4 py-3 text-sm font-mono"
-              placeholder='{"maxPlayers": 100}'
-            />
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => {
-                const map = (document.getElementById('config-map') as HTMLInputElement).value
-                const json = (document.getElementById('config-json') as HTMLTextAreaElement).value
-                handlePost('/director/config', { map, config: JSON.parse(json) })
-              }}
-              className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium"
-            >
-              Update Config
-            </button>
-            <button
-              onClick={() => handlePost('/director/config/clear', {})}
-              className="px-4 py-2 bg-danger/10 border border-danger/30 text-danger rounded-lg text-sm font-medium"
-            >
-              Clear Config
-            </button>
-          </div>
-        </div>
-      )}
+              <Field.Root>
+                <Field.Label fontSize="sm" color="fg.muted">
+                  Map Name
+                </Field.Label>
+                <Input
+                  id="config-map"
+                  bg="card.bg"
+                  borderColor="border"
+                  borderRadius="lg"
+                  fontSize="sm"
+                  placeholder="e.g., HaggaBasin"
+                />
+              </Field.Root>
 
-      {tab === 'transfer' && (
-        <div className="bg-card-bg border border-border rounded-lg p-5 space-y-4 max-w-xl">
-          <h3 className="text-text-muted text-xs uppercase tracking-wider mb-4">Transfer Rules</h3>
-          <div className="flex gap-2">
-            <button
-              onClick={() => handlePost('/director/transfer/clear', {})}
-              className="px-4 py-2 bg-danger/10 border border-danger/30 text-danger rounded-lg text-sm font-medium"
-            >
-              Clear Overrides
-            </button>
-          </div>
-        </div>
-      )}
+              <Field.Root>
+                <Field.Label fontSize="sm" color="fg.muted">
+                  Config JSON
+                </Field.Label>
+                <Textarea
+                  id="config-json"
+                  rows={6}
+                  bg="card.bg"
+                  borderColor="border"
+                  borderRadius="lg"
+                  fontSize="sm"
+                  fontFamily="Roboto Mono, monospace"
+                  placeholder='{"maxPlayers": 100}'
+                />
+              </Field.Root>
 
-      {tab === 'fls' && (
-        <div className="bg-card-bg border border-border rounded-lg p-5 space-y-4 max-w-xl">
-          <h3 className="text-text-muted text-xs uppercase tracking-wider mb-4">FLS Settings</h3>
-          <div className="flex gap-2">
-            <button
-              onClick={() => handlePost('/director/fls/clear', {})}
-              className="px-4 py-2 bg-danger/10 border border-danger/30 text-danger rounded-lg text-sm font-medium"
-            >
-              Clear FLS Overrides
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+              <HStack gap={2}>
+                <Button
+                  variant="solid"
+                  size="sm"
+                  bg="primary.DEFAULT"
+                  borderRadius="lg"
+                  _hover={{ bg: 'primary.hover' }}
+                  transition="all 0.15s"
+                  onClick={() => {
+                    const map = (document.getElementById('config-map') as HTMLInputElement).value
+                    const json = (document.getElementById('config-json') as HTMLTextAreaElement).value
+                    handlePost('/director/config', { map, config: JSON.parse(json) })
+                  }}
+                >
+                  Update Config
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  borderColor="danger.DEFAULT/30"
+                  color="danger.DEFAULT"
+                  bg="danger.subtle"
+                  borderRadius="lg"
+                  _hover={{ bg: 'danger.subtle/80' }}
+                  transition="all 0.15s"
+                  onClick={() => handlePost('/director/config/clear', {})}
+                >
+                  Clear Config
+                </Button>
+              </HStack>
+            </VStack>
+          </Box>
+        </Tabs.Content>
+
+        <Tabs.Content value="transfer" pt={6}>
+          <Box
+            bg="card.bg"
+            borderWidth="1px"
+            borderColor="border"
+            borderRadius="xl"
+            boxShadow="card"
+            p={5}
+            maxW="xl"
+          >
+            <VStack gap={4} align="stretch">
+              <Text fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">
+                Transfer Rules
+              </Text>
+              <HStack gap={2}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  borderColor="danger.DEFAULT/30"
+                  color="danger.DEFAULT"
+                  bg="danger.subtle"
+                  borderRadius="lg"
+                  _hover={{ bg: 'danger.subtle/80' }}
+                  transition="all 0.15s"
+                  onClick={() => handlePost('/director/transfer/clear', {})}
+                >
+                  Clear Overrides
+                </Button>
+              </HStack>
+            </VStack>
+          </Box>
+        </Tabs.Content>
+
+        <Tabs.Content value="fls" pt={6}>
+          <Box
+            bg="card.bg"
+            borderWidth="1px"
+            borderColor="border"
+            borderRadius="xl"
+            boxShadow="card"
+            p={5}
+            maxW="xl"
+          >
+            <VStack gap={4} align="stretch">
+              <Text fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="fg.muted">
+                FLS Settings
+              </Text>
+              <HStack gap={2}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  borderColor="danger.DEFAULT/30"
+                  color="danger.DEFAULT"
+                  bg="danger.subtle"
+                  borderRadius="lg"
+                  _hover={{ bg: 'danger.subtle/80' }}
+                  transition="all 0.15s"
+                  onClick={() => handlePost('/director/fls/clear', {})}
+                >
+                  Clear FLS Overrides
+                </Button>
+              </HStack>
+            </VStack>
+          </Box>
+        </Tabs.Content>
+      </Tabs.Root>
+    </Box>
   )
 }
+
+

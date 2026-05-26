@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
+import { Box, Flex, Heading, Button, Text } from '@chakra-ui/react'
+import { FiMap, FiRefreshCw } from 'react-icons/fi'
 import useSWR from 'swr'
 import client from '../../api/client'
 
@@ -11,6 +13,8 @@ interface MapMarker {
   y: number
   type: 'player' | 'vehicle' | 'building' | 'landclaim'
 }
+
+const FILTERS = ['all', 'player', 'vehicle', 'building'] as const
 
 export default function MapViewer() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -112,46 +116,89 @@ export default function MapViewer() {
   const handleMouseUp = () => setIsDragging(false)
 
   return (
-    <div className="h-[calc(100vh-140px)] flex flex-col">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="font-serif text-3xl text-primary">Map Viewer</h1>
-        <div className="flex gap-2">
-          {(['all', 'player', 'vehicle', 'building'] as const).map((f) => (
-            <button
+    <Box h="calc(100vh - 140px)" display="flex" flexDirection="column">
+      <Flex align="center" justify="space-between" mb={4}>
+        <Heading
+          as="h1"
+          fontSize="3xl"
+          fontFamily="Playfair Display, serif"
+          color="primary.DEFAULT"
+        >
+          Map Viewer
+        </Heading>
+        <Flex gap={2}>
+          {FILTERS.map((f) => (
+            <Button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded text-xs font-medium border capitalize ${
-                filter === f
-                  ? 'bg-primary/10 border-primary text-primary'
-                  : 'bg-card-bg border-border text-text-muted hover:text-text-primary'
-              }`}
+              size="xs"
+              variant={filter === f ? 'solid' : 'outline'}
+              bg={filter === f ? 'primary.DEFAULT' : 'transparent'}
+              color={filter === f ? 'white' : 'fg.muted'}
+              borderColor={filter === f ? 'primary.DEFAULT' : 'border'}
+              _hover={filter === f ? {} : { color: 'fg', borderColor: 'fg.muted' }}
+              textTransform="capitalize"
+              borderRadius="md"
             >
               {f}
-            </button>
+            </Button>
           ))}
-          <button
+          <Button
             onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }) }}
-            className="px-3 py-1.5 rounded text-xs font-medium border bg-card-bg border-border text-text-muted hover:text-text-primary"
+            size="xs"
+            variant="outline"
+            borderColor="border"
+            color="fg.muted"
+            _hover={{ color: 'fg', borderColor: 'fg.muted' }}
+            borderRadius="md"
+            gap={1}
           >
+            <FiRefreshCw size={12} />
             Reset View
-          </button>
-        </div>
-      </div>
+          </Button>
+        </Flex>
+      </Flex>
 
-      <div className="flex-1 bg-card-bg border border-border rounded-lg overflow-hidden relative">
-        <canvas
+      <Box
+        flex={1}
+        bg="card.bg"
+        borderWidth="1px"
+        borderColor="border"
+        borderRadius="lg"
+        overflow="hidden"
+        position="relative"
+      >
+        <Box
+          as="canvas"
           ref={canvasRef}
-          className="w-full h-full cursor-grab active:cursor-grabbing"
+          w="full"
+          h="full"
+          cursor="grab"
+          _active={{ cursor: 'grabbing' }}
           onWheel={handleWheel}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
         />
-        <div className="absolute bottom-4 left-4 bg-card-bg/90 border border-border rounded px-3 py-2 text-xs text-text-muted">
+        <Box
+          position="absolute"
+          bottom={4}
+          left={4}
+          bg="card.bg"
+          opacity={0.9}
+          borderWidth="1px"
+          borderColor="border"
+          borderRadius="md"
+          px={3}
+          py={2}
+          fontSize="xs"
+          color="fg.muted"
+          backdropFilter="blur(8px)"
+        >
           Zoom: {scale.toFixed(1)}x | Markers: {markers.length}
-        </div>
-      </div>
-    </div>
+        </Box>
+      </Box>
+    </Box>
   )
 }

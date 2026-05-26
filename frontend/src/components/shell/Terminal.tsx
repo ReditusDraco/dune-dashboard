@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { Box, Heading } from '@chakra-ui/react'
 import { Terminal as XTerm } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { io, Socket } from 'socket.io-client'
@@ -95,12 +96,25 @@ export default function Terminal() {
   }, [])
 
   return (
-    <div className="h-[calc(100vh-140px)] flex flex-col">
-      <h1 className="font-serif text-3xl text-primary mb-4">Remote Shell</h1>
-      <div
+    <Box h="calc(100vh - 140px)" display="flex" flexDirection="column">
+      <Heading
+        as="h1"
+        fontSize="3xl"
+        fontFamily="Playfair Display, serif"
+        color="primary.DEFAULT"
+        mb={4}
+      >
+        Remote Shell
+      </Heading>
+      <Box
         ref={containerRef}
-        className="flex-1 bg-[#1a1a1a] rounded-lg border border-border overflow-hidden"
+        flex={1}
+        bg="#1a1a1a"
+        borderRadius="lg"
+        borderWidth="1px"
+        borderColor="border"
+        overflow="hidden"
       />
-    </div>
+    </Box>
   )
 }

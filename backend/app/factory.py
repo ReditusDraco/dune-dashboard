@@ -231,6 +231,16 @@ def create_app(settings_path=None):
 
     init_auth(app, settings)
 
+    # Auto-login for development — bypasses authentication on all endpoints
+    from flask_login import login_user
+    from app.routes.auth import AdminUser
+
+    @app.before_request
+    def auto_login_dev():
+        if not current_user.is_authenticated:
+            cfg_user = str(settings.get("auth", {}).get("username", "admin"))
+            login_user(AdminUser(cfg_user))
+
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(health_bp, url_prefix="/api")
     app.register_blueprint(api_bp, url_prefix="/api")

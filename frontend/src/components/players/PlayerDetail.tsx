@@ -1,6 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import useSWR from 'swr'
+import {
+  Box, Flex, Heading, Text, Button, Input, Select, Textarea,
+  SimpleGrid, VStack, Table, Tabs, Card, createListCollection,
+} from '@chakra-ui/react'
+import { FiArrowLeft } from 'react-icons/fi'
 import client from '../../api/client'
 import { useApp } from '../../stores/AppContext'
 import Badge from '../common/Badge'
@@ -35,70 +40,101 @@ export default function PlayerDetail() {
   }
 
   if (!player) {
-    return <div className="text-text-muted">Loading player details...</div>
+    return <Text color="fg.muted">Loading player details...</Text>
   }
 
-  const tabs = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'inventory', label: 'Inventory' },
-    { key: 'vehicles', label: 'Vehicles' },
-    { key: 'buildings', label: 'Buildings' },
-    { key: 'progression', label: 'Progression' },
-    { key: 'actions', label: 'Actions' },
-  ]
-
   return (
-    <div>
-      <div className="flex items-center gap-4 mb-6">
-        <button
+    <Box>
+      <Flex mb={6}>
+        <Button
           onClick={() => navigate('/players')}
-          className="text-text-muted hover:text-text-primary text-sm"
+          variant="ghost"
+          size="sm"
+          color="fg.muted"
+          _hover={{ color: 'fg' }}
         >
-          &larr; Back to Players
-        </button>
-      </div>
+          <FiArrowLeft style={{ marginRight: 6 }} /> Back to Players
+        </Button>
+      </Flex>
 
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="font-serif text-3xl text-primary">{player.character_name}</h1>
-          <div className="flex items-center gap-2 mt-1">
+      <Flex align="center" justify="space-between" mb={6}>
+        <Box>
+          <Heading as="h1" fontFamily="Playfair Display, serif" fontSize="3xl" color="primary.DEFAULT">
+            {player.character_name}
+          </Heading>
+          <Flex align="center" gap={2} mt={1}>
             <Badge
               label={player.online_status}
               variant={player.is_online ? 'success' : 'default'}
             />
             {player.faction_name && (
-              <span className="text-sm text-text-secondary">{player.faction_name}</span>
+              <Text fontSize="sm" color="fg.muted">{player.faction_name}</Text>
             )}
             {player.tags?.map((tag: string) => (
               <Badge key={tag} label={tag} variant="warning" />
             ))}
-          </div>
-        </div>
-      </div>
+          </Flex>
+        </Box>
+      </Flex>
 
-      <div className="flex gap-1 mb-6 border-b border-border">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setActiveTab(t.key)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === t.key
-                ? 'text-primary border-primary'
-                : 'text-text-muted border-transparent hover:text-text-primary'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs.Root value={activeTab} onValueChange={(e) => setActiveTab(e.value)} mb={6}>
+        <Tabs.List borderBottomWidth="1px" borderColor="border">
+          {[
+            { key: 'overview', label: 'Overview' },
+            { key: 'inventory', label: 'Inventory' },
+            { key: 'vehicles', label: 'Vehicles' },
+            { key: 'buildings', label: 'Buildings' },
+            { key: 'progression', label: 'Progression' },
+            { key: 'actions', label: 'Actions' },
+          ].map((t) => (
+            <Tabs.Trigger
+              key={t.key}
+              value={t.key}
+              px={4}
+              py={2.5}
+              fontSize="sm"
+              fontWeight="medium"
+              _selected={{ color: 'primary.DEFAULT', borderColor: 'primary.DEFAULT' }}
+              color="fg.muted"
+              borderBottomWidth="2px"
+              borderColor="transparent"
+            >
+              {t.label}
+            </Tabs.Trigger>
+          ))}
+        </Tabs.List>
 
-      {activeTab === 'overview' && <OverviewTab player={player} />}
-      {activeTab === 'inventory' && <InventoryTab player={player} />}
-      {activeTab === 'vehicles' && <VehiclesTab player={player} />}
-      {activeTab === 'buildings' && <BuildingsTab player={player} />}
-      {activeTab === 'progression' && <ProgressionTab player={player} />}
-      {activeTab === 'actions' && <ActionsTab player={player} onAction={handleAction} />}
-    </div>
+        <Tabs.Content value="overview" pt={4}>
+          <OverviewTab player={player} />
+        </Tabs.Content>
+        <Tabs.Content value="inventory" pt={4}>
+          <InventoryTab player={player} />
+        </Tabs.Content>
+        <Tabs.Content value="vehicles" pt={4}>
+          <VehiclesTab player={player} />
+        </Tabs.Content>
+        <Tabs.Content value="buildings" pt={4}>
+          <BuildingsTab player={player} />
+        </Tabs.Content>
+        <Tabs.Content value="progression" pt={4}>
+          <ProgressionTab player={player} />
+        </Tabs.Content>
+        <Tabs.Content value="actions" pt={4}>
+          <ActionsTab player={player} onAction={handleAction} />
+        </Tabs.Content>
+      </Tabs.Root>
+    </Box>
+  )
+}
+
+function InfoRow({ label, value }: { label: string; value: any }) {
+  return (
+    <Box>
+      <Text color="fg.muted" fontSize="xs" textTransform="uppercase" letterSpacing="wider">
+        {label}
+      </Text>
+      <Text fontFamily="Roboto Mono, monospace">{value ?? 'N/A'}</Text>
+    </Box>
   )
 }
 
@@ -107,82 +143,93 @@ function OverviewTab({ player }: { player: any }) {
   const currency = player.currency || []
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="bg-card-bg border border-border rounded-lg p-5">
-        <h3 className="font-serif text-lg text-primary mb-4">Character Info</h3>
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <InfoRow label="Account ID" value={player.account_id} />
-          <InfoRow label="Controller ID" value={player.player_controller_id} />
-          <InfoRow label="Pawn ID" value={player.player_pawn_id} />
-          <InfoRow label="Email" value={player.account_email} />
-          <InfoRow label="Funcom ID" value={player.funcom_id} />
-          <InfoRow label="Map" value={player.map} />
-          <InfoRow label="Life State" value={player.life_state} />
-          <InfoRow label="Last Login" value={player.last_login_time} />
-        </div>
-      </div>
+    <SimpleGrid columns={{ base: 1, lg: 2 }} gap={6}>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <Heading as="h3" fontFamily="Playfair Display, serif" fontSize="lg" color="primary.DEFAULT" mb={4}>
+            Character Info
+          </Heading>
+          <SimpleGrid columns={2} gap={4} fontSize="sm">
+            <InfoRow label="Account ID" value={player.account_id} />
+            <InfoRow label="Controller ID" value={player.player_controller_id} />
+            <InfoRow label="Pawn ID" value={player.player_pawn_id} />
+            <InfoRow label="Email" value={player.account_email} />
+            <InfoRow label="Funcom ID" value={player.funcom_id} />
+            <InfoRow label="Map" value={player.map} />
+            <InfoRow label="Life State" value={player.life_state} />
+            <InfoRow label="Last Login" value={player.last_login_time} />
+          </SimpleGrid>
+        </Card.Body>
+      </Card.Root>
 
-      <div className="bg-card-bg border border-border rounded-lg p-5">
-        <h3 className="font-serif text-lg text-primary mb-4">Vitals</h3>
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <InfoRow label="Health" value={`${vitals.current_health ?? '?'}/${vitals.max_health ?? '?'}`} />
-          <InfoRow label="Hydration" value={vitals.current_hydration ?? '?'} />
-          <InfoRow label="Dehydration" value={vitals.dehydration_penalty ?? '?'} />
-          <InfoRow label="Spice" value={vitals.current_spice ?? '?'} />
-          <InfoRow label="Addiction" value={vitals.spice_addiction_level ?? '?'} />
-          <InfoRow label="Tolerance" value={vitals.spice_tolerance ?? '?'} />
-        </div>
-      </div>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <Heading as="h3" fontFamily="Playfair Display, serif" fontSize="lg" color="primary.DEFAULT" mb={4}>
+            Vitals
+          </Heading>
+          <SimpleGrid columns={2} gap={4} fontSize="sm">
+            <InfoRow label="Health" value={`${vitals.current_health ?? '?'}/${vitals.max_health ?? '?'}`} />
+            <InfoRow label="Hydration" value={vitals.current_hydration ?? '?'} />
+            <InfoRow label="Dehydration" value={vitals.dehydration_penalty ?? '?'} />
+            <InfoRow label="Spice" value={vitals.current_spice ?? '?'} />
+            <InfoRow label="Addiction" value={vitals.spice_addiction_level ?? '?'} />
+            <InfoRow label="Tolerance" value={vitals.spice_tolerance ?? '?'} />
+          </SimpleGrid>
+        </Card.Body>
+      </Card.Root>
 
-      <div className="bg-card-bg border border-border rounded-lg p-5">
-        <h3 className="font-serif text-lg text-primary mb-4">Currency</h3>
-        <div className="space-y-2">
-          {currency.length === 0 && <span className="text-text-muted text-sm">No currency data</span>}
-          {currency.map((c: any) => (
-            <div key={c.currency_id} className="flex justify-between text-sm">
-              <span className="text-text-secondary">{c.currency_label}</span>
-              <span className="text-text-primary font-mono">{c.balance}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <Heading as="h3" fontFamily="Playfair Display, serif" fontSize="lg" color="primary.DEFAULT" mb={4}>
+            Currency
+          </Heading>
+          <VStack gap={2} align="stretch">
+            {currency.length === 0 && <Text color="fg.muted" fontSize="sm">No currency data</Text>}
+            {currency.map((c: any) => (
+              <Flex key={c.currency_id} justify="space-between" fontSize="sm">
+                <Text color="fg.muted">{c.currency_label}</Text>
+                <Text fontFamily="Roboto Mono, monospace">{c.balance}</Text>
+              </Flex>
+            ))}
+          </VStack>
+        </Card.Body>
+      </Card.Root>
 
-      <div className="bg-card-bg border border-border rounded-lg p-5">
-        <h3 className="font-serif text-lg text-primary mb-4">Landsraad</h3>
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          {player.landsraad ? (
-            <>
-              <InfoRow label="Daily Charges" value={player.landsraad.daily_reward_charges} />
-              <InfoRow label="Last Term" value={player.landsraad.last_viewed_term_id} />
-            </>
-          ) : (
-            <span className="text-text-muted">No landsraad data</span>
-          )}
-        </div>
-      </div>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <Heading as="h3" fontFamily="Playfair Display, serif" fontSize="lg" color="primary.DEFAULT" mb={4}>
+            Landsraad
+          </Heading>
+          <SimpleGrid columns={2} gap={4} fontSize="sm">
+            {player.landsraad ? (
+              <>
+                <InfoRow label="Daily Charges" value={player.landsraad.daily_reward_charges} />
+                <InfoRow label="Last Term" value={player.landsraad.last_viewed_term_id} />
+              </>
+            ) : (
+              <Text color="fg.muted">No landsraad data</Text>
+            )}
+          </SimpleGrid>
+        </Card.Body>
+      </Card.Root>
 
-      <div className="bg-card-bg border border-border rounded-lg p-5">
-        <h3 className="font-serif text-lg text-primary mb-4">Faction Reputation</h3>
-        <div className="space-y-2">
-          {(player.faction_reputation || []).length === 0 && <span className="text-text-muted text-sm">No reputation data</span>}
-          {(player.faction_reputation || []).map((r: any) => (
-            <div key={r.faction_id} className="flex justify-between text-sm">
-              <span className="text-text-secondary">{r.faction_name || `Faction ${r.faction_id}`}</span>
-              <span className="text-text-primary font-mono">{r.reputation_amount}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function InfoRow({ label, value }: { label: string; value: any }) {
-  return (
-    <div>
-      <div className="text-text-muted text-xs uppercase tracking-wider">{label}</div>
-      <div className="text-text-primary font-mono">{value ?? 'N/A'}</div>
-    </div>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <Heading as="h3" fontFamily="Playfair Display, serif" fontSize="lg" color="primary.DEFAULT" mb={4}>
+            Faction Reputation
+          </Heading>
+          <VStack gap={2} align="stretch">
+            {(player.faction_reputation || []).length === 0 && <Text color="fg.muted" fontSize="sm">No reputation data</Text>}
+            {(player.faction_reputation || []).map((r: any) => (
+              <Flex key={r.faction_id} justify="space-between" fontSize="sm">
+                <Text color="fg.muted">{r.faction_name || `Faction ${r.faction_id}`}</Text>
+                <Text fontFamily="Roboto Mono, monospace">{r.reputation_amount}</Text>
+              </Flex>
+            ))}
+          </VStack>
+        </Card.Body>
+      </Card.Root>
+    </SimpleGrid>
   )
 }
 
@@ -191,58 +238,64 @@ function InventoryTab({ player }: { player: any }) {
   const [selectedInv, setSelectedInv] = useState<any>(null)
 
   return (
-    <div>
-      <h3 className="font-serif text-xl text-primary mb-4">Inventories</h3>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <Box>
+      <Heading as="h3" fontFamily="Playfair Display, serif" fontSize="xl" color="primary.DEFAULT" mb={4}>
+        Inventories
+      </Heading>
+      <SimpleGrid columns={{ base: 1, md: 3 }} gap={4} mb={6}>
         {inventories.map((inv: any) => (
-          <button
+          <Box
             key={inv.inventory_id}
+            as="button"
             onClick={() => setSelectedInv(inv)}
-            className={`text-left p-4 rounded-lg border transition-colors ${
-              selectedInv?.inventory_id === inv.inventory_id
-                ? 'bg-primary/10 border-primary'
-                : 'bg-card-bg border-border hover:bg-hover'
-            }`}
+            textAlign="left"
+            p={4}
+            borderRadius="lg"
+            borderWidth="1px"
+            transition="colors"
+            bg={selectedInv?.inventory_id === inv.inventory_id ? 'primary.subtle' : 'card.bg'}
+            borderColor={selectedInv?.inventory_id === inv.inventory_id ? 'primary.DEFAULT' : 'border'}
+            _hover={{ bg: 'bg.subtle' }}
           >
-            <div className="text-sm font-medium text-text-primary">{inv.inventory_type_label}</div>
-            <div className="text-xs text-text-muted mt-1">ID: {inv.inventory_id}</div>
-            <div className="text-xs text-text-muted">Items: {inv.items?.length || 0}</div>
-          </button>
+            <Text fontSize="sm" fontWeight="medium">{inv.inventory_type_label}</Text>
+            <Text fontSize="xs" color="fg.muted" mt={1}>ID: {inv.inventory_id}</Text>
+            <Text fontSize="xs" color="fg.muted">Items: {inv.items?.length || 0}</Text>
+          </Box>
         ))}
-      </div>
+      </SimpleGrid>
 
       {selectedInv && (
-        <div className="bg-card-bg border border-border rounded-lg p-5">
-          <h4 className="text-text-primary font-medium mb-3">
-            {selectedInv.inventory_type_label} Items
-          </h4>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left px-3 py-2 text-text-muted text-[11px] uppercase">Item</th>
-                  <th className="text-left px-3 py-2 text-text-muted text-[11px] uppercase">Stack</th>
-                  <th className="text-left px-3 py-2 text-text-muted text-[11px] uppercase">Quality</th>
-                  <th className="text-left px-3 py-2 text-text-muted text-[11px] uppercase">Durability</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(selectedInv.items || []).map((item: any, i: number) => (
-                  <tr key={i} className="border-b border-border last:border-0">
-                    <td className="px-3 py-2">{item.template_id}</td>
-                    <td className="px-3 py-2 font-mono">{item.stack_size}</td>
-                    <td className="px-3 py-2 font-mono">{item.quality_level}</td>
-                    <td className="px-3 py-2 font-mono">
-                      {item.durability != null ? `${Math.round(item.durability)}/${Math.round(item.max_durability)}` : 'N/A'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+          <Card.Body p={5}>
+            <Text fontWeight="medium" mb={3}>{selectedInv.inventory_type_label} Items</Text>
+            <Box overflowX="auto">
+              <Table.Root variant="line" size="sm">
+                <Table.Header>
+                  <Table.Row borderBottomWidth="1px" borderColor="border">
+                    <Table.ColumnHeader textTransform="uppercase" fontSize="11px" color="fg.muted" px={3} py={2}>Item</Table.ColumnHeader>
+                    <Table.ColumnHeader textTransform="uppercase" fontSize="11px" color="fg.muted" px={3} py={2}>Stack</Table.ColumnHeader>
+                    <Table.ColumnHeader textTransform="uppercase" fontSize="11px" color="fg.muted" px={3} py={2}>Quality</Table.ColumnHeader>
+                    <Table.ColumnHeader textTransform="uppercase" fontSize="11px" color="fg.muted" px={3} py={2}>Durability</Table.ColumnHeader>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
+                  {(selectedInv.items || []).map((item: any, i: number) => (
+                    <Table.Row key={i} borderBottomWidth="1px" borderColor="border" _last={{ borderBottomWidth: 0 }}>
+                      <Table.Cell px={3} py={2}>{item.template_id}</Table.Cell>
+                      <Table.Cell px={3} py={2} fontFamily="Roboto Mono, monospace">{item.stack_size}</Table.Cell>
+                      <Table.Cell px={3} py={2} fontFamily="Roboto Mono, monospace">{item.quality_level}</Table.Cell>
+                      <Table.Cell px={3} py={2} fontFamily="Roboto Mono, monospace">
+                        {item.durability != null ? `${Math.round(item.durability)}/${Math.round(item.max_durability)}` : 'N/A'}
+                      </Table.Cell>
+                    </Table.Row>
+                  ))}
+                </Table.Body>
+              </Table.Root>
+            </Box>
+          </Card.Body>
+        </Card.Root>
       )}
-    </div>
+    </Box>
   )
 }
 
@@ -250,22 +303,26 @@ function VehiclesTab({ player }: { player: any }) {
   const vehicles = player.vehicles || []
 
   return (
-    <div>
-      <h3 className="font-serif text-xl text-primary mb-4">Vehicles</h3>
+    <Box>
+      <Heading as="h3" fontFamily="Playfair Display, serif" fontSize="xl" color="primary.DEFAULT" mb={4}>
+        Vehicles
+      </Heading>
       {vehicles.length === 0 ? (
-        <div className="text-text-muted">No vehicles found.</div>
+        <Text color="fg.muted">No vehicles found.</Text>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap={4}>
           {vehicles.map((v: any) => (
-            <div key={v.id} className="bg-card-bg border border-border rounded-lg p-4">
-              <div className="text-text-primary font-medium">{v.display_name || v.class_name}</div>
-              <div className="text-xs text-text-muted mt-1">Map: {v.map || 'Unknown'}</div>
-              <div className="text-xs text-text-muted font-mono">ID: {v.id}</div>
-            </div>
+            <Card.Root key={v.id} borderRadius="lg" boxShadow="card" bg="card.bg">
+              <Card.Body p={4}>
+                <Text fontWeight="medium">{v.display_name || v.class_name}</Text>
+                <Text fontSize="xs" color="fg.muted" mt={1}>Map: {v.map || 'Unknown'}</Text>
+                <Text fontSize="xs" color="fg.muted" fontFamily="Roboto Mono, monospace">ID: {v.id}</Text>
+              </Card.Body>
+            </Card.Root>
           ))}
-        </div>
+        </SimpleGrid>
       )}
-    </div>
+    </Box>
   )
 }
 
@@ -274,43 +331,51 @@ function BuildingsTab({ player }: { player: any }) {
   const landclaims = player.landclaims || []
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="font-serif text-xl text-primary mb-4">Buildings</h3>
+    <VStack gap={6} align="stretch">
+      <Box>
+        <Heading as="h3" fontFamily="Playfair Display, serif" fontSize="xl" color="primary.DEFAULT" mb={4}>
+          Buildings
+        </Heading>
         {buildings.length === 0 ? (
-          <div className="text-text-muted">No buildings found.</div>
+          <Text color="fg.muted">No buildings found.</Text>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap={4}>
             {buildings.map((b: any) => (
-              <div key={b.id} className="bg-card-bg border border-border rounded-lg p-4">
-                <div className="text-text-primary font-medium">{b.class_name}</div>
-                <div className="text-xs text-text-muted mt-1">Map: {b.map || 'Unknown'}</div>
-                <div className="flex gap-2 mt-2">
-                  {b.is_powered && <Badge label="Powered" variant="success" />}
-                  {b.power_level != null && <Badge label={`Power ${b.power_level}`} variant="default" />}
-                </div>
-              </div>
+              <Card.Root key={b.id} borderRadius="lg" boxShadow="card" bg="card.bg">
+                <Card.Body p={4}>
+                  <Text fontWeight="medium">{b.class_name}</Text>
+                  <Text fontSize="xs" color="fg.muted" mt={1}>Map: {b.map || 'Unknown'}</Text>
+                  <Flex gap={2} mt={2}>
+                    {b.is_powered && <Badge label="Powered" variant="success" />}
+                    {b.power_level != null && <Badge label={`Power ${b.power_level}`} variant="default" />}
+                  </Flex>
+                </Card.Body>
+              </Card.Root>
             ))}
-          </div>
+          </SimpleGrid>
         )}
-      </div>
+      </Box>
 
-      <div>
-        <h3 className="font-serif text-xl text-primary mb-4">Landclaims</h3>
+      <Box>
+        <Heading as="h3" fontFamily="Playfair Display, serif" fontSize="xl" color="primary.DEFAULT" mb={4}>
+          Landclaims
+        </Heading>
         {landclaims.length === 0 ? (
-          <div className="text-text-muted">No landclaims found.</div>
+          <Text color="fg.muted">No landclaims found.</Text>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap={4}>
             {landclaims.map((l: any) => (
-              <div key={l.id} className="bg-card-bg border border-border rounded-lg p-4">
-                <div className="text-text-primary font-medium">{l.class_name}</div>
-                <div className="text-xs text-text-muted mt-1">Map: {l.map || 'Unknown'}</div>
-              </div>
+              <Card.Root key={l.id} borderRadius="lg" boxShadow="card" bg="card.bg">
+                <Card.Body p={4}>
+                  <Text fontWeight="medium">{l.class_name}</Text>
+                  <Text fontSize="xs" color="fg.muted" mt={1}>Map: {l.map || 'Unknown'}</Text>
+                </Card.Body>
+              </Card.Root>
             ))}
-          </div>
+          </SimpleGrid>
         )}
-      </div>
-    </div>
+      </Box>
+    </VStack>
   )
 }
 
@@ -319,41 +384,57 @@ function ProgressionTab({ player }: { player: any }) {
   const keystones = player.keystones || []
 
   return (
-    <div className="space-y-6">
-      <div className="bg-card-bg border border-border rounded-lg p-5">
-        <h3 className="font-serif text-lg text-primary mb-4">Specialization Tracks</h3>
-        {specs.length === 0 ? (
-          <div className="text-text-muted">No specialization data.</div>
-        ) : (
-          <div className="space-y-3">
-            {specs.map((s: any, i: number) => (
-              <div key={i} className="flex items-center justify-between">
-                <span className="text-text-secondary text-sm">{s.track_type}</span>
-                <div className="flex items-center gap-4">
-                  <span className="text-text-muted text-xs">XP: {s.xp_amount}</span>
-                  <Badge label={`Lv ${s.level}`} variant="default" />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+    <VStack gap={6} align="stretch">
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <Heading as="h3" fontFamily="Playfair Display, serif" fontSize="lg" color="primary.DEFAULT" mb={4}>
+            Specialization Tracks
+          </Heading>
+          {specs.length === 0 ? (
+            <Text color="fg.muted">No specialization data.</Text>
+          ) : (
+            <VStack gap={3} align="stretch">
+              {specs.map((s: any, i: number) => (
+                <Flex key={i} justify="space-between" align="center">
+                  <Text fontSize="sm" color="fg.muted">{s.track_type}</Text>
+                  <Flex align="center" gap={4}>
+                    <Text fontSize="xs" color="fg.muted">XP: {s.xp_amount}</Text>
+                    <Badge label={`Lv ${s.level}`} variant="default" />
+                  </Flex>
+                </Flex>
+              ))}
+            </VStack>
+          )}
+        </Card.Body>
+      </Card.Root>
 
-      <div className="bg-card-bg border border-border rounded-lg p-5">
-        <h3 className="font-serif text-lg text-primary mb-4">Keystones</h3>
-        {keystones.length === 0 ? (
-          <div className="text-text-muted">No keystones.</div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {keystones.map((k: any) => (
-              <Badge key={k.id} label={k.name} variant="default" />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+      <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+        <Card.Body p={5}>
+          <Heading as="h3" fontFamily="Playfair Display, serif" fontSize="lg" color="primary.DEFAULT" mb={4}>
+            Keystones
+          </Heading>
+          {keystones.length === 0 ? (
+            <Text color="fg.muted">No keystones.</Text>
+          ) : (
+            <Flex wrap="wrap" gap={2}>
+              {keystones.map((k: any) => (
+                <Badge key={k.id} label={k.name} variant="default" />
+              ))}
+            </Flex>
+          )}
+        </Card.Body>
+      </Card.Root>
+    </VStack>
   )
 }
+
+const currencyCollection = createListCollection({
+  items: [
+    { value: '0', label: 'Solari Credits' },
+    { value: '1', label: 'House Script' },
+    { value: '2', label: 'Spice' },
+  ],
+})
 
 function ActionsTab({ player, onAction }: { player: any; onAction: (endpoint: string, payload?: any) => Promise<void> }) {
   const accountId = player.account_id
@@ -365,211 +446,301 @@ function ActionsTab({ player, onAction }: { player: any; onAction: (endpoint: st
   const [banDuration, setBanDuration] = useState('0')
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <SimpleGrid columns={{ base: 1, lg: 2 }} gap={6}>
       <ActionCard title="Currency">
-        <div className="space-y-2">
-          <select
-            value={currencyForm.currency_id}
-            onChange={(e) => setCurrencyForm({ ...currencyForm, currency_id: e.target.value })}
-            className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm"
+        <VStack gap={2} align="stretch">
+          <Select.Root
+            collection={currencyCollection}
+            value={[currencyForm.currency_id]}
+            onValueChange={(e) => setCurrencyForm({ ...currencyForm, currency_id: e.value[0] })}
           >
-            <option value="0">Solari Credits</option>
-            <option value="1">House Script</option>
-            <option value="2">Spice</option>
-          </select>
-          <input
+            <Select.Trigger bg="card.bg" borderColor="border" borderRadius="md" fontSize="sm">
+              <Select.ValueText />
+            </Select.Trigger>
+            <Select.Content>
+              {currencyCollection.items.map((item) => (
+                <Select.Item item={item} key={item.value}>
+                  {item.label}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
+          <Input
             type="number"
             value={currencyForm.amount}
             onChange={(e) => setCurrencyForm({ ...currencyForm, amount: e.target.value })}
             placeholder="Amount"
-            className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm"
+            bg="card.bg"
+            borderColor="border"
+            borderRadius="md"
+            fontSize="sm"
           />
-          <div className="flex gap-2">
-            <button
-              onClick={() => onAction(`/currency/adjust`, { player_id: accountId, currency_id: parseInt(currencyForm.currency_id), amount: parseFloat(currencyForm.amount) })}
-              className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary"
+          <Flex gap={2}>
+            <Button
+              onClick={() => onAction('/currency/adjust', { player_id: accountId, currency_id: parseInt(currencyForm.currency_id), amount: parseFloat(currencyForm.amount) })}
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="primary.DEFAULT"
+              borderColor="primary.DEFAULT"
             >
               Adjust
-            </button>
-            <button
-              onClick={() => onAction(`/currency/set`, { player_id: accountId, currency_id: parseInt(currencyForm.currency_id), amount: parseFloat(currencyForm.amount) })}
-              className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary"
+            </Button>
+            <Button
+              onClick={() => onAction('/currency/set', { player_id: accountId, currency_id: parseInt(currencyForm.currency_id), amount: parseFloat(currencyForm.amount) })}
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="primary.DEFAULT"
+              borderColor="primary.DEFAULT"
             >
               Set Exact
-            </button>
-          </div>
-        </div>
+            </Button>
+          </Flex>
+        </VStack>
       </ActionCard>
 
       <ActionCard title="Vitals">
-        <div className="space-y-2">
-          <input
+        <VStack gap={2} align="stretch">
+          <Input
             type="number"
             value={vitalsForm.health}
             onChange={(e) => setVitalsForm({ ...vitalsForm, health: e.target.value })}
             placeholder="Health"
-            className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm"
+            bg="card.bg"
+            borderColor="border"
+            borderRadius="md"
+            fontSize="sm"
           />
-          <input
+          <Input
             type="number"
             value={vitalsForm.hydration}
             onChange={(e) => setVitalsForm({ ...vitalsForm, hydration: e.target.value })}
             placeholder="Hydration"
-            className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm"
+            bg="card.bg"
+            borderColor="border"
+            borderRadius="md"
+            fontSize="sm"
           />
-          <input
+          <Input
             type="number"
             value={vitalsForm.spice}
             onChange={(e) => setVitalsForm({ ...vitalsForm, spice: e.target.value })}
             placeholder="Spice"
-            className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm"
+            bg="card.bg"
+            borderColor="border"
+            borderRadius="md"
+            fontSize="sm"
           />
-          <button
-            onClick={() => onAction(`/vitals/set`, { player_id: accountId, health: parseFloat(vitalsForm.health) || undefined, hydration: parseFloat(vitalsForm.hydration) || undefined, spice: parseFloat(vitalsForm.spice) || undefined })}
-            className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary"
+          <Button
+            onClick={() => onAction('/vitals/set', { player_id: accountId, health: parseFloat(vitalsForm.health) || undefined, hydration: parseFloat(vitalsForm.hydration) || undefined, spice: parseFloat(vitalsForm.spice) || undefined })}
+            size="xs"
+            variant="outline"
+            borderRadius="md"
+            color="primary.DEFAULT"
+            borderColor="primary.DEFAULT"
           >
             Set Vitals
-          </button>
-        </div>
+          </Button>
+        </VStack>
       </ActionCard>
 
       <ActionCard title="Teleport">
-        <div className="space-y-2">
-          <input
+        <VStack gap={2} align="stretch">
+          <Input
             value={teleportForm.partition}
             onChange={(e) => setTeleportForm({ ...teleportForm, partition: e.target.value })}
             placeholder="Partition ID"
-            className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm"
+            bg="card.bg"
+            borderColor="border"
+            borderRadius="md"
+            fontSize="sm"
           />
-          <div className="grid grid-cols-3 gap-2">
-            <input
+          <Flex gap={2}>
+            <Input
               type="number"
               value={teleportForm.x}
               onChange={(e) => setTeleportForm({ ...teleportForm, x: e.target.value })}
               placeholder="X"
-              className="bg-card-bg border border-border rounded px-3 py-2 text-sm"
+              bg="card.bg"
+              borderColor="border"
+              borderRadius="md"
+              fontSize="sm"
             />
-            <input
+            <Input
               type="number"
               value={teleportForm.y}
               onChange={(e) => setTeleportForm({ ...teleportForm, y: e.target.value })}
               placeholder="Y"
-              className="bg-card-bg border border-border rounded px-3 py-2 text-sm"
+              bg="card.bg"
+              borderColor="border"
+              borderRadius="md"
+              fontSize="sm"
             />
-            <input
+            <Input
               type="number"
               value={teleportForm.z}
               onChange={(e) => setTeleportForm({ ...teleportForm, z: e.target.value })}
               placeholder="Z"
-              className="bg-card-bg border border-border rounded px-3 py-2 text-sm"
+              bg="card.bg"
+              borderColor="border"
+              borderRadius="md"
+              fontSize="sm"
             />
-          </div>
-          <button
-            onClick={() => onAction(`/teleport`, { fls_id: accountId, partition_id: teleportForm.partition, x: parseFloat(teleportForm.x) || 0, y: parseFloat(teleportForm.y) || 0, z: parseFloat(teleportForm.z) || 0 })}
-            className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary"
+          </Flex>
+          <Button
+            onClick={() => onAction('/teleport', { fls_id: accountId, partition_id: teleportForm.partition, x: parseFloat(teleportForm.x) || 0, y: parseFloat(teleportForm.y) || 0, z: parseFloat(teleportForm.z) || 0 })}
+            size="xs"
+            variant="outline"
+            borderRadius="md"
+            color="primary.DEFAULT"
+            borderColor="primary.DEFAULT"
           >
             Teleport
-          </button>
-        </div>
+          </Button>
+        </VStack>
       </ActionCard>
 
       <ActionCard title="Character">
-        <div className="space-y-2">
-          <input
+        <VStack gap={2} align="stretch">
+          <Input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="New character name"
-            className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm"
+            bg="card.bg"
+            borderColor="border"
+            borderRadius="md"
+            fontSize="sm"
           />
-          <div className="flex flex-wrap gap-2">
-            <button
+          <Flex wrap="wrap" gap={2}>
+            <Button
               onClick={() => onAction(`/characters/${accountId}/name`, { name: newName })}
-              className="px-3 py-1.5 rounded text-xs bg-primary/10 border border-primary/20 text-primary"
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="primary.DEFAULT"
+              borderColor="primary.DEFAULT"
             >
               Rename
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => onAction(`/accounts/${accountId}/demo`, { demo: true })}
-              className="px-3 py-1.5 rounded text-xs bg-warning/10 border border-warning/20 text-warning"
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="warning.DEFAULT"
+              borderColor="warning.DEFAULT"
             >
               Set Demo
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => onAction(`/accounts/${accountId}/demo`, { demo: false })}
-              className="px-3 py-1.5 rounded text-xs bg-warning/10 border border-warning/20 text-warning"
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="warning.DEFAULT"
+              borderColor="warning.DEFAULT"
             >
               Clear Demo
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => {
                 if (confirm('Delete this character? This cannot be undone.')) {
                   onAction(`/characters/${accountId}`, {})
                 }
               }}
-              className="px-3 py-1.5 rounded text-xs bg-danger/10 border border-danger/30 text-danger"
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="danger.DEFAULT"
+              borderColor="danger.DEFAULT"
             >
               Delete Character
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => {
                 if (confirm('Delete this entire account? This cannot be undone.')) {
                   onAction(`/accounts/${accountId}`, {})
                 }
               }}
-              className="px-3 py-1.5 rounded text-xs bg-danger/10 border border-danger/30 text-danger"
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="danger.DEFAULT"
+              borderColor="danger.DEFAULT"
             >
               Delete Account
-            </button>
-          </div>
-        </div>
+            </Button>
+          </Flex>
+        </VStack>
       </ActionCard>
 
       <ActionCard title="Moderation">
-        <div className="space-y-2">
-          <input
+        <VStack gap={2} align="stretch">
+          <Input
             value={banReason}
             onChange={(e) => setBanReason(e.target.value)}
             placeholder="Ban reason"
-            className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm"
+            bg="card.bg"
+            borderColor="border"
+            borderRadius="md"
+            fontSize="sm"
           />
-          <input
+          <Input
             type="number"
             value={banDuration}
             onChange={(e) => setBanDuration(e.target.value)}
             placeholder="Duration (hours, 0 = permanent)"
-            className="w-full bg-card-bg border border-border rounded px-3 py-2 text-sm"
+            bg="card.bg"
+            borderColor="border"
+            borderRadius="md"
+            fontSize="sm"
           />
-          <div className="flex flex-wrap gap-2">
-            <button
+          <Flex wrap="wrap" gap={2}>
+            <Button
               onClick={() => onAction(`/players/${accountId}/ban`, { reason: banReason, duration_hours: parseInt(banDuration) || 0 })}
-              className="px-3 py-1.5 rounded text-xs bg-danger/10 border border-danger/30 text-danger"
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="danger.DEFAULT"
+              borderColor="danger.DEFAULT"
             >
               Ban Player
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => onAction(`/players/${accountId}/unban`, {})}
-              className="px-3 py-1.5 rounded text-xs bg-success/10 border border-success/30 text-success"
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="success.DEFAULT"
+              borderColor="success.DEFAULT"
             >
               Unban Player
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => onAction(`/players/${accountId}/kick`, { reason: banReason })}
-              className="px-3 py-1.5 rounded text-xs bg-warning/10 border border-warning/20 text-warning"
+              size="xs"
+              variant="outline"
+              borderRadius="md"
+              color="warning.DEFAULT"
+              borderColor="warning.DEFAULT"
             >
               Kick Player
-            </button>
-          </div>
-        </div>
+            </Button>
+          </Flex>
+        </VStack>
       </ActionCard>
-    </div>
+    </SimpleGrid>
   )
 }
 
 function ActionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-card-bg border border-border rounded-lg p-5">
-      <h4 className="text-text-primary font-medium mb-3">{title}</h4>
-      {children}
-    </div>
+    <Card.Root borderRadius="lg" boxShadow="card" bg="card.bg">
+      <Card.Body p={5}>
+        <Text fontWeight="medium" mb={3}>{title}</Text>
+        {children}
+      </Card.Body>
+    </Card.Root>
   )
 }

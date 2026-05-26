@@ -1,4 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
+import {
+  Box,
+  Heading,
+  HStack,
+  Flex,
+  Button,
+  Text,
+  VStack,
+} from '@chakra-ui/react'
+import { FiMessageSquare } from 'react-icons/fi'
 import client from '../../api/client'
 
 interface ChatMessage {
@@ -48,41 +58,78 @@ export default function ChatMonitor() {
   }, [messages])
 
   return (
-    <div className="h-[calc(100vh-140px)] flex flex-col">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="font-serif text-3xl text-primary">Chat Monitor</h1>
-        <div className="flex gap-2">
+    <Flex direction="column" h="calc(100vh - 140px)">
+      <Flex align="center" justify="space-between" mb={4}>
+        <Heading as="h1" fontSize="3xl" fontFamily="Playfair Display, serif" color="primary.DEFAULT">
+          Chat Monitor
+        </Heading>
+        <HStack gap={2}>
           {CHANNELS.map((c) => (
-            <button
+            <Button
               key={c}
               onClick={() => setChannel(c)}
-              className={`px-3 py-1.5 rounded text-xs font-medium border ${
-                channel === c
-                  ? 'bg-primary/10 border-primary text-primary'
-                  : 'bg-card-bg border-border text-text-muted hover:text-text-primary'
-              }`}
+              size="xs"
+              borderRadius="md"
+              fontWeight="medium"
+              borderWidth="1px"
+              borderColor={channel === c ? 'primary.DEFAULT' : 'border'}
+              bg={channel === c ? 'primary.subtle' : 'card.bg'}
+              color={channel === c ? 'primary.DEFAULT' : 'fg.muted'}
+              _hover={channel === c ? {} : { color: 'fg' }}
+              transition="all 0.15s"
             >
               {c}
-            </button>
+            </Button>
           ))}
-        </div>
-      </div>
+        </HStack>
+      </Flex>
 
-      <div className="flex-1 bg-card-bg border border-border rounded-lg overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-sm">
-          {messages.map((msg) => (
-            <div key={msg.id} className="flex gap-3">
-              <span className="text-text-muted text-xs whitespace-nowrap">
-                {new Date(msg.timestamp).toLocaleTimeString()}
-              </span>
-              <span className="text-primary font-semibold whitespace-nowrap">[{msg.channel}]</span>
-              <span className="text-accent font-semibold whitespace-nowrap">{msg.sender}:</span>
-              <span className="text-text-secondary break-all">{msg.message}</span>
-            </div>
-          ))}
-          <div ref={bottomRef} />
-        </div>
-      </div>
-    </div>
+      <Box
+        flex={1}
+        bg="card.bg"
+        borderWidth="1px"
+        borderColor="border"
+        borderRadius="xl"
+        overflow="hidden"
+        display="flex"
+        flexDirection="column"
+      >
+        <Box
+          flex={1}
+          overflowY="auto"
+          p={4}
+          fontFamily="Roboto Mono, monospace"
+        >
+          {messages.length === 0 ? (
+            <Flex align="center" justify="center" h="full" color="fg.muted">
+              <VStack gap={3}>
+                <FiMessageSquare size={40} />
+                <Text fontSize="sm">Waiting for messages...</Text>
+              </VStack>
+            </Flex>
+          ) : (
+            <VStack gap={2} align="stretch">
+              {messages.map((msg) => (
+                <HStack key={msg.id} gap={3} align="baseline">
+                  <Text color="fg.muted" fontSize="xs" whiteSpace="nowrap" flexShrink={0}>
+                    {new Date(msg.timestamp).toLocaleTimeString()}
+                  </Text>
+                  <Text color="primary.DEFAULT" fontWeight="semibold" whiteSpace="nowrap" flexShrink={0}>
+                    [{msg.channel}]
+                  </Text>
+                  <Text color="warning.DEFAULT" fontWeight="semibold" whiteSpace="nowrap" flexShrink={0}>
+                    {msg.sender}:
+                  </Text>
+                  <Text color="fg" wordBreak="break-all">
+                    {msg.message}
+                  </Text>
+                </HStack>
+              ))}
+            </VStack>
+          )}
+          <Box ref={bottomRef} />
+        </Box>
+      </Box>
+    </Flex>
   )
 }
