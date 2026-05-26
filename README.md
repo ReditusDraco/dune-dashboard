@@ -80,6 +80,8 @@ This project is **Source Available** under the [Dune Dashboard Source License (D
     - **[4] Install CA Certificate** — Install the local CA into Windows Trusted Root store (removes browser SSL warnings)
     - **[5] Clean & Reinstall CA Certificate** — Remove old CA certificates and install a fresh one
     - **[6] Start Dashboard (Debug Mode)** — Launch with full debug logging enabled
+    - **[7] Start New Dashboard (React + ChakraUI)** — Launch the modern React dashboard with auto-installed dependencies
+    - **[8] Reset to Factory Defaults** — Wipe all data (settings, logs, certs, cache, node_modules) and return to a clean state
     - **[Q] Quit** — Exit the launcher
 
 3. **First-time Setup** (option 2)
