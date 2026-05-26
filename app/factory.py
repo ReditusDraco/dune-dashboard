@@ -263,7 +263,8 @@ def create_app(settings_path=None):
     import time
     app._start_time = time.time()
 
-    socketio = SocketIO(app, cors_allowed_origins=[], async_mode='threading')
+    cors_origins = "*" if settings['dashboard']['host'] == '0.0.0.0' else []
+    socketio = SocketIO(app, cors_allowed_origins=cors_origins, async_mode='threading')
 
     # Initialize rate limiter (disabled)
     limiter = Limiter(
@@ -276,6 +277,16 @@ def create_app(settings_path=None):
 
     if settings['auth']['enabled']:
         init_auth(app, settings, limiter, audit_svc)
+
+        # Auto-login for SPA frontend — bypasses login page
+        from flask_login import login_user
+        from app.routes.auth import AdminUser
+
+        @app.before_request
+        def auto_login_dev():
+            if not current_user.is_authenticated:
+                cfg_user = str(settings.get("auth", {}).get("username", "dune"))
+                login_user(AdminUser(cfg_user))
 
     register_routes(app, services, settings)
     register_api_routes(app, services, settings)

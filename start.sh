@@ -22,7 +22,7 @@ show_menu() {
     echo "  What would you like to do?"
     echo ""
     echo "  [1] Start Dashboard"
-    echo "      Launch the dashboard web interface."
+    echo "      Launch the classic dashboard web interface."
     echo ""
     echo "  [2] Run Setup"
     echo "      Configure the dashboard for the first time, or reconfigure."
@@ -30,6 +30,10 @@ show_menu() {
     echo ""
     echo "  [3] Run Diagnostics"
     echo "      Check your system for common issues that could block the dashboard."
+    echo ""
+    echo "  [7] Start New Dashboard (React + ChakraUI)"
+    echo "      Launch the modern React dashboard with auto-install."
+    echo "      Backend API + frontend dev server (http://localhost:5173)"
     echo ""
     echo "  [Q] Quit"
     echo ""
@@ -379,6 +383,10 @@ run_setup() {
     else
         echo "  [ERROR] setup.sh not found."
     fi
+
+    echo ""
+    echo "  Press Enter to return to the main menu..."
+    read -r
 }
 
 start_dashboard() {
@@ -620,6 +628,252 @@ if k and k != 'null':
     ssh -i "$ssh_key_tmp" -o StrictHostKeyChecking=accept-new "${ssh_user}@${server_host}" "pkill -f kubectl-port-forward" 2>/dev/null || true
 }
 
+start_new_dashboard() {
+    echo ""
+    echo "  Starting NEW dashboard (React + ChakraUI)..."
+    echo ""
+
+    # Check Python
+    if ! determine_python; then
+        return
+    fi
+
+    # Check Node.js
+    if ! command -v node &>/dev/null; then
+        echo "  Node.js: NOT FOUND"
+        echo ""
+        echo "  Node.js 18+ is required for the new frontend."
+        echo "  Install: https://nodejs.org/ or use nvm"
+        echo ""
+        return
+    fi
+    echo "  Node.js: $(node --version)"
+
+    # Check dependencies
+    test_dependencies
+
+    # Check settings
+    settings_file="$PROJECT_ROOT/settings.yaml"
+    if [ ! -f "$settings_file" ]; then
+        echo ""
+        echo "  [ERROR] settings.yaml not found. You need to run setup first."
+        echo ""
+        return
+    fi
+
+    # Read settings
+    server_host=$($PYTHON -c "import yaml; s=yaml.safe_load(open('$settings_file')); print(s['server']['host'])" 2>/dev/null)
+    ssh_user=$($PYTHON -c "import yaml; s=yaml.safe_load(open('$settings_file')); print(s['server']['user'])" 2>/dev/null)
+    local_port=$($PYTHON -c "import yaml; s=yaml.safe_load(open('$settings_file')); print(s['database']['port'])" 2>/dev/null)
+    namespace=$($PYTHON -c "import yaml; s=yaml.safe_load(open('$settings_file')); print(s['kubernetes']['namespace'])" 2>/dev/null)
+    dashboard_port=$($PYTHON -c "import yaml; s=yaml.safe_load(open('$settings_file')); print(s['dashboard']['port'])" 2>/dev/null)
+    director_port=$($PYTHON -c "import yaml; s=yaml.safe_load(open('$settings_file')); print(s['director']['port'])" 2>/dev/null)
+
+    # Find SSH key (same logic as start_dashboard)
+    ssh_key_src=$($PYTHON -c "
+import yaml
+with open('$settings_file') as f:
+    s = yaml.safe_load(f) or {}
+k = s.get('server', {}).get('ssh_key', '')
+if k and k != 'null':
+    print(k)
+" 2>/dev/null)
+
+    ssh_key=""
+    key_paths=(
+        "$ssh_key_src"
+        "$HOME/.ssh/dune-dashboard-key"
+        "$PROJECT_ROOT/internal-scripts/ssh/sshKey"
+        "/tmp/dune-tunnel-key"
+        "$HOME/.ssh/id_ed25519"
+        "$HOME/.ssh/id_rsa"
+    )
+
+    for kp in "${key_paths[@]}"; do
+        if [ -n "$kp" ] && [ -f "$kp" ]; then
+            if ssh -i "$kp" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -o BatchMode=yes "${ssh_user}@${server_host}" "echo ok" &>/dev/null; then
+                ssh_key="$kp"
+                echo "  SSH Key: Found working key at $kp"
+                break
+            fi
+        fi
+    done
+
+    if [ -z "$ssh_key" ]; then
+        echo ""
+        echo "  [ERROR] No working SSH key found."
+        return
+    fi
+
+    ssh_key_tmp="/tmp/dune-tunnel-key"
+    cp "$ssh_key" "$ssh_key_tmp" 2>/dev/null
+    chmod 600 "$ssh_key_tmp"
+
+    echo ""
+    echo "============================================================"
+    echo "  Dune Awakening Dashboard (React Edition)"
+    echo "============================================================"
+    echo ""
+
+    # Kill existing SSH tunnels
+    pkill -f "ssh.*-L.*${local_port}" 2>/dev/null || true
+    pkill -f "ssh.*-L.*${director_port}" 2>/dev/null || true
+    sleep 1
+
+    # [1/5] SSH Tunnel
+    echo "[1/5] Starting SSH tunnel (localhost:$local_port -> VM)..."
+    ssh -i "$ssh_key_tmp" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L "${local_port}:localhost:${local_port}" -L "${director_port}:localhost:${director_port}" -N "${ssh_user}@${server_host}" &
+    ssh_tunnel_pid=$!
+
+    connected=false
+    for i in $(seq 1 30); do
+        sleep 1
+        if ! kill -0 $ssh_tunnel_pid 2>/dev/null; then
+            echo "[ERROR] SSH tunnel exited unexpectedly."
+            return
+        fi
+        if ($PYTHON -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', $local_port)); s.close()" 2>/dev/null); then
+            connected=true
+            break
+        fi
+    done
+
+    if [ "$connected" = false ]; then
+        echo "[ERROR] SSH tunnel did not connect within 30 seconds"
+        kill $ssh_tunnel_pid 2>/dev/null
+        return
+    fi
+    echo "[OK]   SSH tunnel up on localhost:$local_port"
+
+    # [2/5] DB Port-Forward
+    echo "[2/5] Starting DB port-forward on VM..."
+
+    if [ -z "$namespace" ] || [ "$namespace" = "" ]; then
+        echo "[ERROR] Kubernetes namespace is empty."
+        kill $ssh_tunnel_pid 2>/dev/null
+        return
+    fi
+
+    db_svc="${namespace}-db-dbdepl-svc"
+    ssh -i "$ssh_key_tmp" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "${ssh_user}@${server_host}" "sudo pkill -9 -f port-forward 2>/dev/null; sleep 2" 2>/dev/null
+    sleep 2
+
+    ssh -i "$ssh_key_tmp" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "${ssh_user}@${server_host}" "nohup sudo kubectl port-forward -n ${namespace} svc/${db_svc} ${local_port}:${local_port} > /tmp/pf.log 2>&1 &" 2>/dev/null
+
+    bgd_svc="${namespace}-bgd-svc"
+    bgd_deploy="${namespace}-bgd-deploy"
+    bgd_ready=$(ssh -i "$ssh_key_tmp" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "${ssh_user}@${server_host}" "sudo kubectl get deployment $bgd_deploy -n $namespace -o jsonpath='{.status.readyReplicas}'" 2>/dev/null)
+    if [ -z "$bgd_ready" ] || [ "$bgd_ready" = "0" ]; then
+        echo "  BGD deployment is scaled down, starting..."
+        ssh -i "$ssh_key_tmp" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 "${ssh_user}@${server_host}" "sudo kubectl scale deployment $bgd_deploy -n $namespace --replicas=1" 2>/dev/null
+        sleep 15
+    fi
+
+    ssh -i "$ssh_key_tmp" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "${ssh_user}@${server_host}" "nohup sudo kubectl port-forward -n ${namespace} svc/${bgd_svc} ${director_port}:11717 > /tmp/director_pf.log 2>&1 &" 2>/dev/null
+    sleep 3
+
+    # [3/5] Database Check
+    echo "[3/5] Checking database..."
+    db_test=false
+    for i in $(seq 1 15); do
+        if $PYTHON "$PROJECT_ROOT/scripts/db_check.py" "$local_port" 2>/dev/null | grep -q "ok"; then
+            db_test=true
+            break
+        fi
+        sleep 1
+    done
+
+    if [ "$db_test" = false ]; then
+        echo "[ERROR] Database connection failed."
+        kill $ssh_tunnel_pid 2>/dev/null
+        return
+    fi
+    echo "[OK]   Database connected"
+
+    # [4/5] Install Dependencies
+    echo "[4/5] Installing dependencies..."
+
+    # Backend Python deps
+    if [ -f "$PROJECT_ROOT/requirements.txt" ]; then
+        echo "  Installing backend Python dependencies..."
+        $PYTHON -m pip install -r "$PROJECT_ROOT/requirements.txt" --quiet 2>/dev/null
+        $PYTHON -m pip install "psycopg[binary]" --quiet 2>/dev/null
+        echo "  Backend dependencies OK"
+    fi
+
+    # Frontend npm deps
+    frontend_dir="$PROJECT_ROOT/frontend"
+    if [ -f "$frontend_dir/package.json" ]; then
+        if [ ! -d "$frontend_dir/node_modules" ]; then
+            echo "  Installing frontend npm dependencies..."
+            (cd "$frontend_dir" && npm install --silent 2>/dev/null)
+            echo "  Frontend dependencies installed"
+        else
+            echo "  Frontend dependencies OK"
+        fi
+    fi
+
+    # [5/5] Start Backend + Frontend
+    echo "[5/5] Starting dashboard..."
+    echo ""
+
+    # Start backend in background
+    echo "  Starting backend API (port $dashboard_port)..."
+    backend_dir="$PROJECT_ROOT/backend"
+    (cd "$backend_dir" && $PYTHON run.py) &
+    backend_pid=$!
+    sleep 3
+
+    # Verify backend started
+    backend_alive=false
+    for i in $(seq 1 10); do
+        if curl -s "http://127.0.0.1:${dashboard_port}/api/health" &>/dev/null; then
+            backend_alive=true
+            break
+        fi
+        sleep 2
+    done
+
+    if [ "$backend_alive" = true ]; then
+        echo "  [OK]   Backend API running on port $dashboard_port"
+    else
+        echo "  [WARN] Backend may not have started yet"
+    fi
+
+    # Start frontend in background
+    echo "  Starting frontend dev server (port 5173)..."
+    (cd "$frontend_dir" && npm run dev -- --host 0.0.0.0) &
+    frontend_pid=$!
+    sleep 5
+
+    echo ""
+    echo "============================================================"
+    echo "  New Dashboard Started!"
+    echo "============================================================"
+    echo ""
+    echo "  Frontend:  http://localhost:5173"
+    echo "  Backend:   http://localhost:${dashboard_port}"
+    echo ""
+    echo "  Press Ctrl+C to stop all services."
+    echo ""
+
+    # Cleanup on exit
+    cleanup() {
+        echo ""
+        echo "  Stopping services..."
+        kill $frontend_pid 2>/dev/null
+        kill $backend_pid 2>/dev/null
+        kill $ssh_tunnel_pid 2>/dev/null
+        ssh -i "$ssh_key_tmp" -o StrictHostKeyChecking=accept-new "${ssh_user}@${server_host}" "pkill -f kubectl-port-forward" 2>/dev/null || true
+        echo "  All services stopped."
+        echo ""
+    }
+    trap cleanup EXIT INT TERM
+
+    # Wait for any process to exit
+    wait $ssh_tunnel_pid $backend_pid $frontend_pid 2>/dev/null
+}
+
 # ── Main Loop ───────────────────────────────────────────────────────────
 
 show_banner
@@ -632,8 +886,9 @@ while true; do
         1) start_dashboard ;;
         2) run_setup ;;
         3) run_diagnostics ;;
+        7) start_new_dashboard ;;
         [Qq]) echo ""; echo "  Goodbye!"; echo ""; exit 0 ;;
-        *) echo ""; echo "  Invalid choice. Please enter 1, 2, 3, or Q."; echo "" ;;
+        *) echo ""; echo "  Invalid choice. Please enter 1, 2, 3, 7, or Q."; echo "" ;;
     esac
 
     echo ""

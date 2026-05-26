@@ -1,0 +1,1282 @@
+{% extends "base.html" %}
+{% block title %}Admin Experimental - Dune Awakening Dashboard{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <h1>Admin Experimental</h1>
+    <p>Experimental tools discovered through server research</p>
+</div>
+
+<div class="card">
+    <div class="card-header">In-Game Broadcast</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">
+            Send a broadcast notification to all connected players. Uses RabbitMQ <code>heartbeats</code> exchange.
+        </p>
+        <div id="broadcast-status" class="error-banner" style="display:none;"></div>
+        <form id="broadcast-form" onsubmit="return sendBroadcast(event)">
+            <div style="margin-bottom:12px;">
+                <label style="display:block;margin-bottom:4px;font-size:13px;color:var(--text);">Title</label>
+                <input type="text" id="broadcast-title" value="Server Notice"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="display:block;margin-bottom:4px;font-size:13px;color:var(--text);">Message</label>
+                <textarea id="broadcast-message" rows="3"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;resize:vertical;"></textarea>
+            </div>
+            <div style="margin-bottom:16px;">
+                <label style="display:block;margin-bottom:4px;font-size:13px;color:var(--text);">Duration (seconds)</label>
+                <input type="number" id="broadcast-duration" value="30" min="5" max="300"
+                    style="width:120px;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+            <button type="submit" id="broadcast-btn"
+                style="padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:14px;">
+                Send Broadcast
+            </button>
+        </form>
+    </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+
+<div class="card">
+    <div class="card-header">Search Players</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Search characters by name.</p>
+        <div id="search-status" class="error-banner" style="display:none;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <input type="text" id="search-term" placeholder="Character name..."
+                style="flex:1;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            <button onclick="searchPlayers()"
+                style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Search</button>
+        </div>
+        <div id="search-results" style="font-size:13px;"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Online Players</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Currently online or recently disconnected players.</p>
+        <div id="online-status" class="error-banner" style="display:none;"></div>
+        <button onclick="loadOnlinePlayers()"
+            style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;margin-bottom:8px;">Refresh</button>
+        <div id="online-results" style="font-size:13px;"></div>
+    </div>
+</div>
+
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+
+<div class="card">
+    <div class="card-header">Adjust Currency</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Add or remove virtual currency from a player.</p>
+        <div id="currency-status" class="error-banner" style="display:none;"></div>
+        <div style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-muted);">Player Controller ID</label>
+            <input type="number" id="currency-pid" placeholder="e.g. 81"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Currency ID</label>
+                <select id="currency-cid"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                    <option value="0">Solari Credits</option>
+                    <option value="1">House Script</option>
+                    <option value="2">Spice</option>
+                </select>
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Delta</label>
+                <input type="number" id="currency-delta" value="1000"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button onclick="adjustCurrency()"
+                style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Apply</button>
+            <button onclick="viewCurrency()"
+                style="padding:8px 16px;background:var(--bg-hover);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;">View Balances</button>
+        </div>
+        <div id="currency-view" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Change Faction</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Change a player's faction allegiance.</p>
+        <div id="faction-status" class="error-banner" style="display:none;"></div>
+        <div style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-muted);">Player ID</label>
+            <input type="number" id="faction-pid" placeholder="e.g. 81"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+        </div>
+        <div style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-muted);">New Faction</label>
+            <select id="faction-id"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                <option value="1">Atreides</option>
+                <option value="2">Harkonnen</option>
+                <option value="3">Fremen</option>
+                <option value="4">Corrino</option>
+            </select>
+        </div>
+        <button onclick="changeFaction()"
+            style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Change</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Teleport Player</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Teleport an offline player to a partition.</p>
+        <div id="teleport-status" class="error-banner" style="display:none;"></div>
+        <div style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-muted);">FLS ID (username)</label>
+            <input type="text" id="teleport-flsid" placeholder="e.g. fau_lil_pump"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Partition ID</label>
+                <input type="number" id="teleport-pid" placeholder="e.g. 5"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">X</label>
+                <input type="number" step="any" id="teleport-x" placeholder="0"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Y</label>
+                <input type="number" step="any" id="teleport-y" placeholder="0"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Z</label>
+                <input type="number" step="any" id="teleport-z" placeholder="0"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button onclick="teleportPlayer()"
+                style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Teleport</button>
+            <button onclick="loadPartitions()"
+                style="padding:8px 16px;background:var(--bg-hover);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;">List Partitions</button>
+        </div>
+        <div id="teleport-view" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+</div>
+
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+
+<div class="card">
+    <div class="card-header">Faction Reputation</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">View or set faction reputation.</p>
+        <div id="rep-status" class="error-banner" style="display:none;"></div>
+        <div style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-muted);">Actor ID</label>
+            <input type="number" id="rep-actor" placeholder="e.g. 81"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Faction</label>
+                <select id="rep-faction"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                    <option value="1">Atreides</option>
+                    <option value="2">Harkonnen</option>
+                    <option value="3">Fremen</option>
+                    <option value="4">Corrino</option>
+                </select>
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Amount</label>
+                <input type="number" id="rep-amount" value="0"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button onclick="getReputation()"
+                style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">View</button>
+            <button onclick="setReputation()"
+                style="padding:8px 16px;background:var(--bg-hover);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;">Set</button>
+        </div>
+        <div id="rep-view" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Player Stats / Health</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">View player health, spice exposure, and other stats from actor properties.</p>
+        <div id="stats-status" class="error-banner" style="display:none;"></div>
+        <div style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-muted);">Player Controller ID</label>
+            <input type="number" id="stats-pcid" placeholder="e.g. 81"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+        </div>
+        <button onclick="loadPlayerStats()"
+            style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Load</button>
+        <div id="stats-output" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Inventory Lookup</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">View player inventory by account ID.</p>
+        <div id="inv-status" class="error-banner" style="display:none;"></div>
+        <div style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-muted);">Account ID</label>
+            <input type="number" id="inv-account" placeholder="e.g. 55"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+        </div>
+        <button onclick="loadInventory()"
+            style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Load</button>
+        <div id="inv-output" style="margin-top:8px;font-size:12px;max-height:300px;overflow:auto;"></div>
+    </div>
+</div>
+
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+
+<div class="card">
+    <div class="card-header">Player Tags</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Read or update player tags. Comma-separated lists.</p>
+        <div id="tags-status" class="error-banner" style="display:none;"></div>
+        <div style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-muted);">Account ID</label>
+            <input type="number" id="tags-account" placeholder="e.g. 55"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Add Tags</label>
+                <input type="text" id="tags-add" placeholder="vip,alpha,mod"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Remove Tags</label>
+                <input type="text" id="tags-remove" placeholder="beta,test"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button onclick="viewTags()"
+                style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">View</button>
+            <button onclick="updateTags()"
+                style="padding:8px 16px;background:var(--bg-hover);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;">Update</button>
+        </div>
+        <div id="tags-view" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Flag Cheater</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Flag a player as cheater.</p>
+        <div id="cheater-status" class="error-banner" style="display:none;"></div>
+        <div style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-muted);">Account ID</label>
+            <input type="number" id="cheater-account" placeholder="e.g. 55"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+        </div>
+        <div style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-muted);">Cheat Type</label>
+            <select id="cheater-type"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                <option value="manual">Manual</option>
+                <option value="automated">Automated</option>
+                <option value="speed_hack">Speed Hack</option>
+                <option value="duplication">Duplication</option>
+            </select>
+        </div>
+        <button onclick="flagCheater()"
+            style="padding:8px 16px;background:#e74c3c;color:#fff;border:none;border-radius:4px;cursor:pointer;">Flag as Cheater</button>
+    </div>
+</div>
+
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+
+<div class="card">
+    <div class="card-header">Guild Tools</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">List guilds, view details, disband, kick members.</p>
+        <div id="guild-status" class="error-banner" style="display:none;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Guild ID</label>
+                <input type="number" id="guild-id" placeholder="e.g. 1"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Player ID to kick</label>
+                <input type="number" id="guild-kick-player" placeholder="e.g. 81"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button onclick="listGuilds()"
+                style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">List All</button>
+            <button onclick="viewGuild()"
+                style="padding:8px 16px;background:var(--bg-hover);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;">View Guild</button>
+            <button onclick="disbandGuild()"
+                style="padding:8px 16px;background:#e74c3c;color:#fff;border:none;border-radius:4px;cursor:pointer;">Disband</button>
+            <button onclick="kickGuildMember()"
+                style="padding:8px 16px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;">Kick Member</button>
+        </div>
+        <div id="guild-view" style="margin-top:8px;font-size:12px;max-height:300px;overflow:auto;"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Player Vehicles</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">View vehicles owned by a player.</p>
+        <div id="veh-status" class="error-banner" style="display:none;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Player ID</label>
+                <input type="number" id="veh-player" placeholder="e.g. 81"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Account ID</label>
+                <input type="number" id="veh-account" placeholder="e.g. 55"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+        </div>
+        <button onclick="loadVehicles()"
+            style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Load</button>
+        <div id="veh-output" style="margin-top:8px;font-size:12px;max-height:300px;overflow:auto;"></div>
+    </div>
+</div>
+
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+
+<div class="card">
+    <div class="card-header">Character Management</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Rename, delete, force demo state.</p>
+        <div id="char-status" class="error-banner" style="display:none;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Account ID</label>
+                <input type="number" id="char-account" placeholder="55"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">New Name</label>
+                <input type="text" id="char-newname" placeholder="New name"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+            <button onclick="setCharacterName()" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Rename</button>
+            <button onclick="deleteCharacter()" style="padding:8px 16px;background:#e74c3c;color:#fff;border:none;border-radius:4px;cursor:pointer;">Delete Char</button>
+            <button onclick="deleteAccount()" style="padding:8px 16px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;">Delete Account</button>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">User ID (for demo)</label>
+                <input type="text" id="char-userid" placeholder="FLS ID"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:12px;color:var(--text-muted);">Demo State</label>
+                <select id="char-demo"
+                    style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                    <option value="none">None</option>
+                    <option value="in_demo">In Demo</option>
+                    <option value="demo_expired">Demo Expired</option>
+                </select>
+            </div>
+        </div>
+        <button onclick="setDemoState()" style="margin-top:8px;padding:8px 16px;background:var(--bg-hover);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;">Set Demo State</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Journey &amp; Specialization</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Manage story nodes and specialization tracks.</p>
+        <div id="journey-status" class="error-banner" style="display:none;"></div>
+        <div style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-muted);">Account ID / Player ID</label>
+            <div style="display:flex;gap:8px;">
+                <input type="number" id="journey-account" placeholder="Account ID"
+                    style="flex:1;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                <input type="text" id="journey-nodes" placeholder="Node IDs (comma)"
+                    style="flex:2;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <button onclick="journeyAction('complete')" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Complete</button>
+            <button onclick="journeyAction('reveal')" style="padding:8px 16px;background:var(--bg-hover);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;">Reveal</button>
+            <button onclick="journeyAction('reset')" style="padding:8px 16px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;">Reset</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <input type="number" id="spec-player" placeholder="Player ID"
+                style="flex:1;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            <select id="spec-track"
+                style="flex:1;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                <option value="combat">Combat</option>
+                <option value="crafting">Crafting</option>
+                <option value="survival">Survival</option>
+                <option value="stealth">Stealth</option>
+            </select>
+            <input type="number" id="spec-xp" placeholder="XP" value="0"
+                style="flex:1;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            <input type="number" id="spec-level" placeholder="Level" value="1"
+                style="flex:1;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button onclick="setSpecialization()" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Set Spec</button>
+            <button onclick="resetSpecialization()" style="padding:8px 16px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;">Reset Spec</button>
+        </div>
+    </div>
+</div>
+
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+
+<div class="card">
+    <div class="card-header">Economy &amp; Spice Fields</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Vendor stock, tax invoices, spice field control.</p>
+        <div id="econ-status" class="error-banner" style="display:none;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <input type="number" id="econ-player" placeholder="Player ID"
+                style="flex:1;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            <button onclick="cleanVendorStock()" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Reset Vendor Stock</button>
+            <button onclick="viewTaxInvoices()" style="padding:8px 16px;background:var(--bg-hover);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;">View Tax</button>
+        </div>
+        <div id="tax-output" style="font-size:11px;margin-bottom:8px;max-height:150px;overflow:auto;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <input type="text" id="spice-map" placeholder="Map name"
+                style="flex:1;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            <input type="number" id="spice-dim" placeholder="Dim" value="0"
+                style="flex:1;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            <button onclick="resetSpice()" style="padding:8px 16px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;">Reset Spice</button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Server Tools</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Force players offline, cleanup orphans, manage permissions.</p>
+        <div id="server-status" class="error-banner" style="display:none;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button onclick="setPlayersOffline()" style="padding:8px 16px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;">Set All Offline</button>
+            <button onclick="cleanupOrphans()" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Cleanup Orphans</button>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:8px;">
+            <input type="number" id="perm-actor" placeholder="Actor ID"
+                style="flex:1;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            <button onclick="viewPermissions()" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">View Perms</button>
+        </div>
+        <div id="perm-output" style="margin-top:8px;font-size:11px;max-height:200px;overflow:auto;"></div>
+    </div>
+</div>
+
+</div>
+
+<div style="margin-top:20px;">
+
+<div class="card">
+    <div class="card-header">Battlegroup Info</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Full battlegroup status from BGD API.</p>
+        <div id="bg-status" class="error-banner" style="display:none;"></div>
+        <button onclick="loadBattlegroup()"
+            style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;margin-bottom:8px;">Load</button>
+        <pre id="bg-output" style="font-size:11px;max-height:400px;overflow:auto;background:var(--bg-hover);padding:12px;border-radius:4px;"></pre>
+    </div>
+</div>
+
+</div>
+
+<div style="margin-top:20px;">
+
+<div class="card">
+    <div class="card-header">Function Explorer — All 517 DB Functions</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">
+            Browse and execute any PostgreSQL function in the <code>dune</code> schema. Type to filter. Click a function to see its definition and enter parameters.
+        </p>
+        <div id="fx-status" class="error-banner" style="display:none;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <input type="text" id="fx-filter" placeholder="Type to filter functions..." oninput="filterFunctions()"
+                style="flex:1;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+            <button onclick="loadFunctions()"
+                style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Load All</button>
+        </div>
+        <div style="display:flex;gap:20px;">
+            <div id="fx-list" style="flex:1;max-height:400px;overflow:auto;font-size:11px;background:var(--bg-hover);padding:8px;border-radius:4px;font-family:monospace;"></div>
+            <div id="fx-detail" style="flex:1.5;max-height:400px;overflow:auto;font-size:12px;">
+                <p style="color:var(--text-muted);">Select a function from the list to see details and execute it.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+</div>
+
+<style>
+.error-banner { padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; }
+.error-banner.success { background: #1a3a2a; border: 1px solid #2ecc71; color: #2ecc71; display: block; }
+.error-banner.error { background: #3a1a1a; border: 1px solid #e74c3c; color: #e74c3c; display: block; }
+code { background: var(--bg-hover); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+.result-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
+.result-table th { text-align:left; padding:6px 8px; background:var(--bg-hover); border-bottom:2px solid var(--border); }
+.result-table td { padding:6px 8px; border-bottom:1px solid var(--border); }
+.result-table tr:hover { background:var(--bg-hover); }
+</style>
+
+<script>
+// ── Broadcast ──────────────────────────────────────────────────────
+async function sendBroadcast(event) {
+    event.preventDefault();
+    const btn = document.getElementById('broadcast-btn');
+    const status = document.getElementById('broadcast-status');
+    const title = document.getElementById('broadcast-title').value.trim();
+    const message = document.getElementById('broadcast-message').value.trim();
+    const duration = parseInt(document.getElementById('broadcast-duration').value) || 30;
+    if (!title || !message) { showError(status, 'Title and message are required.'); return false; }
+    btn.disabled = true; btn.textContent = 'Sending...'; hideStatus(status);
+    try {
+        const resp = await csrfFetch('/api/admin-experimental/broadcast', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, message, duration })
+        });
+        const data = await resp.json();
+        data.success ? showSuccess(status, 'Broadcast sent!') : showError(status, data.output || data.error);
+    } catch(e) { showError(status, e.message); }
+    finally { btn.disabled = false; btn.textContent = 'Send Broadcast'; }
+    return false;
+}
+
+// ── Search Players ──────────────────────────────────────────────────
+async function searchPlayers() {
+    const term = document.getElementById('search-term').value.trim();
+    const status = document.getElementById('search-status');
+    const results = document.getElementById('search-results');
+    if (!term) { showError(status, 'Enter a search term.'); return; }
+    hideStatus(status); results.innerHTML = 'Searching...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/search-players', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ term })
+        });
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); results.innerHTML = ''; return; }
+        if (!d.players || d.players.length === 0) { results.innerHTML = 'No players found.'; return; }
+        let html = '<table class="result-table"><tr><th>ID</th><th>User (FLS)</th><th>Name</th></tr>';
+        for (const p of d.players) {
+            html += `<tr><td>${p.id||''}</td><td>${esc(p.user||'')}</td><td>${esc(p.character_name||'')}</td></tr>`;
+        }
+        html += '</table>';
+        results.innerHTML = html;
+    } catch(e) { showError(status, e.message); results.innerHTML = ''; }
+}
+
+// ── Online Players ──────────────────────────────────────────────────
+async function loadOnlinePlayers() {
+    const status = document.getElementById('online-status');
+    const results = document.getElementById('online-results');
+    hideStatus(status); results.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/online-players');
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); results.innerHTML = ''; return; }
+        if (!d.players || d.players.length === 0) { results.innerHTML = 'No players online.'; return; }
+        let html = '<table class="result-table"><tr><th>PCID</th><th>Name</th><th>Status</th><th>Last Activity</th></tr>';
+        for (const p of d.players) {
+            html += `<tr><td>${p.player_controller_id||''}</td><td>${esc(p.character_name||'')}</td><td>${esc(p.online_status||'')}</td><td>${esc(p.last_avatar_activity||'')}</td></tr>`;
+        }
+        html += '</table>';
+        results.innerHTML = html;
+    } catch(e) { showError(status, e.message); results.innerHTML = ''; }
+}
+
+// ── Adjust Currency ─────────────────────────────────────────────────
+async function adjustCurrency() {
+    const pid = document.getElementById('currency-pid').value.trim();
+    const cid = document.getElementById('currency-cid').value;
+    const delta = document.getElementById('currency-delta').value.trim();
+    const status = document.getElementById('currency-status');
+    if (!pid || !delta) { showError(status, 'Fill all fields.'); return; }
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/adjust-currency', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ player_controller_id: parseInt(pid), currency_id: parseInt(cid), delta: parseInt(delta) })
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+async function viewCurrency() {
+    const pid = document.getElementById('currency-pid').value.trim();
+    const status = document.getElementById('currency-status');
+    const view = document.getElementById('currency-view');
+    if (!pid) { showError(status, 'Enter Player Controller ID.'); return; }
+    hideStatus(status); view.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/currency-balances', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ player_controller_id: parseInt(pid) })
+        });
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); view.innerHTML = ''; return; }
+        if (!d.balances || d.balances.length === 0) { view.innerHTML = 'No currency records.'; return; }
+        let html = '<table class="result-table"><tr><th>Currency ID</th><th>Balance</th></tr>';
+        for (const b of d.balances) {
+            html += `<tr><td>${b.currency_id}</td><td>${b.balance}</td></tr>`;
+        }
+        html += '</table>';
+        view.innerHTML = html;
+    } catch(e) { showError(status, e.message); view.innerHTML = ''; }
+}
+
+// ── Change Faction ─────────────────────────────────────────────────
+async function changeFaction() {
+    const pid = document.getElementById('faction-pid').value.trim();
+    const fid = document.getElementById('faction-id').value;
+    const status = document.getElementById('faction-status');
+    if (!pid) { showError(status, 'Enter Player ID.'); return; }
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/change-faction', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ player_id: parseInt(pid), faction_id: parseInt(fid) })
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+// ── Teleport Player ─────────────────────────────────────────────────
+async function teleportPlayer() {
+    const flsid = document.getElementById('teleport-flsid').value.trim();
+    const pid = document.getElementById('teleport-pid').value.trim();
+    const x = document.getElementById('teleport-x').value.trim();
+    const y = document.getElementById('teleport-y').value.trim();
+    const z = document.getElementById('teleport-z').value.trim();
+    const status = document.getElementById('teleport-status');
+    const view = document.getElementById('teleport-view');
+    if (!flsid || !pid) { showError(status, 'FLS ID and Partition ID required.'); return; }
+    hideStatus(status); view.innerHTML = 'Teleporting...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/teleport', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fls_id: flsid, partition_id: parseInt(pid), x: parseFloat(x) || 0, y: parseFloat(y) || 0, z: parseFloat(z) || 0 })
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+        view.innerHTML = '';
+    } catch(e) { showError(status, e.message); view.innerHTML = ''; }
+}
+
+async function loadPartitions() {
+    const status = document.getElementById('teleport-status');
+    const view = document.getElementById('teleport-view');
+    hideStatus(status); view.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/partitions');
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); view.innerHTML = ''; return; }
+        if (!d.partitions || d.partitions.length === 0) { view.innerHTML = 'No partitions found.'; return; }
+        let html = '<table class="result-table"><tr><th>ID</th><th>Map</th><th>Dim</th><th>Label</th></tr>';
+        for (const p of d.partitions) {
+            html += `<tr><td>${p.id}</td><td>${esc(p.map)}</td><td>${p.dimension_index}</td><td>${esc(p.label || '')}</td></tr>`;
+        }
+        html += '</table>';
+        view.innerHTML = html;
+    } catch(e) { showError(status, e.message); view.innerHTML = ''; }
+}
+
+// ── Faction Reputation ──────────────────────────────────────────────
+async function getReputation() {
+    const actor = document.getElementById('rep-actor').value.trim();
+    const status = document.getElementById('rep-status');
+    const view = document.getElementById('rep-view');
+    if (!actor) { showError(status, 'Enter Actor ID.'); return; }
+    hideStatus(status); view.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/faction-reputation', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ actor_id: parseInt(actor) })
+        });
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); view.innerHTML = ''; return; }
+        if (!d.reputation || d.reputation.length === 0) { view.innerHTML = 'No reputation data.'; return; }
+        view.innerHTML = `<table class="result-table"><tr><th>Faction ID</th><th>Reputation</th></tr>${d.reputation.map(r => `<tr><td>${r.faction_id||r.out_faction_id||''}</td><td>${r.reputation_amount||r.out_reputation_amount||''}</td></tr>`).join('')}</table>`;
+    } catch(e) { showError(status, e.message); view.innerHTML = ''; }
+}
+
+async function setReputation() {
+    const actor = document.getElementById('rep-actor').value.trim();
+    const faction = document.getElementById('rep-faction').value;
+    const amount = document.getElementById('rep-amount').value.trim();
+    const status = document.getElementById('rep-status');
+    if (!actor || !amount) { showError(status, 'Fill all fields.'); return; }
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/faction-reputation', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ actor_id: parseInt(actor), set: true, faction_id: parseInt(faction), amount: parseInt(amount) })
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+// ── Inventory Lookup ────────────────────────────────────────────────
+async function loadInventory() {
+    const account = document.getElementById('inv-account').value.trim();
+    const status = document.getElementById('inv-status');
+    const output = document.getElementById('inv-output');
+    if (!account) { showError(status, 'Enter Account ID.'); return; }
+    hideStatus(status); output.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/inventory', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: parseInt(account) })
+        });
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); output.innerHTML = ''; return; }
+        let html = '';
+        if (d.pawn && d.pawn.length) {
+            html += '<strong>Pawn Info:</strong><table class="result-table"><tr><th>Pawn ID</th><th>Class</th><th>Map</th></tr>';
+            for (const p of d.pawn) html += `<tr><td>${p.id||''}</td><td>${esc(p.class||'')}</td><td>${esc(p.map||'')}</td></tr>`;
+            html += '</table>';
+        }
+        if (d.inventory && d.inventory.length) {
+            html += '<strong>Inventory (' + d.inventory.length + ' items):</strong><div style="max-height:200px;overflow:auto;"><table class="result-table"><tr><th>Item ID</th><th>Template ID</th><th>Count</th></tr>';
+            for (const item of d.inventory.slice(0, 50)) {
+                html += `<tr><td>${item.item_id||item.id||''}</td><td>${esc(item.template_id||'')}</td><td>${item.count||item.quantity||''}</td></tr>`;
+            }
+            if (d.inventory.length > 50) html += `<tr><td colspan="3">... ${d.inventory.length - 50} more items</td></tr>`;
+            html += '</table></div>';
+        } else {
+            html += '<p>No inventory data.</p>';
+        }
+        output.innerHTML = html || 'No data.';
+    } catch(e) { showError(status, e.message); output.innerHTML = ''; }
+}
+
+// ── Guild Tools ─────────────────────────────────────────────────────
+async function listGuilds() {
+    const status = document.getElementById('guild-status');
+    const view = document.getElementById('guild-view');
+    hideStatus(status); view.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/guilds');
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); view.innerHTML = ''; return; }
+        if (!d.guilds || d.guilds.length === 0) { view.innerHTML = 'No guilds.'; return; }
+        let html = '<table class="result-table"><tr><th>ID</th><th>Name</th><th>Members</th></tr>';
+        for (const g of d.guilds) {
+            html += `<tr><td>${g.id||g.guild_id||''}</td><td>${esc(g.name||g.guild_name||'')}</td><td>${g.member_count||''}</td></tr>`;
+        }
+        html += '</table>';
+        view.innerHTML = html;
+    } catch(e) { showError(status, e.message); view.innerHTML = ''; }
+}
+
+async function viewGuild() {
+    const id = document.getElementById('guild-id').value.trim();
+    const status = document.getElementById('guild-status');
+    const view = document.getElementById('guild-view');
+    if (!id) { showError(status, 'Enter Guild ID.'); return; }
+    hideStatus(status); view.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/guild-data', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ guild_id: parseInt(id) })
+        });
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); view.innerHTML = ''; return; }
+        view.innerHTML = '<pre style="font-size:11px;">' + esc(JSON.stringify(d.guild, null, 2)) + '</pre>';
+    } catch(e) { showError(status, e.message); view.innerHTML = ''; }
+}
+
+async function disbandGuild() {
+    const id = document.getElementById('guild-id').value.trim();
+    const status = document.getElementById('guild-status');
+    if (!id || !confirm('Really disband guild ' + id + '?')) return;
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/disband-guild', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ guild_id: parseInt(id) })
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+        if (d.success) listGuilds();
+    } catch(e) { showError(status, e.message); }
+}
+
+async function kickGuildMember() {
+    const guild = document.getElementById('guild-id').value.trim();
+    const player = document.getElementById('guild-kick-player').value.trim();
+    const status = document.getElementById('guild-status');
+    if (!guild || !player) { showError(status, 'Enter Guild ID and Player ID.'); return; }
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/remove-guild-member', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ guild_id: parseInt(guild), player_id: parseInt(player) })
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+// ── Player Tags ─────────────────────────────────────────────────────
+async function viewTags() {
+    const account = document.getElementById('tags-account').value.trim();
+    const status = document.getElementById('tags-status');
+    const view = document.getElementById('tags-view');
+    if (!account) { showError(status, 'Enter Account ID.'); return; }
+    hideStatus(status); view.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/player-tags', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: parseInt(account) })
+        });
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); view.innerHTML = ''; return; }
+        view.innerHTML = '<pre style="font-size:11px;">' + esc(JSON.stringify(d.tags, null, 2)) + '</pre>';
+    } catch(e) { showError(status, e.message); view.innerHTML = ''; }
+}
+
+async function updateTags() {
+    const account = document.getElementById('tags-account').value.trim();
+    const add = document.getElementById('tags-add').value.trim().split(',').map(s => s.trim()).filter(Boolean);
+    const remove = document.getElementById('tags-remove').value.trim().split(',').map(s => s.trim()).filter(Boolean);
+    const status = document.getElementById('tags-status');
+    if (!account) { showError(status, 'Enter Account ID.'); return; }
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/player-tags', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: parseInt(account), tags_to_add: add, tags_to_remove: remove })
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+async function flagCheater() {
+    const account = document.getElementById('cheater-account').value.trim();
+    const type = document.getElementById('cheater-type').value;
+    const status = document.getElementById('cheater-status');
+    if (!account) { showError(status, 'Enter Account ID.'); return; }
+    if (!confirm('Flag account ' + account + ' as ' + type + ' cheater?')) return;
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/flag-cheater', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: parseInt(account), cheat_type: type })
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+// ── Player Vehicles ─────────────────────────────────────────────────
+async function loadVehicles() {
+    const player = document.getElementById('veh-player').value.trim();
+    const account = document.getElementById('veh-account').value.trim();
+    const status = document.getElementById('veh-status');
+    const output = document.getElementById('veh-output');
+    if (!player || !account) { showError(status, 'Enter both Player ID and Account ID.'); return; }
+    hideStatus(status); output.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/player-vehicles', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ player_id: parseInt(player), account_id: parseInt(account) })
+        });
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); output.innerHTML = ''; return; }
+        if (!d.vehicles || d.vehicles.length === 0) { output.innerHTML = 'No vehicles found.'; return; }
+        let html = '<table class="result-table"><tr><th>Vehicle ID</th><th>Data</th></tr>';
+        for (const v of d.vehicles) {
+            html += `<tr><td>${v.vehicle_id||v.id||''}</td><td><pre style="font-size:10px;margin:0;">${esc(JSON.stringify(v, null, 2).slice(0,500))}</pre></td></tr>`;
+        }
+        html += '</table>';
+        output.innerHTML = html;
+    } catch(e) { showError(status, e.message); output.innerHTML = ''; }
+}
+
+// ── Player Stats ──────────────────────────────────────────────────
+async function loadPlayerStats() {
+    const pcid = document.getElementById('stats-pcid').value.trim();
+    const status = document.getElementById('stats-status');
+    const output = document.getElementById('stats-output');
+    if (!pcid) { showError(status, 'Enter Player Controller ID.'); return; }
+    hideStatus(status); output.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/player-stats', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ player_controller_id: parseInt(pcid) })
+        });
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); output.innerHTML = ''; return; }
+        if (!d.stats) { output.innerHTML = 'No stats found.'; return; }
+        const s = d.stats;
+        let html = `<table class="result-table">
+            <tr><th>Stat</th><th>Value</th></tr>
+            <tr><td>Health</td><td>${s.health ? s.health.current + ' / ' + s.health.max : 'N/A'}</td></tr>
+            <tr><td>Eyes of Ibad</td><td>${s.eyes_of_ibad != null ? s.eyes_of_ibad : 'N/A'}</td></tr>
+            <tr><td>Heatstroke</td><td>${s.heatstroke != null ? s.heatstroke : 'N/A'}</td></tr>
+            <tr><td>Driving</td><td>${s.is_driving != null ? s.is_driving : 'N/A'}</td></tr>
+            <tr><td>Spice Exposure Level</td><td>${s.spice_exposure_level != null ? s.spice_exposure_level : 'N/A'}</td></tr>
+            <tr><td>Daily Reward Charges</td><td>${s.daily_reward_charges != null ? s.daily_reward_charges : 'N/A'}</td></tr>
+            <tr><td>Last Viewed Term</td><td>${s.last_viewed_term != null ? s.last_viewed_term : 'N/A'}</td></tr>
+        </table>`;
+        output.innerHTML = html;
+    } catch(e) { showError(status, e.message); output.innerHTML = ''; }
+}
+
+// ── Character Management ──────────────────────────────────────────
+async function setCharacterName() {
+    const account = document.getElementById('char-account').value.trim();
+    const name = document.getElementById('char-newname').value.trim();
+    const status = document.getElementById('char-status');
+    if (!account || !name) { showError(status, 'Enter Account ID and new name.'); return; }
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/set-character-name', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({account_id: parseInt(account), name})
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+async function deleteCharacter() {
+    const account = document.getElementById('char-account').value.trim();
+    const status = document.getElementById('char-status');
+    if (!account || !confirm('Delete character for account ' + account + '?')) return;
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/delete-character', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({actor_id: parseInt(account)})
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+async function deleteAccount() {
+    const user = document.getElementById('char-userid').value.trim();
+    const status = document.getElementById('char-status');
+    if (!user || !confirm('DELETE account ' + user + '? This cannot be undone!')) return;
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/delete-account', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({user_id: user, reason: 'admin'})
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+async function setDemoState() {
+    const user = document.getElementById('char-userid').value.trim();
+    const state = document.getElementById('char-demo').value;
+    const status = document.getElementById('char-status');
+    if (!user) { showError(status, 'Enter User ID.'); return; }
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/set-demo-state', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({user_id: user, demo_state: state})
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+// ── Journey ────────────────────────────────────────────────────────
+async function journeyAction(action) {
+    const account = document.getElementById('journey-account').value.trim();
+    const nodes = document.getElementById('journey-nodes').value.trim().split(',').map(s=>s.trim()).filter(Boolean);
+    const status = document.getElementById('journey-status');
+    if (!account || !nodes.length) { showError(status, 'Enter Account ID and at least one Node ID.'); return; }
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/journey', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({account_id: parseInt(account), node_ids: nodes, action})
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+async function setSpecialization() {
+    const player = document.getElementById('spec-player').value.trim();
+    const track = document.getElementById('spec-track').value;
+    const xp = document.getElementById('spec-xp').value.trim();
+    const level = document.getElementById('spec-level').value.trim();
+    const status = document.getElementById('journey-status');
+    if (!player) { showError(status, 'Enter Player ID.'); return; }
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/specialization', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({player_id: parseInt(player), track_type: track, xp: parseInt(xp), level: parseInt(level)})
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+async function resetSpecialization() {
+    const player = document.getElementById('spec-player').value.trim();
+    const status = document.getElementById('journey-status');
+    if (!player) { showError(status, 'Enter Player ID.'); return; }
+    if (!confirm('Reset all specialization tracks for player ' + player + '?')) return;
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/specialization', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({player_id: parseInt(player), reset: true})
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+// ── Economy ────────────────────────────────────────────────────────
+async function cleanVendorStock() {
+    const player = document.getElementById('econ-player').value.trim();
+    const status = document.getElementById('econ-status');
+    if (!player) { showError(status, 'Enter Player ID.'); return; }
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/clean-vendor-stock', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({player_id: parseInt(player)})
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+async function viewTaxInvoices() {
+    const player = document.getElementById('econ-player').value.trim();
+    const status = document.getElementById('econ-status');
+    const output = document.getElementById('tax-output');
+    if (!player) { showError(status, 'Enter Player ID.'); return; }
+    hideStatus(status); output.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/tax-invoices', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({player_id: parseInt(player)})
+        });
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); output.innerHTML = ''; return; }
+        output.innerHTML = '<pre style="font-size:10px;margin:0;">' + esc(JSON.stringify(d.invoices, null, 2)) + '</pre>';
+    } catch(e) { showError(status, e.message); output.innerHTML = ''; }
+}
+
+async function resetSpice() {
+    const map = document.getElementById('spice-map').value.trim();
+    const dim = document.getElementById('spice-dim').value.trim();
+    const status = document.getElementById('econ-status');
+    if (!map) { showError(status, 'Enter Map name.'); return; }
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/spice', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'reset', map_name: map, dimension_index: parseInt(dim)})
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+// ── Server Tools ───────────────────────────────────────────────────
+async function setPlayersOffline() {
+    const status = document.getElementById('server-status');
+    if (!confirm('Set all players offline on active servers?')) return;
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/server-tools', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'set_offline', server_ids: ['all']})
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+async function cleanupOrphans() {
+    const status = document.getElementById('server-status');
+    if (!confirm('Clean up orphaned database entities?')) return;
+    hideStatus(status);
+    try {
+        const r = await csrfFetch('/api/admin-experimental/server-tools', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'cleanup_orphans'})
+        });
+        const d = await r.json();
+        d.success ? showSuccess(status, d.output) : showError(status, d.output);
+    } catch(e) { showError(status, e.message); }
+}
+
+async function viewPermissions() {
+    const actor = document.getElementById('perm-actor').value.trim();
+    const status = document.getElementById('server-status');
+    const output = document.getElementById('perm-output');
+    if (!actor) { showError(status, 'Enter Actor ID.'); return; }
+    hideStatus(status); output.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/permissions', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({actor_id: parseInt(actor)})
+        });
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); output.innerHTML = ''; return; }
+        output.innerHTML = '<pre style="font-size:10px;margin:0;">' + esc(JSON.stringify(d.permissions, null, 2)) + '</pre>';
+    } catch(e) { showError(status, e.message); output.innerHTML = ''; }
+}
+
+// ── Battlegroup Info ───────────────────────────────────────────────
+async function loadBattlegroup() {
+    const status = document.getElementById('bg-status');
+    const output = document.getElementById('bg-output');
+    hideStatus(status); output.textContent = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/battlegroup');
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); output.textContent = ''; return; }
+        output.textContent = JSON.stringify(d.data, null, 2);
+    } catch(e) { showError(status, e.message); output.textContent = ''; }
+}
+
+// ── Function Explorer ────────────────────────────────────────────
+let allFunctions = [];
+
+async function loadFunctions() {
+    const status = document.getElementById('fx-status');
+    const list = document.getElementById('fx-list');
+    hideStatus(status); list.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/functions');
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); list.innerHTML = ''; return; }
+        allFunctions = d.functions || [];
+        renderFunctionList('');
+    } catch(e) { showError(status, e.message); list.innerHTML = ''; }
+}
+
+function filterFunctions() {
+    const filter = document.getElementById('fx-filter').value.trim().toLowerCase();
+    renderFunctionList(filter);
+}
+
+function renderFunctionList(filter) {
+    const list = document.getElementById('fx-list');
+    const filtered = filter ? allFunctions.filter(f => f.name.toLowerCase().includes(filter)) : allFunctions;
+    if (!filtered.length) { list.innerHTML = '<span style="color:var(--text-muted);">No functions match.</span>'; return; }
+    let html = '';
+    for (const f of filtered) {
+        const args = f.args || '';
+        const display = args.length > 50 ? args.slice(0, 47) + '...' : args;
+        html += `<div onclick="showFunction('${f.name}')" style="cursor:pointer;padding:3px 6px;border-radius:3px;hover:background:var(--accent);" onmouseover="this.style.background='var(--accent)'" onmouseout="this.style.background=''">${esc(f.name)}(${esc(display)})</div>`;
+    }
+    list.innerHTML = html || '<span style="color:var(--text-muted);">No functions.</span>';
+}
+
+async function showFunction(name) {
+    const detail = document.getElementById('fx-detail');
+    detail.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch(`/api/admin-experimental/functions/${name}`);
+        const d = await r.json();
+        if (!d.success) { detail.innerHTML = `<span style="color:#e74c3c;">${esc(d.error)}</span>`; return; }
+        const fn = d.function;
+        const args = (fn.args || '').split(',').map(s => s.trim()).filter(Boolean);
+        let html = `<strong style="font-size:14px;">${esc(fn.name)}</strong>`;
+        html += `<div style="margin:8px 0;padding:8px;background:var(--bg-input);border-radius:4px;font-size:11px;font-family:monospace;max-height:150px;overflow:auto;white-space:pre-wrap;">${esc(fn.definition || 'No definition available.')}</div>`;
+        if (args.length) {
+            html += '<div style="margin:8px 0;"><strong>Parameters:</strong></div>';
+            for (let i = 0; i < args.length; i++) {
+                html += `<div style="display:flex;gap:4px;margin-bottom:4px;align-items:center;">
+                    <span style="font-size:11px;min-width:120px;color:var(--text-muted);">${esc(args[i])}</span>
+                    <input type="text" id="fx-param-${i}" placeholder="Value" style="flex:1;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:3px;color:var(--text);font-size:12px;">
+                </div>`;
+            }
+            html += `<button onclick="executeFunction('${esc(fn.name)}', ${args.length})" style="margin-top:8px;padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Execute</button>`;
+        } else {
+            html += `<button onclick="executeFunction('${esc(fn.name)}', 0)" style="margin-top:8px;padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Execute (no params)</button>`;
+        }
+        html += '<div id="fx-result" style="margin-top:8px;"></div>';
+        detail.innerHTML = html;
+    } catch(e) { detail.innerHTML = `<span style="color:#e74c3c;">${esc(e.message)}</span>`; }
+}
+
+async function executeFunction(name, paramCount) {
+    const status = document.getElementById('fx-status');
+    const resultDiv = document.getElementById('fx-result');
+    if (!resultDiv) return;
+    const params = [];
+    for (let i = 0; i < paramCount; i++) {
+        const el = document.getElementById(`fx-param-${i}`);
+        if (el) {
+            let val = el.value.trim();
+            // Try to parse numbers
+            if (val === 'true') val = true;
+            else if (val === 'false') val = false;
+            else if (val !== '' && !isNaN(val) && val.includes('.')) val = parseFloat(val);
+            else if (val !== '' && !isNaN(val)) val = parseInt(val);
+            params.push(val);
+        }
+    }
+    hideStatus(status); resultDiv.innerHTML = 'Executing...';
+    try {
+        const r = await csrfFetch(`/api/admin-experimental/functions/${name}/execute`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({params})
+        });
+        const d = await r.json();
+        if (!d.success) { resultDiv.innerHTML = `<div class="error-banner error" style="display:block;">${esc(d.error)}</div>`; return; }
+        resultDiv.innerHTML = '<pre style="font-size:11px;background:var(--bg-input);padding:8px;border-radius:4px;max-height:300px;overflow:auto;">' + esc(JSON.stringify(d.result, null, 2)) + '</pre>';
+    } catch(e) { resultDiv.innerHTML = `<div class="error-banner error" style="display:block;">${esc(e.message)}</div>`; }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+function esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function showError(el, msg) { el.className = 'error-banner error'; el.textContent = msg; el.style.display = 'block'; }
+function showSuccess(el, msg) { el.className = 'error-banner success'; el.textContent = msg; el.style.display = 'block'; }
+function hideStatus(el) { el.style.display = 'none'; }
+</script>
+
+{% endblock %}

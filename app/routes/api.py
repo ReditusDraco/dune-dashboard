@@ -1215,3 +1215,535 @@ def register_api_routes(app, services, settings):
         except Exception as e:
             logger.error(f"Failed to toggle debug: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
+
+    # ── Admin Experimental: Broadcast ─────────────────────────────────
+    @app.route('/api/admin-experimental/broadcast', methods=['POST'])
+    @auth_req
+    @limiter.limit("100 per hour")
+    def admin_broadcast():
+        data = request.get_json() or {}
+        title = (data.get('title') or '').strip()
+        message = (data.get('message') or '').strip()
+        try:
+            duration = int(data.get('duration', 30))
+        except (ValueError, TypeError):
+            duration = 30
+        if not title or not message:
+            return jsonify({'success': False, 'error': 'Title and message are required'})
+        success, result = admin_svc.send_global_broadcast(title, message, duration)
+        return jsonify({'success': success, 'output': result})
+
+    # ── Admin Experimental: Query Database ────────────────────────────
+    @app.route('/api/admin-experimental/query', methods=['POST'])
+    @auth_req
+    @limiter.limit("300 per hour")
+    def admin_query():
+        data = request.get_json() or {}
+        sql = (data.get('sql') or '').strip()
+        if not sql:
+            return jsonify({'success': False, 'error': 'SQL is required'})
+        lower = sql.strip().lower()
+        if not any(lower.startswith(w) for w in ('select', 'with', 'show', 'explain')):
+            return jsonify({'success': False, 'error': 'Only SELECT/WITH queries allowed'})
+        result = admin_svc.admin_db_query(sql)
+        return jsonify({'success': True, 'rows': result or []})
+
+    # ── Admin Experimental: Search Players ────────────────────────────
+    @app.route('/api/admin-experimental/search-players', methods=['POST'])
+    @auth_req
+    def admin_search_players():
+        data = request.get_json() or {}
+        term = (data.get('term') or '').strip()
+        if not term:
+            return jsonify({'success': False, 'error': 'Search term required'})
+        try:
+            results = admin_svc.search_players(term)
+            return jsonify({'success': True, 'players': results})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Online Players ─────────────────────────────
+    @app.route('/api/admin-experimental/online-players', methods=['GET'])
+    @auth_req
+    def admin_online_players():
+        try:
+            players = admin_svc.get_online_players()
+            return jsonify({'success': True, 'players': players})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Adjust Currency ───────────────────────────
+    @app.route('/api/admin-experimental/adjust-currency', methods=['POST'])
+    @auth_req
+    @limiter.limit("200 per hour")
+    def admin_adjust_currency():
+        data = request.get_json() or {}
+        pid = data.get('player_controller_id')
+        cid = data.get('currency_id')
+        delta = data.get('delta')
+        if pid is None or cid is None or delta is None:
+            return jsonify({'success': False, 'error': 'player_controller_id, currency_id, and delta required'})
+        success, result = admin_svc.adjust_currency(pid, int(cid), int(delta))
+        return jsonify({'success': success, 'output': result})
+
+    # ── Admin Experimental: Change Faction ────────────────────────────
+    @app.route('/api/admin-experimental/change-faction', methods=['POST'])
+    @auth_req
+    @limiter.limit("100 per hour")
+    def admin_change_faction():
+        data = request.get_json() or {}
+        pid = data.get('player_id')
+        fid = data.get('faction_id')
+        if pid is None or fid is None:
+            return jsonify({'success': False, 'error': 'player_id and faction_id required'})
+        success, result = admin_svc.change_faction(pid, int(fid))
+        return jsonify({'success': success, 'output': result})
+
+    # ── Admin Experimental: Battlegroup Info ──────────────────────────
+    @app.route('/api/admin-experimental/battlegroup', methods=['GET'])
+    @auth_req
+    def admin_battlegroup():
+        try:
+            out, err, rc = ssh.run("wget -qO- http://10.43.135.0:11717/v0/battlegroup", timeout=15)
+            if rc != 0 or not out:
+                return jsonify({'success': False, 'error': f'BGD unreachable: {err}'})
+            parsed = json.loads(out)
+            return jsonify({'success': True, 'data': parsed})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: View Currency Balances ────────────────────
+    @app.route('/api/admin-experimental/currency-balances', methods=['POST'])
+    @auth_req
+    def admin_currency_balances():
+        data = request.get_json() or {}
+        pcid = data.get('player_controller_id')
+        if not pcid:
+            return jsonify({'success': False, 'error': 'player_controller_id required'})
+        try:
+            result = admin_svc.get_currency_balances(pcid)
+            return jsonify({'success': True, 'balances': result})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Teleport Player ───────────────────────────
+    @app.route('/api/admin-experimental/teleport', methods=['POST'])
+    @auth_req
+    @limiter.limit("100 per hour")
+    def admin_teleport():
+        data = request.get_json() or {}
+        fls_id = data.get('fls_id')
+        partition_id = data.get('partition_id')
+        x = data.get('x', 0)
+        y = data.get('y', 0)
+        z = data.get('z', 0)
+        if not fls_id or not partition_id:
+            return jsonify({'success': False, 'error': 'fls_id and partition_id required'})
+        try:
+            success, msg = admin_svc.teleport_player(fls_id, int(partition_id), float(x), float(y), float(z))
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/partitions', methods=['GET'])
+    @auth_req
+    def admin_partitions():
+        try:
+            partitions = admin_svc.get_partitions()
+            return jsonify({'success': True, 'partitions': partitions})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Faction Reputation ────────────────────────
+    @app.route('/api/admin-experimental/faction-reputation', methods=['POST'])
+    @auth_req
+    def admin_faction_reputation():
+        data = request.get_json() or {}
+        actor_id = data.get('actor_id')
+        if not actor_id:
+            return jsonify({'success': False, 'error': 'actor_id required'})
+        try:
+            # GET mode
+            if 'set' not in data:
+                result = admin_svc.get_faction_reputation(actor_id)
+                return jsonify({'success': True, 'reputation': result})
+            else:
+                success, msg = admin_svc.set_faction_reputation(actor_id, int(data['faction_id']), int(data['amount']))
+                return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Inventory Lookup ──────────────────────────
+    @app.route('/api/admin-experimental/inventory', methods=['POST'])
+    @auth_req
+    def admin_inventory():
+        data = request.get_json() or {}
+        account_id = data.get('account_id')
+        if not account_id:
+            return jsonify({'success': False, 'error': 'account_id required'})
+        try:
+            inv = admin_svc.get_inventory(account_id)
+            pawn = admin_svc.get_player_pawn(account_id)
+            return jsonify({'success': True, 'inventory': inv, 'pawn': pawn})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Guild Tools ────────────────────────────────
+    @app.route('/api/admin-experimental/guilds', methods=['GET'])
+    @auth_req
+    def admin_guilds():
+        try:
+            guilds = admin_svc.get_all_guilds()
+            return jsonify({'success': True, 'guilds': guilds})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/guild-data', methods=['POST'])
+    @auth_req
+    def admin_guild_data():
+        data = request.get_json() or {}
+        guild_id = data.get('guild_id')
+        if not guild_id:
+            return jsonify({'success': False, 'error': 'guild_id required'})
+        try:
+            guild = admin_svc.get_guild_data(guild_id)
+            return jsonify({'success': True, 'guild': guild})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/disband-guild', methods=['POST'])
+    @auth_req
+    @limiter.limit("50 per hour")
+    def admin_disband_guild():
+        data = request.get_json() or {}
+        guild_id = data.get('guild_id')
+        if not guild_id:
+            return jsonify({'success': False, 'error': 'guild_id required'})
+        try:
+            success, msg = admin_svc.disband_guild(guild_id)
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/remove-guild-member', methods=['POST'])
+    @auth_req
+    @limiter.limit("100 per hour")
+    def admin_remove_guild_member():
+        data = request.get_json() or {}
+        guild_id = data.get('guild_id')
+        player_id = data.get('player_id')
+        if not guild_id or not player_id:
+            return jsonify({'success': False, 'error': 'guild_id and player_id required'})
+        try:
+            success, msg = admin_svc.remove_guild_member(guild_id, player_id)
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Player Tags ────────────────────────────────
+    @app.route('/api/admin-experimental/player-tags', methods=['POST'])
+    @auth_req
+    def admin_player_tags():
+        data = request.get_json() or {}
+        account_id = data.get('account_id')
+        if not account_id:
+            return jsonify({'success': False, 'error': 'account_id required'})
+        try:
+            if 'tags_to_add' in data or 'tags_to_remove' in data:
+                success, msg = admin_svc.update_player_tags(account_id, data.get('tags_to_add', []), data.get('tags_to_remove', []))
+                return jsonify({'success': success, 'output': msg})
+            else:
+                tags = admin_svc.get_player_tags(account_id)
+                return jsonify({'success': True, 'tags': tags})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/flag-cheater', methods=['POST'])
+    @auth_req
+    @limiter.limit("50 per hour")
+    def admin_flag_cheater():
+        data = request.get_json() or {}
+        account_id = data.get('account_id')
+        cheat_type = data.get('cheat_type', 'manual')
+        if not account_id:
+            return jsonify({'success': False, 'error': 'account_id required'})
+        try:
+            success, msg = admin_svc.flag_cheater(account_id, cheat_type)
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Player Vehicles ───────────────────────────
+    @app.route('/api/admin-experimental/player-vehicles', methods=['POST'])
+    @auth_req
+    def admin_player_vehicles():
+        data = request.get_json() or {}
+        player_id = data.get('player_id')
+        account_id = data.get('account_id')
+        if not player_id or not account_id:
+            return jsonify({'success': False, 'error': 'player_id and account_id required'})
+        try:
+            vehicles = admin_svc.get_player_vehicles(player_id, account_id)
+            return jsonify({'success': True, 'vehicles': vehicles})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Player Stats ──────────────────────────────
+    @app.route('/api/admin-experimental/player-stats', methods=['POST'])
+    @auth_req
+    def admin_player_stats():
+        data = request.get_json() or {}
+        pcid = data.get('player_controller_id')
+        if not pcid:
+            return jsonify({'success': False, 'error': 'player_controller_id required'})
+        try:
+            stats = admin_svc.get_player_stats(pcid)
+            return jsonify({'success': True, 'stats': stats})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Character Management ──────────────────────
+    @app.route('/api/admin-experimental/set-character-name', methods=['POST'])
+    @auth_req
+    def admin_set_character_name():
+        data = request.get_json() or {}
+        account_id = data.get('account_id')
+        name = data.get('name', '').strip()
+        if not account_id or not name:
+            return jsonify({'success': False, 'error': 'account_id and name required'})
+        try:
+            success, msg = admin_svc.set_character_name(account_id, name)
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/delete-character', methods=['POST'])
+    @auth_req
+    @limiter.limit("20 per hour")
+    def admin_delete_character():
+        data = request.get_json() or {}
+        actor_id = data.get('actor_id')
+        if not actor_id:
+            return jsonify({'success': False, 'error': 'actor_id required'})
+        try:
+            success, msg = admin_svc.delete_character(actor_id)
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/delete-account', methods=['POST'])
+    @auth_req
+    @limiter.limit("10 per hour")
+    def admin_delete_account():
+        data = request.get_json() or {}
+        user_id = data.get('user_id')
+        reason = data.get('reason', 'admin')
+        if not user_id:
+            return jsonify({'success': False, 'error': 'user_id required'})
+        try:
+            success, msg = admin_svc.delete_account(user_id, reason)
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/set-demo-state', methods=['POST'])
+    @auth_req
+    def admin_set_demo_state():
+        data = request.get_json() or {}
+        user_id = data.get('user_id')
+        demo_state = data.get('demo_state', 'none')
+        if not user_id:
+            return jsonify({'success': False, 'error': 'user_id required'})
+        try:
+            success, msg = admin_svc.set_demo_state(user_id, demo_state)
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Journey / Progression ─────────────────────
+    @app.route('/api/admin-experimental/journey', methods=['POST'])
+    @auth_req
+    def admin_journey():
+        data = request.get_json() or {}
+        account_id = data.get('account_id')
+        node_ids = data.get('node_ids', [])
+        action = data.get('action', 'complete')
+        if not account_id or not node_ids:
+            return jsonify({'success': False, 'error': 'account_id and node_ids required'})
+        try:
+            if action == 'complete':
+                success, msg = admin_svc.complete_journey_nodes(account_id, node_ids)
+            elif action == 'reveal':
+                success, msg = admin_svc.reveal_journey_nodes(account_id, node_ids)
+            elif action == 'reset':
+                success, msg = admin_svc.reset_journey_nodes(account_id, node_ids)
+            else:
+                return jsonify({'success': False, 'error': 'Invalid action'})
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/specialization', methods=['POST'])
+    @auth_req
+    def admin_specialization():
+        data = request.get_json() or {}
+        player_id = data.get('player_id')
+        if not player_id:
+            return jsonify({'success': False, 'error': 'player_id required'})
+        try:
+            if 'reset' in data:
+                success, msg = admin_svc.reset_specialization(player_id)
+            else:
+                track = data.get('track_type', 'combat')
+                xp = data.get('xp', 0)
+                level = data.get('level', 1)
+                success, msg = admin_svc.set_specialization(player_id, track, xp, level)
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Guild Roster ──────────────────────────────
+    @app.route('/api/admin-experimental/guild-members', methods=['POST'])
+    @auth_req
+    def admin_guild_members():
+        data = request.get_json() or {}
+        guild_id = data.get('guild_id')
+        if not guild_id:
+            return jsonify({'success': False, 'error': 'guild_id required'})
+        try:
+            if 'promote' in data:
+                success, msg = admin_svc.promote_guild_member(guild_id, data['player_id'], data['new_role'])
+                return jsonify({'success': success, 'output': msg})
+            else:
+                members = admin_svc.get_guild_members(guild_id)
+                return jsonify({'success': True, 'members': members})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Economy ───────────────────────────────────
+    @app.route('/api/admin-experimental/clean-vendor-stock', methods=['POST'])
+    @auth_req
+    def admin_clean_vendor_stock():
+        data = request.get_json() or {}
+        player_id = data.get('player_id')
+        if not player_id:
+            return jsonify({'success': False, 'error': 'player_id required'})
+        try:
+            success, msg = admin_svc.clean_player_vendor_stock(player_id)
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/tax-invoices', methods=['POST'])
+    @auth_req
+    def admin_tax_invoices():
+        data = request.get_json() or {}
+        player_id = data.get('player_id')
+        if not player_id:
+            return jsonify({'success': False, 'error': 'player_id required'})
+        try:
+            invoices = admin_svc.get_player_tax_invoices(player_id)
+            return jsonify({'success': True, 'invoices': invoices})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Spice Fields ──────────────────────────────
+    @app.route('/api/admin-experimental/spice', methods=['POST'])
+    @auth_req
+    @limiter.limit("30 per hour")
+    def admin_spice():
+        data = request.get_json() or {}
+        try:
+            if data.get('action') == 'reset':
+                success, msg = admin_svc.reset_spice_state(data['map_name'], data.get('dimension_index', 0))
+            else:
+                success, msg = admin_svc.force_spice_spawn(data['server_id'], data['spicefield_type_id'])
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Server Tools ──────────────────────────────
+    @app.route('/api/admin-experimental/server-tools', methods=['POST'])
+    @auth_req
+    @limiter.limit("30 per hour")
+    def admin_server_tools():
+        data = request.get_json() or {}
+        try:
+            if data.get('action') == 'set_offline':
+                success, msg = admin_svc.set_players_offline(data.get('server_ids', []))
+            elif data.get('action') == 'cleanup_orphans':
+                success, msg = admin_svc.cleanup_orphaned()
+            else:
+                return jsonify({'success': False, 'error': 'Invalid action'})
+            return jsonify({'success': success, 'output': msg})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Permissions ──────────────────────────────
+    @app.route('/api/admin-experimental/permissions', methods=['POST'])
+    @auth_req
+    def admin_permissions():
+        data = request.get_json() or {}
+        try:
+            if 'set_rank' in data:
+                success, msg = admin_svc.set_player_rank(data['actor_id'], data['player_id'], data['rank'], data.get('map_id', ''))
+                return jsonify({'success': success, 'output': msg})
+            elif data.get('actor_id'):
+                perms = admin_svc.get_actor_permissions(data['actor_id'])
+                return jsonify({'success': True, 'permissions': perms})
+            else:
+                return jsonify({'success': False, 'error': 'actor_id required'})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: Function Explorer ─────────────────────────
+    @app.route('/api/admin-experimental/functions', methods=['GET'])
+    @auth_req
+    def admin_list_functions():
+        try:
+            funcs = admin_svc.list_all_functions()
+            return jsonify({'success': True, 'functions': funcs})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/functions/<name>', methods=['GET'])
+    @auth_req
+    def admin_function_details(name):
+        try:
+            detail = admin_svc.get_function_details(name)
+            if not detail:
+                return jsonify({'success': False, 'error': 'Function not found'})
+            return jsonify({'success': True, 'function': detail})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/functions/<name>/execute', methods=['POST'])
+    @auth_req
+    @limiter.limit("200 per hour")
+    def admin_execute_function(name):
+        data = request.get_json() or {}
+        params = data.get('params', [])
+        try:
+            success, result, error = admin_svc.execute_function(name, params)
+            if success:
+                return jsonify({'success': True, 'result': result})
+            else:
+                return jsonify({'success': False, 'error': error})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ── Admin Experimental: SQL Execute (admin functions) ─────────────
+    @app.route('/api/admin-experimental/execute', methods=['POST'])
+    @auth_req
+    @limiter.limit("200 per hour")
+    def admin_execute():
+        data = request.get_json() or {}
+        sql = (data.get('sql') or '').strip()
+        if not sql:
+            return jsonify({'success': False, 'error': 'SQL is required'})
+        lower = sql.strip().lower()
+        allowed_prefixes = ('select', 'with', 'insert', 'update', 'delete', 'call', 'show', 'explain')
+        if not any(lower.startswith(w) for w in allowed_prefixes):
+            return jsonify({'success': False, 'error': 'SQL prefix not allowed'})
+        success, result = admin_svc.admin_db_execute(sql)
+        return jsonify({'success': success, 'result': result if success else str(result)})

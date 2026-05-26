@@ -32,12 +32,12 @@ If you're testing this project, grab builds from nightly for the latest features
 ## Features
 
 - **Map Features**: Interactive maps with real-world coordinate calibration for Hagga Basin and The Deep Desert. Default view centers on Hagga Basin at 15% zoom. Zoom range: 15%–100%.
-- **Player Management**: View, search, and filter players. Track online status, factions, guilds, and locations.
+- **Player Management**: View, search, and filter players. Track online status, factions, guilds, and locations. Rich detail view with vitals, currency, inventory, vehicles, buildings, landclaims, specialization, keystones, and faction reputation.
 - **Chat Logs**: Parsed from text-router pod logs with channel filtering and auto-refresh.
 - **Director Controls**: Live battlegroup stats, world state management, and server transfer controls.
 - **File Browser**: Secure SSH-based file browser for server configuration and logs.
 - **Shell Access**: Interactive VM and Kubernetes pod shells directly in the browser.
-- **Admin Tools**: Ban management, IP detection, kick/unban functionality, and player history.
+- **Admin Tools**: Ban management, IP detection, kick/unban functionality, player history, item/currency/vitals editing, and raw SQL query interface.
 - **Firewall Security**: Block unauthenticated game server ports (File Browser, Director) from external internet access. Applied via iptables on the game server VM across INPUT, FORWARD, and mangle PREROUTING chains to cover both host services and Kubernetes NodePort traffic. Configurable per-port during setup or from the Server page.
 - **Vehicles & Buildings**: Track owned vehicles, modules, and player structures.
 - **Auto-Update**: Background checker polls GitHub for new commits. Safe file replacement preserves your settings, logs, and SSH keys. One-click update from the dashboard.
@@ -59,6 +59,7 @@ This project is **Source Available** under the [Dune Dashboard Source License (D
 ## Requirements
 
 - Python 3.8+
+- Node.js 18+ (for frontend development/build)
 - OpenSSH client
 - `kubectl` access to the Dune: Awakening Kubernetes cluster
 - SSH access to the game server VM
@@ -79,6 +80,8 @@ This project is **Source Available** under the [Dune Dashboard Source License (D
     - **[4] Install CA Certificate** — Install the local CA into Windows Trusted Root store (removes browser SSL warnings)
     - **[5] Clean & Reinstall CA Certificate** — Remove old CA certificates and install a fresh one
     - **[6] Start Dashboard (Debug Mode)** — Launch with full debug logging enabled
+    - **[7] Start New Dashboard (React + ChakraUI)** — Launch the modern React dashboard with auto-installed dependencies
+    - **[8] Reset to Factory Defaults** — Wipe all data (settings, logs, certs, cache, node_modules) and return to a clean state
     - **[Q] Quit** — Exit the launcher
 
 3. **First-time Setup** (option 2)
@@ -207,13 +210,36 @@ SSL certificates are automatically regenerated when they approach expiry:
 
 ```
 DuneDashboard/
-├── app/                 # Core application package
-│   ├── routes/          # HTTP route handlers
-│   ├── services/        # Business logic (DB, SSH, K8s, etc.)
-│   ├── utils/           # Helpers and constants
-│   └── websocket/       # Socket.IO handlers
-├── templates/           # Jinja2 HTML templates
-├── static/              # CSS and frontend assets
+├── backend/             # New Flask backend (API + services)
+│   ├── app/
+│   │   ├── routes/      # HTTP route handlers (API, auth, health, server, files, director, chat)
+│   │   ├── services/    # Business logic (DB, SSH, K8s, BGD, RMQ, player, economy, guild, world, etc.)
+│   │   ├── models/      # Pydantic v2 models
+│   │   ├── websocket/   # Socket.IO shell handler
+│   │   ├── config.py    # Settings loader
+│   │   └── factory.py   # App factory (services, blueprints, security)
+│   ├── run.py           # Entry point
+│   └── requirements.txt # Python dependencies
+│
+├── frontend/            # New React SPA (Vite + TypeScript + Tailwind)
+│   ├── src/
+│   │   ├── components/  # Pages (overview, players, guilds, vehicles, buildings, map, accounts, server, admin, chat, shell, files, director, settings)
+│   │   ├── api/         # Axios client
+│   │   ├── stores/      # React Context (app state, auth, theme)
+│   │   ├── hooks/       # Custom hooks (realtime, debounce)
+│   │   └── styles/      # Tailwind + 14 Dune themes
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── tsconfig.json
+│
+├── app/                 # Legacy Flask/Jinja2 dashboard (untouched, still functional)
+│   ├── routes/
+│   ├── services/
+│   ├── utils/
+│   └── websocket/
+├── templates/           # Legacy Jinja2 HTML templates
+├── static/              # Legacy CSS and frontend assets
 ├── scripts/             # Pre-flight utilities (db_check.py)
 ├── launcher.ps1         # Unified launcher (setup, start, diagnostics, CA tools)
 ├── start.sh             # Linux/macOS entry point
@@ -221,12 +247,49 @@ DuneDashboard/
 └── settings.yaml.example # Reference configuration
 ```
 
+> **Note**: The legacy `app/`, `templates/`, and `static/` directories remain untouched and functional. The new system lives in `backend/` and `frontend/`. Both can coexist during migration.
+
+## Architecture
+
+### Frontend
+- **React 18** with TypeScript
+- **Vite** for fast builds and HMR
+- **Tailwind CSS** for styling with 14 Dune house themes
+- **SWR** for server state caching and revalidation
+- **Axios** for HTTP requests with 401 redirect handling
+- **Socket.IO Client** for the remote terminal
+- **xterm.js** for the in-browser shell
+
+### Backend
+- **Flask 3** with Blueprint-based routing
+- **Pydantic v2** for request/response validation
+- **psycopg3** with connection pooling for PostgreSQL
+- **Flask-SocketIO** for the interactive shell
+- **Flask-Login** for session-based authentication (Argon2 password hashing)
+- **Flask-Limiter** for rate limiting
+- **SSE (Server-Sent Events)** for real-time updates (battlegroup, chat, metrics)
+
+### Services
+- `DatabaseService` — psycopg3 pool, stored procedure executor, audit table DDL
+- `SSHService` — paramiko SSH client for tunneling and remote commands
+- `K8sService` — kubectl-over-SSH for pod/deployment management
+- `BgDirectorService` — HTTP client for the Battlegroup Director API
+- `RmqAdminService` — RabbitMQ Management HTTP API client
+- `RmqGameService` — RabbitMQ Game HTTP API client (broadcasts, chat intercept)
+- `RealtimeService` — SSE broadcaster with background polling loops
+- `PlayerService` / `EconomyService` / `GuildService` / `WorldService` / `ProgressionService` / `CharacterService` — DB-function-only domain services
+- `AuditService` — persistent PostgreSQL audit logging
+- `ChatService` — chat history + pod log catch-up
+
 ## Security Notes
 
 - Never commit `settings.yaml` to version control.
 - SSH keys are copied to `%TEMP%` with restricted permissions during startup.
 - All database queries use parameterized statements to prevent SQL injection.
 - Dashboard authentication is required by default.
+- Raw SQL query endpoint (`/api/query`) is **read-only SELECT** — INSERT/UPDATE/DELETE/DROP/CREATE/ALTER/GRANT/TRUNCATE are blocked.
+- All mutations are audited to PostgreSQL.
+- CSP, HSTS, X-Frame-Options, and other security headers are enforced in production mode.
 
 ## Logging
 
@@ -268,3 +331,29 @@ Console output is **not** sanitized so you can see full details during operation
 - Files exceeding **10 MB** are truncated (keeps last 5000 lines)
 - Empty category directories are removed
 - Cleanup runs automatically on every launcher start
+
+## Development
+
+### Frontend Development
+
+```bash
+cd frontend
+npm install
+npm run dev        # Vite dev server with API proxy to localhost:5050
+npm run build      # Production build to frontend/dist/
+```
+
+### Backend Development
+
+```bash
+cd backend
+pip install -r requirements.txt
+python run.py      # Or: flask --app run:app run
+```
+
+### Themes
+
+The dashboard supports 14 Dune house themes. Switch via the theme picker in the top-right nav bar:
+Classic Dune, House Atreides, House Harkonnen, Fremen, Bene Gesserit, Spacing Guild, Emperor, House Corrino, Mentat, Sardaukar, Bene Tleilax, House Ordos, Ix, CHOAM.
+
+Themes are implemented via CSS custom properties (`var(--primary)`, `var(--bg)`, etc.) and switched by setting `data-theme` on the `<html>` element.

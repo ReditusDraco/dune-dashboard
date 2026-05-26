@@ -1,10 +1,14 @@
-"""Admin service - ban, kick, unban, vitals, IP detection"""
-
+"""Admin service - ban, kick, unban, vitals, IP detection, broadcast"""
+ 
 import re
 import time
 import threading
 import logging
 import ipaddress
+import tempfile
+import os
+import json
+import psycopg2.extras
 
 logger = logging.getLogger(__name__)
 audit_logger = logging.getLogger('audit')
@@ -803,3 +807,851 @@ class AdminService:
             if cur:
                 cur.close()
             self.db.return_connection(conn)
+
+    def send_global_broadcast(self, title, message, duration=30):
+        """Send an in-game broadcast via RabbitMQ rabbitmqctl eval on the VM."""
+        try:
+            import base64
+            import json as _json
+            title_json = _json.dumps(title)[1:-1]
+            message_json = _json.dumps(message)[1:-1]
+
+            erl = (
+                f'Title = unicode:characters_to_binary(<<"{title_json}">>, utf8), '
+                f'Body = unicode:characters_to_binary(<<"{message_json}">>, utf8), '
+                f'Duration = {duration}, '
+                'EntryEn = #{<<"Key">> => <<"en">>, <<"Title">> => Title, <<"Body">> => Body}, '
+                'EntryEnUs = #{<<"Key">> => <<"en-US">>, <<"Title">> => Title, <<"Body">> => Body}, '
+                'Inner = iolist_to_binary(rabbit_json:encode(#{<<"ServerCommand">> => <<"ServiceBroadcast">>, <<"BroadcastType">> => <<"Generic">>, <<"BroadcastPayload">> => #{<<"BroadcastDuration">> => Duration, <<"LocalizedText">> => [EntryEn, EntryEnUs]}})), '
+                'Outer = iolist_to_binary(rabbit_json:encode(#{<<"Version">> => 2, <<"AuthToken">> => <<"Nu6VmPWUMvdPMeB7qErr">>, <<"MessageContent">> => Inner})), '
+                'XName = rabbit_misc:r(<<"/">>, exchange, <<"heartbeats">>), '
+                'X = rabbit_exchange:lookup_or_die(XName), '
+                'MsgId = list_to_binary("manual-service-broadcast-" ++ integer_to_list(erlang:system_time(millisecond))), '
+                'P = {list_to_atom("P_basic"), <<"Content">>, undefined, [], undefined, undefined, undefined, undefined, undefined, MsgId, undefined, undefined, <<"fls">>, <<"fls_backend">>, undefined}, '
+                'Content = rabbit_basic:build_content(P, Outer), '
+                '{ok, Msg} = rabbit_basic:message(XName, <<"notifications">>, Content), '
+                'Result = rabbit_queue_type:publish_at_most_once(X, Msg), '
+                'io:format("broadcast=~p duration=~p~n", [Result, Duration]).'
+            )
+
+            ns = self._detect_namespace()
+            pod_name = ns.replace('funcom-seabass-', '') + '-mq-game-sts-0'
+            b64 = base64.b64encode(erl.encode()).decode()
+
+            # Write erl on VM host, then pipe it into the pod via kubectl exec -i
+            wcmd = f"echo {b64} | base64 -d | sudo tee /tmp/dune_bc.erl > /dev/null"
+            wout, werr, wrc = self.ssh.run(wcmd)
+            if wrc != 0:
+                return False, f"write failed: {werr}"
+
+            # Cat the host file and pipe into kubectl exec -i to write inside the pod
+            ecmd = (
+                f"cat /tmp/dune_bc.erl | sudo kubectl exec -i -n {ns} {pod_name} -- sh -lc '"
+                "cat > /tmp/dune_bc.erl; "
+                "export PATH=/opt/rabbitmq/sbin:/opt/erlang/lib/erlang/bin:/opt/erlang/lib/erlang/erts-14.2.5.12/bin:/bin:/usr/bin:/usr/local/bin:$PATH; "
+                'rabbitmqctl eval "$(cat /tmp/dune_bc.erl)"; '
+                "rm -f /tmp/dune_bc.erl'"
+            )
+            out, err, rc = self.ssh.run(ecmd)
+
+            self.ssh.run("rm -f /tmp/dune_bc.erl")
+
+            if rc != 0:
+                return False, f"Broadcast failed (rc={rc}): {err}"
+
+            audit_logger.info(f"BROADCAST: title={title} message={message} duration={duration}")
+            return True, "Broadcast sent successfully"
+        except Exception as e:
+            logger.error(f"Broadcast error: {e}")
+            try:
+                self.ssh.run("rm -f /tmp/dune_bc.erl")
+            except Exception:
+                pass
+            return False, str(e)
+
+    def admin_db_query(self, sql, params=None):
+        """Execute a read-only SQL query and return results."""
+        return self.db.query(sql, params)
+
+    def admin_db_execute(self, sql, params=None):
+        """Execute a SQL statement (insert/update/delete/call) and commit."""
+        conn = self.db.get_connection()
+        if not conn:
+            return False, "DB connection failed"
+        cur = None
+        try:
+            cur = conn.cursor()
+            cur.execute(sql, params or [])
+            conn.commit()
+            if cur.description:
+                rows = cur.fetchall()
+                if rows and isinstance(rows[0], dict):
+                    return True, rows
+                cols = [d.name for d in cur.description]
+                return True, [dict(zip(cols, r)) for r in rows]
+            return True, f"Executed, rows affected: {cur.rowcount}"
+        except Exception as e:
+            conn.rollback()
+            return False, str(e)
+        finally:
+            if cur:
+                cur.close()
+            self.db.return_connection(conn)
+
+    def search_players(self, term):
+        """Search characters by name."""
+        like = f'%{term}%'
+        result = self.db.query("""
+            SELECT ea.id, ea.user,
+                   COALESCE(NULLIF(ps.character_name, ''), 'Unknown') as character_name
+            FROM dune.encrypted_accounts ea
+            LEFT JOIN dune.player_state ps ON ea.id = ps.account_id
+            WHERE lower(ea.user) LIKE lower(%s)
+               OR lower(ps.character_name) LIKE lower(%s)
+            ORDER BY ea.user
+            LIMIT 50
+        """, [like, like])
+        return result or []
+
+    def get_online_players(self):
+        """Get all online or recently disconnected players."""
+        result = self.db.query("""
+            SELECT a.id as player_controller_id,
+                   COALESCE(NULLIF(ps.character_name, ''), 'Unknown') as character_name,
+                   a.map,
+                   ps.online_status,
+                   ps.last_avatar_activity
+            FROM dune.actors a
+            JOIN dune.player_state ps ON ps.player_controller_id = a.id
+            WHERE ps.online_status = 'Online'
+               OR ps.last_avatar_activity > NOW() - INTERVAL '1 minute'
+            ORDER BY ps.character_name
+        """)
+        return result or []
+
+    def adjust_currency(self, player_controller_id, currency_id, delta):
+        """Add/remove virtual currency from a player."""
+        try:
+            conn = self.db.get_connection()
+            if not conn:
+                return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    INSERT INTO dune.player_virtual_currency_balances (player_controller_id, currency_id, balance)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (player_controller_id, currency_id) DO UPDATE SET balance = (dune.player_virtual_currency_balances.balance + %s)
+                    RETURNING balance
+                """, [player_controller_id, currency_id, delta, delta])
+                new_balance = cur.fetchone()[0]
+                conn.commit()
+                audit_logger.info(f"CURRENCY_ADJUST: player={player_controller_id} currency={currency_id} delta={delta} new_balance={new_balance}")
+                return True, f"Currency {currency_id} adjusted by {delta}. New balance: {new_balance}"
+            except Exception as e:
+                conn.rollback()
+                return False, str(e)
+            finally:
+                if cur:
+                    cur.close()
+                self.db.return_connection(conn)
+        except Exception as e:
+            return False, str(e)
+
+    def change_faction(self, player_id, faction_id):
+        """Change a player's faction."""
+        try:
+            conn = self.db.get_connection()
+            if not conn:
+                return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    INSERT INTO dune.player_faction (actor_id, faction_id, utc_time_faction_change)
+                    VALUES (%s, %s, NOW())
+                    ON CONFLICT (actor_id) DO UPDATE SET faction_id = %s, utc_time_faction_change = NOW()
+                """, [player_id, faction_id, faction_id])
+                conn.commit()
+                audit_logger.info(f"FACTION_CHANGE: player={player_id} faction={faction_id}")
+                return True, f"Faction changed to {faction_id}"
+            except Exception as e:
+                conn.rollback()
+                return False, str(e)
+            finally:
+                if cur:
+                    cur.close()
+                self.db.return_connection(conn)
+        except Exception as e:
+            return False, str(e)
+
+    # ── View Currency Balances ─────────────────────────────────────────
+    def get_currency_balances(self, player_controller_id):
+        """Get virtual currency balances for a player."""
+        result = self.db.query(
+            "SELECT currency_id, balance FROM dune.player_virtual_currency_balances WHERE player_controller_id = %s ORDER BY currency_id",
+            [player_controller_id]
+        )
+        return result or []
+
+    # ── Teleport Player ────────────────────────────────────────────────
+    def teleport_player(self, fls_id, partition_id, x, y, z):
+        """Teleport an offline player to a partition using direct SQL."""
+        conn = self.db.get_connection()
+        if not conn:
+            return False, "DB connection failed"
+        cur = None
+        try:
+            cur = conn.cursor()
+            # Set search_path so unqualified references in the function resolve
+            cur.execute("SET search_path TO dune, public")
+            cur.execute("""
+                SELECT dune.admin_move_offline_player_to_partition(
+                    %s, %s, ROW(%s, %s, %s)::dune.vector
+                )
+            """, [fls_id, int(partition_id), float(x), float(y), float(z)])
+            conn.commit()
+            audit_logger.info(f"TELEPORT: fls_id={fls_id} partition={partition_id} loc=({x},{y},{z})")
+            return True, f"Teleported to partition {partition_id}"
+        except Exception as e:
+            conn.rollback()
+            return False, str(e)
+        finally:
+            if cur: cur.close()
+            self.db.return_connection(conn)
+
+    def get_partitions(self):
+        """List all available partitions."""
+        result = self.db.query("""
+            SELECT partition_id as id, map, dimension_index, label, partition_definition::text
+            FROM dune.world_partition
+            ORDER BY map, dimension_index, partition_id
+            LIMIT 100
+        """)
+        return result or []
+
+    # ── Faction Reputation (direct SQL) ────────────────────────────────
+    def get_faction_reputation(self, actor_id):
+        """Get faction reputation for a player."""
+        result = self.db.query("""
+            SELECT pf.faction_id, COALESCE(pfr.reputation_amount, 0) as reputation_amount
+            FROM dune.player_faction pf
+            LEFT JOIN dune.player_faction_reputation pfr ON pfr.actor_id = pf.actor_id AND pfr.faction_id = pf.faction_id
+            WHERE pf.actor_id = %s
+            LIMIT 1
+        """, [actor_id])
+        return result or []
+
+    def set_faction_reputation(self, actor_id, faction_id, amount):
+        """Set faction reputation for a player."""
+        try:
+            conn = self.db.get_connection()
+            if not conn:
+                return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    INSERT INTO dune.player_faction_reputation (actor_id, faction_id, reputation_amount)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (actor_id, faction_id) DO UPDATE SET reputation_amount = %s
+                """, [actor_id, faction_id, amount, amount])
+                conn.commit()
+                audit_logger.info(f"FACTION_REP: actor={actor_id} faction={faction_id} amount={amount}")
+                return True, f"Reputation set to {amount}"
+            except Exception as e:
+                conn.rollback()
+                return False, str(e)
+            finally:
+                if cur: cur.close()
+                self.db.return_connection(conn)
+        except Exception as e:
+            return False, str(e)
+
+    # ── Inventory Lookup (direct SQL) ─────────────────────────────────
+    def get_inventory(self, account_id):
+        """Get inventory details for an account."""
+        result = self.db.query("""
+            SELECT inv.id as inventory_id, inv.actor_id, i.id as item_id, i.template_id, i.stack_size as count, i.position_index
+            FROM dune.inventories inv
+            JOIN dune.items i ON i.inventory_id = inv.id
+            WHERE inv.actor_id IN (SELECT id FROM dune.actors WHERE owner_account_id = %s)
+            ORDER BY inv.id, i.position_index
+            LIMIT 200
+        """, [account_id])
+        return result or []
+
+    def get_player_pawn(self, account_id):
+        """Get player pawn info by account id."""
+        result = self.db.query("""
+            SELECT a.id, a.class, a.map, a.owner_account_id as account_id
+            FROM dune.actors a
+            WHERE a.owner_account_id = %s AND a.class LIKE '%%PlayerPawn_C%%'
+            LIMIT 5
+        """, [account_id])
+        return result or []
+
+    # ── Guild Tools (direct SQL) ───────────────────────────────────────
+    def get_guild_data(self, guild_id):
+        """Get guild data."""
+        result = self.db.query("""
+            SELECT g.*, 
+                (SELECT COUNT(*) FROM dune.guild_members gm WHERE gm.guild_id = g.id) as member_count
+            FROM dune.guilds g WHERE g.id = %s
+        """, [guild_id])
+        return result or []
+
+    def get_all_guilds(self):
+        """Get all guilds."""
+        result = self.db.query("""
+            SELECT g.*, 
+                (SELECT COUNT(*) FROM dune.guild_members gm WHERE gm.guild_id = g.id) as member_count
+            FROM dune.guilds g
+            ORDER BY g.id
+        """)
+        return result or []
+
+    def disband_guild(self, guild_id):
+        """Disband a guild via function."""
+        try:
+            conn = self.db.get_connection()
+            if not conn:
+                return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.disband_guild(%s)", [guild_id])
+                conn.commit()
+                audit_logger.info(f"GUILD_DISBAND: guild_id={guild_id}")
+                return True, f"Guild {guild_id} disbanded"
+            except Exception as e:
+                conn.rollback()
+                return False, str(e)
+            finally:
+                if cur: cur.close()
+                self.db.return_connection(conn)
+        except Exception as e:
+            return False, str(e)
+
+    def remove_guild_member(self, guild_id, player_id):
+        """Remove a member from a guild."""
+        try:
+            conn = self.db.get_connection()
+            if not conn:
+                return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("DELETE FROM dune.guild_members WHERE guild_id = %s AND player_id = %s", [guild_id, player_id])
+                conn.commit()
+                audit_logger.info(f"GUILD_KICK: guild={guild_id} player={player_id}")
+                return True, f"Player {player_id} removed from guild"
+            except Exception as e:
+                conn.rollback()
+                return False, str(e)
+            finally:
+                if cur: cur.close()
+                self.db.return_connection(conn)
+        except Exception as e:
+            return False, str(e)
+
+    # ── Player Tags (direct SQL) ───────────────────────────────────────
+    def get_player_tags(self, account_id):
+        """Read player tags."""
+        result = self.db.query(
+            "SELECT tag FROM dune.player_tags WHERE account_id = %s ORDER BY tag",
+            [account_id]
+        )
+        return result or []
+
+    def update_player_tags(self, account_id, tags_to_add, tags_to_remove):
+        """Update player tags."""
+        try:
+            conn = self.db.get_connection()
+            if not conn:
+                return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                for tag in tags_to_add:
+                    cur.execute(
+                        "INSERT INTO dune.player_tags (account_id, tag) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                        [account_id, tag]
+                    )
+                if tags_to_remove:
+                    cur.execute(
+                        "DELETE FROM dune.player_tags WHERE account_id = %s AND tag = ANY(%s)",
+                        [account_id, tags_to_remove]
+                    )
+                conn.commit()
+                audit_logger.info(f"TAGS_UPDATE: account={account_id} add={tags_to_add} remove={tags_to_remove}")
+                return True, "Tags updated"
+            except Exception as e:
+                conn.rollback()
+                return False, str(e)
+            finally:
+                if cur: cur.close()
+                self.db.return_connection(conn)
+        except Exception as e:
+            return False, str(e)
+
+    def flag_cheater(self, account_id, cheat_type):
+        """Flag a player as cheater."""
+        try:
+            conn = self.db.get_connection()
+            if not conn:
+                return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                # Add cheater tag
+                cur.execute(
+                    "INSERT INTO dune.player_tags (account_id, tag) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    [account_id, f'cheater_{cheat_type}']
+                )
+                conn.commit()
+                audit_logger.info(f"CHEATER_FLAG: account={account_id} type={cheat_type}")
+                return True, f"Flagged as {cheat_type}"
+            except Exception as e:
+                conn.rollback()
+                return False, str(e)
+            finally:
+                if cur: cur.close()
+                self.db.return_connection(conn)
+        except Exception as e:
+            return False, str(e)
+
+    # ── Vehicles (direct SQL) ─────────────────────────────────────────
+    def get_player_vehicles(self, player_id, account_id):
+        """Get vehicles owned by a player."""
+        result = self.db.query("""
+            SELECT v.id as vehicle_id, v.actor_id, a.class, a.map, a.owner_account_id as account_id
+            FROM dune.vehicles v
+            JOIN dune.actors a ON a.id = v.actor_id
+            WHERE a.owner_account_id = %s
+            ORDER BY v.id
+            LIMIT 50
+        """, [account_id])
+        return result or []
+
+    # ── Character Management ───────────────────────────────────────────
+    def set_character_name(self, account_id, new_name):
+        """Rename a character."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("UPDATE dune.player_state SET character_name = %s WHERE account_id = %s", [new_name, account_id])
+                conn.commit()
+                audit_logger.info(f"RENAME: account={account_id} new_name={new_name}")
+                return True, f"Renamed to {new_name}"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    def delete_character(self, actor_id):
+        """Delete a character."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.delete_character(%s)", [actor_id])
+                conn.commit()
+                audit_logger.info(f"DELETE_CHAR: actor_id={actor_id}")
+                return True, f"Character {actor_id} deleted"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    def delete_account(self, user_id, reason='admin'):
+        """Delete an account."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.delete_account(%s, %s)", [user_id, reason])
+                conn.commit()
+                audit_logger.info(f"DELETE_ACCOUNT: user={user_id} reason={reason}")
+                return True, f"Account {user_id} deleted"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    def set_demo_state(self, user_id, demo_state):
+        """Set demo state for an account."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.set_demo_state(%s, %s::dune.demostate)", [user_id, demo_state])
+                conn.commit()
+                audit_logger.info(f"DEMO: user={user_id} state={demo_state}")
+                return True, f"Demo state set to {demo_state}"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    # ── Journey / Progression ─────────────────────────────────────────
+    def complete_journey_nodes(self, account_id, node_ids):
+        """Complete journey story nodes for a player."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.complete_journey_story_nodes_for_player(%s, %s)", [str(account_id), node_ids])
+                conn.commit()
+                audit_logger.info(f"JOURNEY_COMPLETE: account={account_id} nodes={node_ids}")
+                return True, f"Completed {len(node_ids)} nodes"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    def reveal_journey_nodes(self, account_id, node_ids):
+        """Reveal journey story nodes for a player."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.reveal_journey_story_nodes_for_player(%s, %s)", [str(account_id), node_ids])
+                conn.commit()
+                audit_logger.info(f"JOURNEY_REVEAL: account={account_id} nodes={node_ids}")
+                return True, f"Revealed {len(node_ids)} nodes"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    def reset_journey_nodes(self, account_id, node_ids):
+        """Reset journey story nodes for a player."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.reset_journey_story_nodes_for_player(%s, %s)", [str(account_id), node_ids])
+                conn.commit()
+                audit_logger.info(f"JOURNEY_RESET: account={account_id} nodes={node_ids}")
+                return True, f"Reset {len(node_ids)} nodes"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    def set_specialization(self, player_id, track_type, xp, level):
+        """Set specialization XP and level."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                # track_type is a dune.specializationtracktype enum
+                cur.execute(
+                    "SELECT dune.set_specialization_xp_and_level(%s, %s::dune.specializationtracktype, %s, %s)",
+                    [player_id, track_type, xp, level]
+                )
+                conn.commit()
+                audit_logger.info(f"SPEC_SET: player={player_id} track={track_type} xp={xp} level={level}")
+                return True, f"Specialization {track_type} set to level {level}"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    def reset_specialization(self, player_id):
+        """Reset all specialization tracks for a player."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.reset_specialization_tracks(%s)", [player_id])
+                conn.commit()
+                audit_logger.info(f"SPEC_RESET: player={player_id}")
+                return True, "Specialization tracks reset"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    # ── Guild Roster ───────────────────────────────────────────────────
+    def get_guild_members(self, guild_id):
+        """Get all members of a guild."""
+        result = self.db.query("""
+            SELECT gm.player_id, gm.role_id, COALESCE(NULLIF(ps.character_name, ''), 'Unknown') as name
+            FROM dune.guild_members gm
+            LEFT JOIN dune.player_state ps ON ps.player_controller_id = gm.player_id
+            WHERE gm.guild_id = %s
+            ORDER BY gm.role_id, ps.character_name
+        """, [guild_id])
+        return result or []
+
+    def promote_guild_member(self, guild_id, player_id, new_role):
+        """Promote/demote a guild member."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.promote_guild_member(%s, %s, %s)", [guild_id, player_id, new_role])
+                conn.commit()
+                audit_logger.info(f"GUILD_PROMOTE: guild={guild_id} player={player_id} role={new_role}")
+                return True, f"Player {player_id} now role {new_role}"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    # ── Economy / Vendors ──────────────────────────────────────────────
+    def clean_player_vendor_stock(self, player_id):
+        """Reset vendor buy limits for a player."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.clean_stock_for_player(%s)", [player_id])
+                conn.commit()
+                audit_logger.info(f"VENDOR_CLEAN: player={player_id}")
+                return True, f"Vendor stock reset for player {player_id}"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    def get_player_tax_invoices(self, player_id):
+        """Get tax invoices for a player."""
+        result = self.db.query(
+            "SELECT * FROM dune.taxation_get_all_invoices_for_player(%s)",
+            [player_id]
+        )
+        return result or []
+
+    # ── Spice Fields ───────────────────────────────────────────────────
+    def force_spice_spawn(self, server_id, spicefield_type_id):
+        """Request a spice field spawn."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.request_spawn_spice_field(%s, %s)", [server_id, spicefield_type_id])
+                conn.commit()
+                audit_logger.info(f"SPICE_SPAWN: server={server_id} type={spicefield_type_id}")
+                return True, f"Spice field spawn requested on {server_id}"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    def reset_spice_state(self, map_name, dimension_index):
+        """Reset global spice field state."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.reset_global_spice_field_state(%s, %s)", [map_name, dimension_index])
+                conn.commit()
+                audit_logger.info(f"SPICE_RESET: map={map_name} dim={dimension_index}")
+                return True, f"Spice state reset on {map_name}"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    # ── Server Tools ───────────────────────────────────────────────────
+    def set_players_offline(self, server_ids):
+        """Set all players on given servers to offline."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.set_players_from_server_ids_offline(%s)", [server_ids])
+                conn.commit()
+                audit_logger.info(f"SET_OFFLINE: servers={server_ids}")
+                return True, f"Players set offline on {len(server_ids)} servers"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    def cleanup_orphaned(self):
+        """Clean up orphaned entities in the database."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.cleanup_orphaned_entities()")
+                conn.commit()
+                audit_logger.info("CLEANUP_ORPHANS")
+                return True, "Orphaned entities cleaned up"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    # ── Permission Management ─────────────────────────────────────────
+    def get_actor_permissions(self, actor_id):
+        """Get permissions for an actor."""
+        result = self.db.query(
+            "SELECT * FROM dune.get_permission_for_actor(%s)",
+            [actor_id]
+        )
+        return result or []
+
+    def set_player_rank(self, actor_id, player_id, rank, map_id=''):
+        """Set a player's rank on an actor."""
+        try:
+            conn = self.db.get_connection()
+            if not conn: return False, "DB connection failed"
+            cur = None
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT dune.permission_set_player_rank(%s, %s, %s, %s)", [actor_id, player_id, rank, map_id])
+                conn.commit()
+                audit_logger.info(f"RANK_SET: actor={actor_id} player={player_id} rank={rank}")
+                return True, f"Rank {rank} set for player {player_id}"
+            except Exception as e:
+                conn.rollback(); return False, str(e)
+            finally:
+                if cur: cur.close(); self.db.return_connection(conn)
+        except Exception as e: return False, str(e)
+
+    # ── Player Stats (from actors.properties JSONB) ───────────────────
+    def get_player_stats(self, player_controller_id):
+        """Get player health and stats from actor properties."""
+        result = self.db.query("""
+            WITH pawn AS (
+                SELECT id, properties FROM dune.actors
+                WHERE id = (SELECT player_pawn_id FROM dune.player_state WHERE player_controller_id = %s)
+            ),
+            ctrl AS (
+                SELECT properties FROM dune.actors WHERE id = %s
+            )
+            SELECT
+                pawn.id as pawn_id,
+                pawn.properties::text as pawn_props,
+                ctrl.properties::text as ctrl_props
+            FROM pawn, ctrl
+        """, [player_controller_id, player_controller_id])
+        if not result:
+            return None
+        row = result[0]
+        import json
+        pawn = json.loads(row.get('pawn_props') or '{}')
+        ctrl = json.loads(row.get('ctrl_props') or '{}')
+        stats = {'pawn_id': row['pawn_id']}
+
+        # Health
+        dmg = pawn.get('DamageableActorComponent', {})
+        stats['health'] = {'current': dmg.get('m_CurrentMaxHealth'), 'max': dmg.get('m_TotalMaxHealth')}
+
+        # Character stats
+        char = pawn.get('BP_DunePlayerCharacter_C', {})
+        stats['eyes_of_ibad'] = char.get('m_EyesOfIbadValue')
+        stats['heatstroke'] = char.get('m_bHeatstroke')
+        stats['is_driving'] = char.get('m_bIsDriving')
+
+        # Journey / Spice exposure
+        journey = ctrl.get('BP_JourneyComponent_C', {})
+        stats['spice_exposure_level'] = journey.get('CurrentSpiceExposureThresholdLevel')
+
+        # Landsraad
+        landsraad = ctrl.get('LandsraadCharacterComponent', {})
+        stats['daily_reward_charges'] = landsraad.get('m_DailyRewardCharges')
+        stats['last_viewed_term'] = landsraad.get('m_LastViewedLandsraadTermId')
+
+        return stats
+
+    # ── Dynamic Function Explorer ─────────────────────────────────────
+    def list_all_functions(self):
+        """List all dune schema functions with signatures."""
+        result = self.db.query("""
+            SELECT p.proname as name,
+                   pg_get_function_identity_arguments(p.oid) as args,
+                   l.lanname as language,
+                   p.prokind as kind
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            JOIN pg_language l ON l.oid = p.prolang
+            WHERE n.nspname = 'dune' AND p.prokind = 'f'
+            ORDER BY p.proname
+        """)
+        return result or []
+
+    def execute_function(self, function_name, params):
+        """Execute any dune schema function dynamically."""
+        try:
+            param_placeholders = ','.join(['%s'] * len(params))
+            sql = f"SELECT * FROM dune.{function_name}({param_placeholders})"
+            result = self.db.query(sql, params)
+            audit_logger.info(f"EXEC_FUNC: {function_name}({params})")
+            return True, result, None
+        except Exception as e:
+            return False, None, str(e)
+
+    def get_function_details(self, function_name):
+        """Get full definition of a function."""
+        result = self.db.query("""
+            SELECT pg_get_functiondef(p.oid) as definition,
+                   p.proname as name,
+                   pg_get_function_identity_arguments(p.oid) as args
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'dune' AND p.proname = %s AND p.prokind = 'f'
+        """, [function_name])
+        return result[0] if result else None
+
+    def _detect_namespace(self):
+        out, err, rc = self.ssh.run(
+            "sudo kubectl get pods -A --no-headers -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name "
+            "| awk '$1 ~ /^funcom-seabass-/ && $2 ~ /-mq-game-sts-0$/ { print $1 }' | sort -u"
+        )
+        if out:
+            ns = out.strip().split('\n')[0]
+            if ns:
+                return ns
+        return "funcom-seabass-sh-b17a5f036d1f7882-ccdijf"
