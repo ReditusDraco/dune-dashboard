@@ -303,6 +303,9 @@ function Show-Menu {
     Write-Host "      Launch the modern React dashboard with ChakraUI and Recharts." -ForegroundColor DarkGray
     Write-Host "      Auto-installs dependencies. Frontend: http://localhost:5173" -ForegroundColor DarkGray
     Write-Host ""
+    Write-Host "  [8] Reset to Factory Defaults" -ForegroundColor Red
+    Write-Host "      Wipe all data and start fresh. Removes settings, logs, certs, and cache." -ForegroundColor DarkGray
+    Write-Host ""
     Write-Host "  [Q] Quit" -ForegroundColor White
     Write-Host ""
 }
@@ -412,18 +415,7 @@ function Test-SshKey {
 
     # Try to read SSH key from settings
     if (Test-Path $settingsFile) {
-        $readSettingsScript = @"
-import yaml, json, sys, os
-path = sys.argv[1]
-if not os.path.exists(path):
-    print(json.dumps({}))
-    sys.exit(0)
-with open(path, 'r', encoding='utf-8-sig') as f:
-    s = yaml.safe_load(f) or {}
-print(json.dumps(s))
-"@
-        $readSettingsScript | Out-File -FilePath "$env:TEMP\read_settings_diag.py" -Encoding utf8 -Force
-        $settingsJson = python "$env:TEMP\read_settings_diag.py" $settingsFile 2>$null
+        $settingsJson = python -c "import yaml, json, sys; d = yaml.safe_load(open(sys.argv[1], encoding='utf-8-sig')) or {}; print(json.dumps(d))" $settingsFile 2>$null
         if ($settingsJson) {
             $settings = $settingsJson | ConvertFrom-Json
             if ($settings.server -and $settings.server.ssh_key -and $settings.server.ssh_key -ne 'null') {
@@ -629,35 +621,41 @@ function Run-Diagnostics {
     Write-Host "[3/7] Checking Settings..." -ForegroundColor Yellow
     if (Test-Path $settingsFile) {
         Write-Host "  settings.yaml: FOUND" -ForegroundColor Green
-        $readSettingsScript = @"
-import yaml, json, sys, os
-path = sys.argv[1]
-if not os.path.exists(path):
-    print(json.dumps({}))
-    sys.exit(0)
-with open(path, 'r', encoding='utf-8-sig') as f:
-    s = yaml.safe_load(f) or {}
-print(json.dumps(s))
-"@
-        $readSettingsScript | Out-File -FilePath "$env:TEMP\read_settings_diag.py" -Encoding utf8 -Force
-        $settingsJson = python "$env:TEMP\read_settings_diag.py" $settingsFile 2>$null
+        $settingsJson = python -c "import yaml, json, sys; d = yaml.safe_load(open(sys.argv[1], encoding='utf-8-sig')) or {}; print(json.dumps(d))" $settingsFile 2>$null
         if ($settingsJson) {
             $settings = $settingsJson | ConvertFrom-Json
-            if ($settings.server -and $settings.server.host -and $settings.server.host -ne 'YOUR_SERVER_IP') {
+            $hasServer = $settings.server -and $settings.server.host -and $settings.server.host -ne 'YOUR_SERVER_IP'
+            if ($hasServer) {
                 Write-Host "  Server Host: $($settings.server.host)" -ForegroundColor Green
             } else {
                 Write-Host "  Server Host: NOT CONFIGURED (edit settings.yaml)" -ForegroundColor Red
                 $issues++
             }
             if ($settings.dashboard) {
-                $dashHost = $settings.dashboard.host
-                $dashPort = $settings.dashboard.port
-                Write-Host "  Dashboard: ${dashHost}:${dashPort}" -ForegroundColor Green
-                if ($dashHost -eq '0.0.0.0') {
-                    Write-Host "    (Accessible from localhost, LAN, and internet)" -ForegroundColor DarkGray
+                Write-Host "  Dashboard: $($settings.dashboard.host):$($settings.dashboard.port)" -ForegroundColor Green
+                if ($settings.dashboard.host -eq '0.0.0.0') {
+                    Write-Host "    (Accessible from LAN and internet)" -ForegroundColor DarkGray
                 } else {
                     Write-Host "    (Only accessible from this computer)" -ForegroundColor DarkGray
                 }
+                if ($settings.dashboard.ssl_cert -and $settings.dashboard.ssl_cert -ne 'null') {
+                    Write-Host "  SSL Cert: $($settings.dashboard.ssl_cert)" -ForegroundColor Green
+                }
+                if ($settings.dashboard.ssl_domain -and $settings.dashboard.ssl_domain -ne 'null') {
+                    Write-Host "  SSL Domain: $($settings.dashboard.ssl_domain)" -ForegroundColor Green
+                }
+            }
+            if ($settings.auth) {
+                if ($settings.auth.enabled -eq $true -and $settings.auth.username -and $settings.auth.password_hash -match '^\$argon2') {
+                    Write-Host "  Auth: enabled, user: $($settings.auth.username)" -ForegroundColor Green
+                } else {
+                    Write-Host "  Auth: INCOMPLETE (run setup to configure)" -ForegroundColor Yellow
+                }
+            }
+            if (-not $settings.kubernetes -or -not $settings.kubernetes.namespace) {
+                Write-Host "  K8s Namespace: NOT CONFIGURED" -ForegroundColor Yellow
+            } else {
+                Write-Host "  K8s Namespace: $($settings.kubernetes.namespace)" -ForegroundColor Green
             }
         } else {
             Write-Host "  settings.yaml: COULD NOT READ" -ForegroundColor Red
@@ -714,16 +712,92 @@ print(json.dumps(s))
     }
     Write-Host ""
 
-    # Server-side diagnostics
+    # SSL Certificate check
+    Write-Host "[CHECK] SSL Certificate..." -ForegroundColor Yellow
     if ($settingsJson) {
         $settings = $settingsJson | ConvertFrom-Json
-        if ($settings.server -and $settings.server.host -and $settings.server.host -ne 'YOUR_SERVER_IP') {
-            Write-Host "  Running server-side diagnostics..." -ForegroundColor Yellow
-            Write-Host ""
-            python (Join-Path $ProjectRoot "scripts\diagnostic.py") (Join-Path $ProjectRoot "settings.yaml")
-            Write-Host ""
+        $sslCert = $null
+        if ($settings.dashboard -and $settings.dashboard.ssl_cert -and $settings.dashboard.ssl_cert -ne 'null') {
+            $sslCert = $settings.dashboard.ssl_cert
+        } else {
+            $sslCert = Join-Path $ProjectRoot "ssl\cert.pem"
+        }
+        if (Test-Path $sslCert) {
+            $certExpiry = (Get-PfxCertificate -FilePath $sslCert -ErrorAction SilentlyContinue).NotAfter
+            if ($certExpiry) {
+                $daysLeft = ($certExpiry - (Get-Date)).Days
+                if ($daysLeft -gt 30) {
+                    Write-Host "  SSL Certificate: VALID ($daysLeft days until expiry)" -ForegroundColor Green
+                } elseif ($daysLeft -gt 0) {
+                    Write-Host "  SSL Certificate: EXPIRING SOON ($daysLeft days left)" -ForegroundColor Yellow
+                } else {
+                    Write-Host "  SSL Certificate: EXPIRED" -ForegroundColor Red
+                    $issues++
+                }
+            } else {
+                Write-Host "  SSL Certificate file found but could not read expiry" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "  SSL Certificate: NOT FOUND (dashboard will run without HTTPS)" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  SSL Certificate: SKIPPED (settings not available)" -ForegroundColor Yellow
+    }
+    Write-Host ""
+
+    # Database connectivity check
+    Write-Host "[CHECK] Database Connectivity..." -ForegroundColor Yellow
+    $dbPort = 15433
+    if ($settingsJson) {
+        $settings = $settingsJson | ConvertFrom-Json
+        if ($settings.database -and $settings.database.port) {
+            $dbPort = [int]$settings.database.port
         }
     }
+    $dbCheckPath = Join-Path $ProjectRoot "scripts\db_check.py"
+    if (Test-Path $dbCheckPath) {
+        $dbResult = python $dbCheckPath $dbPort 2>$null
+        if ($dbResult -eq "ok") {
+            Write-Host "  Database: CONNECTED (port $dbPort)" -ForegroundColor Green
+        } else {
+            Write-Host "  Database: NOT REACHABLE (port $dbPort) - $dbResult" -ForegroundColor Yellow
+            Write-Host "  (This is normal if the SSH tunnel is not established yet)" -ForegroundColor DarkGray
+        }
+    } else {
+        Write-Host "  Database check script not found" -ForegroundColor Yellow
+    }
+    Write-Host ""
+
+    # certbot availability
+    Write-Host "[CHECK] Let's Encrypt certbot..." -ForegroundColor Yellow
+    $certbotPath = (Get-Command "certbot" -ErrorAction SilentlyContinue).Source
+    if ($certbotPath) {
+        Write-Host "  certbot: FOUND at $certbotPath" -ForegroundColor Green
+    } else {
+        $certbotAsModule = python -m certbot --version 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  certbot: FOUND (python module)" -ForegroundColor Green
+        } else {
+            Write-Host "  certbot: NOT FOUND (only needed for Let's Encrypt SSL)" -ForegroundColor DarkGray
+        }
+    }
+    Write-Host ""
+
+    # Backend dependencies check
+    Write-Host "[CHECK] New Dashboard Backend Dependencies..." -ForegroundColor Yellow
+    $backendReqs = Join-Path $ProjectRoot "backend\requirements.txt"
+    if (Test-Path $backendReqs) {
+        python -c "import pydantic, httpx, uvicorn" 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  Backend deps: INSTALLED" -ForegroundColor Green
+        } else {
+            Write-Host "  Backend deps: MISSING (run: pip install -r backend\requirements.txt)" -ForegroundColor Yellow
+            $issues++
+        }
+    } else {
+        Write-Host "  Backend deps: SKIPPED (no backend/requirements.txt)" -ForegroundColor DarkGray
+    }
+    Write-Host ""
 
     # Offer port forward guide
     Write-Host "  Would you like to see the Port Forwarding & Firewall guide? (y/N)" -ForegroundColor Cyan
@@ -850,6 +924,109 @@ function Clean-CaCerts {
     Read-Host "  "
 }
 
+function Reset-ToFactoryDefaults {
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host "  Reset to Factory Defaults" -ForegroundColor Cyan
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  [WARNING] This will permanently delete the following:" -ForegroundColor Red
+    Write-Host "    - settings.yaml (all configuration)" -ForegroundColor Yellow
+    Write-Host "    - logs/, app/logs/, backend/logs/ (log files)" -ForegroundColor Yellow
+    Write-Host "    - instance/ (SQLite database)" -ForegroundColor Yellow
+    Write-Host "    - ssl/ (SSL certificates and CA)" -ForegroundColor Yellow
+    Write-Host "    - __pycache__/ (Python cache in app/, backend/)" -ForegroundColor Yellow
+    Write-Host "    - frontend/node_modules/ (npm dependencies)" -ForegroundColor Yellow
+    Write-Host "    - internal-scripts/ssh/ (copied SSH key)" -ForegroundColor Yellow
+    Write-Host "    - Temp scripts (read_settings*, hash_pw*, ssh_*, etc.)" -ForegroundColor Yellow
+    Write-Host "    - Test & build artifacts" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  This cannot be undone. You will need to run Setup again." -ForegroundColor Red
+    Write-Host ""
+    $confirmation = Read-Host "  Type 'yes' to confirm"
+    if ($confirmation -ne "yes") {
+        Write-Host ""
+        Write-Host "  Reset cancelled. No changes made." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  Press Enter to return to the main menu..." -ForegroundColor Cyan
+        Read-Host "  "
+        return
+    }
+
+    Write-Host ""
+    Write-Host "  Wiping all dashboard data..." -ForegroundColor Yellow
+    Write-Host ""
+
+    $count = 0
+
+    # -- Core config & data --
+    if (Test-Path (Join-Path $ProjectRoot "settings.yaml")) { Remove-Item (Join-Path $ProjectRoot "settings.yaml") -Force; Write-Host "    Deleted settings.yaml" -ForegroundColor Green; $count++ }
+    if (Test-Path (Join-Path $ProjectRoot "instance")) { Remove-Item (Join-Path $ProjectRoot "instance") -Recurse -Force; Write-Host "    Deleted instance/" -ForegroundColor Green; $count++ }
+
+    # -- SSL certificates --
+    if (Test-Path (Join-Path $ProjectRoot "ssl")) { Remove-Item (Join-Path $ProjectRoot "ssl") -Recurse -Force; Write-Host "    Deleted ssl/" -ForegroundColor Green; $count++ }
+
+    # -- Log directories --
+    $logDirs = @("logs", "app\logs", "backend\logs")
+    foreach ($ld in $logDirs) {
+        $lp = Join-Path $ProjectRoot $ld
+        if (Test-Path $lp) { Remove-Item $lp -Recurse -Force; Write-Host "    Deleted $ld/" -ForegroundColor Green; $count++ }
+    }
+
+    # -- SSH key --
+    $sshKeyDir = Join-Path $ProjectRoot "internal-scripts\ssh"
+    if (Test-Path $sshKeyDir) { Remove-Item $sshKeyDir -Recurse -Force; Write-Host "    Deleted internal-scripts/ssh/" -ForegroundColor Green; $count++ }
+
+    # -- Python __pycache__ directories --
+    $cacheSearchPaths = @("app", "backend")
+    $totalCacheDirs = 0
+    foreach ($csp in $cacheSearchPaths) {
+        $cspPath = Join-Path $ProjectRoot $csp
+        if (Test-Path $cspPath) {
+            $dirs = Get-ChildItem -Path $cspPath -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue
+            foreach ($d in $dirs) { Remove-Item $d.FullName -Recurse -Force; $totalCacheDirs++ }
+        }
+    }
+    if (Test-Path (Join-Path $ProjectRoot "__pycache__")) { Remove-Item (Join-Path $ProjectRoot "__pycache__") -Recurse -Force; $totalCacheDirs++ }
+    if ($totalCacheDirs -gt 0) { Write-Host "    Deleted $totalCacheDirs __pycache__ folder(s)" -ForegroundColor Green; $count++ }
+
+    # -- frontend/node_modules --
+    if (Test-Path (Join-Path $ProjectRoot "frontend\node_modules")) { Remove-Item (Join-Path $ProjectRoot "frontend\node_modules") -Recurse -Force; Write-Host "    Deleted frontend/node_modules/" -ForegroundColor Green; $count++ }
+    if (Test-Path (Join-Path $ProjectRoot "frontend\package-lock.json")) { Remove-Item (Join-Path $ProjectRoot "frontend\package-lock.json") -Force; Write-Host "    Deleted frontend/package-lock.json" -ForegroundColor Green; $count++ }
+
+    # -- Temp scripts generated during setup --
+    $tempPatterns = @("read_settings*.py", "hash_pw*.py", "ssh_cmd.bat", "ssh_pf_*.bat", "certbot-out.txt", "temp_*.py", "temp_*.ps1", "temp_*.sh", "check_*.py", "fix_*.py", "parse_*.ps1", "find_*.py")
+    $tempDeleted = 0
+    foreach ($pat in $tempPatterns) {
+        $matches = Get-ChildItem -Path $ProjectRoot -Filter $pat -ErrorAction SilentlyContinue
+        foreach ($m in $matches) { Remove-Item $m.FullName -Force; $tempDeleted++ }
+    }
+    if ($tempDeleted -gt 0) { Write-Host "    Deleted $tempDeleted temp script(s)" -ForegroundColor Green; $count++ }
+
+    # -- Test & build artifacts --
+    $artifactDirs = @(".pytest_cache", "htmlcov", "build", "backups", "frontend\.vite")
+    foreach ($ad in $artifactDirs) {
+        $ap = Join-Path $ProjectRoot $ad
+        if (Test-Path $ap) { Remove-Item $ap -Recurse -Force; Write-Host "    Deleted $ad/" -ForegroundColor Green; $count++ }
+    }
+    $artifactFiles = @(".coverage", "coverage.xml")
+    foreach ($af in $artifactFiles) {
+        $afp = Join-Path $ProjectRoot $af
+        if (Test-Path $afp) { Remove-Item $afp -Force; Write-Host "    Deleted $af" -ForegroundColor Green; $count++ }
+    }
+
+    Write-Host ""
+    if ($count -gt 0) {
+        Write-Host "  Reset complete! Dashboard has been restored to a clean state." -ForegroundColor Green
+        Write-Host "  Run Setup to configure the dashboard from scratch." -ForegroundColor Cyan
+    } else {
+        Write-Host "  No dashboard data found. Nothing to wipe." -ForegroundColor Yellow
+    }
+    Write-Host ""
+    Write-Host "  Press Enter to return to the main menu..." -ForegroundColor Cyan
+    Read-Host "  "
+}
+
 function Run-Setup {
     Write-Host ""
     Write-Host "============================================================" -ForegroundColor Cyan
@@ -859,41 +1036,94 @@ function Run-Setup {
 
     # Check if this is a re-run
     $IsReRun = (Test-Path (Join-Path $ProjectRoot "settings.yaml")) -or (Test-Path (Join-Path $ProjectRoot "logs")) -or (Test-Path (Join-Path $ProjectRoot "instance")) -or (Test-Path (Join-Path $ProjectRoot "ssl"))
+    $QuickReconfig = $false
 
     if ($IsReRun) {
-        Write-Host "  [WARNING] Existing dashboard data detected!" -ForegroundColor Red
+        Write-Host "  [INFO] Existing dashboard data detected!" -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "  This will WIPE the following and start fresh:" -ForegroundColor Yellow
-        Write-Host "    - settings.yaml (configuration)" -ForegroundColor Yellow
-        Write-Host "    - logs/ (all log files)" -ForegroundColor Yellow
-        Write-Host "    - instance/ (SQLite database)" -ForegroundColor Yellow
-        Write-Host "    - ssl/ (SSL certificates and CA)" -ForegroundColor Yellow
-        Write-Host "    - __pycache__/ (Python cache)" -ForegroundColor Yellow
+        Write-Host "  What would you like to do?" -ForegroundColor Cyan
+        Write-Host "  [1] Full re-setup from scratch" -ForegroundColor White
+        Write-Host "      Wipes all settings, logs, certs, and starts fresh." -ForegroundColor DarkGray
+        Write-Host "  [2] Quick reconfig" -ForegroundColor White
+        Write-Host "      Keep existing files. Update settings with current values as defaults." -ForegroundColor DarkGray
+        Write-Host "  [C] Cancel" -ForegroundColor White
         Write-Host ""
-        Write-Host "  Are you sure you want to continue? (Y/N)" -ForegroundColor Red
+        $reconfigChoice = Read-Host "  Choose [1/2/C]"
 
-        $confirmation = Read-Host "  Type Y to confirm"
-        if ($confirmation -ne "Y" -and $confirmation -ne "y") {
+        if ($reconfigChoice -eq 'C' -or $reconfigChoice -eq 'c') {
             Write-Host ""
             Write-Host "  Setup cancelled. No changes made." -ForegroundColor Yellow
             return
         }
 
-        Write-Host ""
-        Write-Host "  Cleaning existing data..." -ForegroundColor Yellow
+        if ($reconfigChoice -eq '2') {
+            $QuickReconfig = $true
+            Write-Host ""
+            Write-Host "  Reading existing settings..." -ForegroundColor Yellow
+            $settingsFile = Join-Path $ProjectRoot "settings.yaml"
+            $settingsJson = python -c "import yaml, json, sys; d = yaml.safe_load(open(sys.argv[1], encoding='utf-8-sig')) or {}; print(json.dumps(d))" $settingsFile 2>$null
+            if ($settingsJson) {
+                $existing = $settingsJson | ConvertFrom-Json
+                if ($existing.server) {
+                    if ($existing.server.host -and $existing.server.host -ne 'YOUR_SERVER_IP') { $VmHost = $existing.server.host }
+                    if ($existing.server.user) { $ServerUser = $existing.server.user }
+                    if ($existing.server.local_ip -and $existing.server.local_ip -ne 'null') { $vmIp = $existing.server.local_ip }
+                    if ($existing.server.ssh_key -and $existing.server.ssh_key -ne 'null' -and $existing.server.ssh_key -ne '') { $FoundKey = $existing.server.ssh_key }
+                }
+                if ($existing.dashboard) {
+                    if ($existing.dashboard.port) { $DashboardPort = [string]$existing.dashboard.port }
+                    if ($existing.dashboard.host -eq '0.0.0.0') { $EnableRemote = $true }
+                    if ($existing.dashboard.ssl_domain -and $existing.dashboard.ssl_domain -ne 'null') { $DomainName = $existing.dashboard.ssl_domain }
+                    if ($existing.dashboard.ssl_email -and $existing.dashboard.ssl_email -ne 'null') { $LeEmail = $existing.dashboard.ssl_email }
+                    if ($existing.dashboard.ssl_cert -and $existing.dashboard.ssl_cert -ne 'null') { $SslCert = "'$($existing.dashboard.ssl_cert)'" }
+                    if ($existing.dashboard.ssl_key -and $existing.dashboard.ssl_key -ne 'null') { $SslKey = "'$($existing.dashboard.ssl_key)'" }
+                }
+                if ($existing.database) { if ($existing.database.port) { $DbPort = [string]$existing.database.port } }
+                if ($existing.kubernetes) { if ($existing.kubernetes.namespace) { $K8sNamespace = $existing.kubernetes.namespace } }
+                if ($existing.director) { if ($existing.director.port) { $DirectorPort = [string]$existing.director.port } }
+                if ($existing.filebrowser) { if ($existing.filebrowser.port) { $FileBrowserPort = [string]$existing.filebrowser.port } }
+                if ($existing.auth) { if ($existing.auth.username) { $AuthUser = $existing.auth.username } }
+                Write-Host "  Existing settings loaded. You'll be prompted to review or change each value." -ForegroundColor Green
+            } else {
+                Write-Host "  [WARN] Could not read existing settings. Falling back to full setup." -ForegroundColor Yellow
+                $QuickReconfig = $false
+            }
+        }
 
-        if (Test-Path (Join-Path $ProjectRoot "settings.yaml")) { Remove-Item (Join-Path $ProjectRoot "settings.yaml") -Force; Write-Host "    Removed settings.yaml" -ForegroundColor Green }
-        if (Test-Path (Join-Path $ProjectRoot "logs")) { Remove-Item (Join-Path $ProjectRoot "logs") -Recurse -Force; Write-Host "    Removed logs/" -ForegroundColor Green }
-        if (Test-Path (Join-Path $ProjectRoot "instance")) { Remove-Item (Join-Path $ProjectRoot "instance") -Recurse -Force; Write-Host "    Removed instance/" -ForegroundColor Green }
-        if (Test-Path (Join-Path $ProjectRoot "ssl")) { Remove-Item (Join-Path $ProjectRoot "ssl") -Recurse -Force; Write-Host "    Removed ssl/" -ForegroundColor Green }
-        if (Test-Path (Join-Path $ProjectRoot "__pycache__")) { Remove-Item (Join-Path $ProjectRoot "__pycache__") -Recurse -Force; Write-Host "    Removed __pycache__/" -ForegroundColor Green }
+        if (-not $QuickReconfig) {
+            Write-Host "  [WARNING] This will wipe existing data and start fresh!" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "  This will WIPE the following:" -ForegroundColor Yellow
+            Write-Host "    - settings.yaml (configuration)" -ForegroundColor Yellow
+            Write-Host "    - logs/ (all log files)" -ForegroundColor Yellow
+            Write-Host "    - instance/ (SQLite database)" -ForegroundColor Yellow
+            Write-Host "    - ssl/ (SSL certificates and CA)" -ForegroundColor Yellow
+            Write-Host "    - __pycache__/ (Python cache)" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "  Are you sure? Type 'yes' to confirm." -ForegroundColor Red
+            $confirmation = Read-Host "  Type 'yes' to confirm"
+            if ($confirmation -ne "yes") {
+                Write-Host ""
+                Write-Host "  Setup cancelled. No changes made." -ForegroundColor Yellow
+                return
+            }
 
-        $cacheDirs = Get-ChildItem -Path (Join-Path $ProjectRoot "app") -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue
-        foreach ($dir in $cacheDirs) { Remove-Item $dir.FullName -Recurse -Force }
-        if ($cacheDirs.Count -gt 0) { Write-Host "    Removed $($cacheDirs.Count) Python cache folders" -ForegroundColor Green }
+            Write-Host ""
+            Write-Host "  Cleaning existing data..." -ForegroundColor Yellow
 
-        Write-Host "  Clean complete!" -ForegroundColor Green
-        Write-Host ""
+            if (Test-Path (Join-Path $ProjectRoot "settings.yaml")) { Remove-Item (Join-Path $ProjectRoot "settings.yaml") -Force; Write-Host "    Removed settings.yaml" -ForegroundColor Green }
+            if (Test-Path (Join-Path $ProjectRoot "logs")) { Remove-Item (Join-Path $ProjectRoot "logs") -Recurse -Force; Write-Host "    Removed logs/" -ForegroundColor Green }
+            if (Test-Path (Join-Path $ProjectRoot "instance")) { Remove-Item (Join-Path $ProjectRoot "instance") -Recurse -Force; Write-Host "    Removed instance/" -ForegroundColor Green }
+            if (Test-Path (Join-Path $ProjectRoot "ssl")) { Remove-Item (Join-Path $ProjectRoot "ssl") -Recurse -Force; Write-Host "    Removed ssl/" -ForegroundColor Green }
+            if (Test-Path (Join-Path $ProjectRoot "__pycache__")) { Remove-Item (Join-Path $ProjectRoot "__pycache__") -Recurse -Force; Write-Host "    Removed __pycache__/" -ForegroundColor Green }
+
+            $cacheDirs = Get-ChildItem -Path (Join-Path $ProjectRoot "app") -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue
+            foreach ($dir in $cacheDirs) { Remove-Item $dir.FullName -Recurse -Force }
+            if ($cacheDirs.Count -gt 0) { Write-Host "    Removed $($cacheDirs.Count) Python cache folders" -ForegroundColor Green }
+
+            Write-Host "  Clean complete!" -ForegroundColor Green
+            Write-Host ""
+        }
     }
 
     # Check Python
@@ -1052,6 +1282,7 @@ function Run-Setup {
         }
     }
 
+    if (-not $QuickReconfig) {
     # Auto-detect server settings
     Write-Host ""
     Write-Host "[4/6] Detecting server settings..." -ForegroundColor Yellow
@@ -1233,6 +1464,7 @@ function Run-Setup {
             Write-Host ""
         }
     }
+    }
 
     # Interactive review/edit
     Write-Host ""
@@ -1273,14 +1505,22 @@ function Run-Setup {
     $val = Read-Host "  Auth Username [$AuthUser] (Dashboard login name)"
     if ($val) { $AuthUser = $val }
 
-    $val = Read-Host "  Auth Password (required)" -AsSecureString
-    $AuthPass = [System.Net.NetworkCredential]::new('', $val).Password
-    if ($AuthPass) { }
-    else {
-        Write-Host "  [ERROR] Password is required. Setup cancelled." -ForegroundColor Red
-        return
+    while ($true) {
+        $val = Read-Host "  Auth Password (required)" -AsSecureString
+        $AuthPass = [System.Net.NetworkCredential]::new('', $val).Password
+        if (-not $AuthPass) {
+            Write-Host "  [ERROR] Password is required. Setup cancelled." -ForegroundColor Red
+            return
+        }
+        $val2 = Read-Host "  Confirm Password" -AsSecureString
+        $AuthPass2 = [System.Net.NetworkCredential]::new('', $val2).Password
+        if ($AuthPass -eq $AuthPass2) {
+            break
+        }
+        Write-Host "  [ERROR] Passwords do not match. Please try again." -ForegroundColor Red
     }
 
+    if (-not $QuickReconfig) {
     # SSL certificate (Let's Encrypt or local CA)
     Write-Host ""
     Write-Host "  Configuring SSL certificate..." -ForegroundColor Yellow
@@ -1514,12 +1754,38 @@ function Run-Setup {
         if ($existingTask) {
             Write-Host "  Renewal task already exists." -ForegroundColor Green
         } else {
-            $renewAction = New-ScheduledTaskAction -Execute "certbot" -Argument "renew --quiet" -RunLevel Highest
+            # Resolve certbot.exe path — SYSTEM account may not have it in PATH
+            $certbotCandidates = @(
+                "$env:ProgramFiles\Certbot\bin\certbot.exe",
+                "$env:LOCALAPPDATA\Programs\Python\Python312\Scripts\certbot.exe",
+                "$env:LOCALAPPDATA\Programs\Python\Python311\Scripts\certbot.exe",
+                "$env:LOCALAPPDATA\Programs\Python\Python310\Scripts\certbot.exe",
+                "$env:ProgramFiles\Python312\Scripts\certbot.exe",
+                "$env:ProgramFiles\Python311\Scripts\certbot.exe",
+                "$env:ProgramFiles\Python310\Scripts\certbot.exe"
+            )
+            $certbotPath = $null
+            foreach ($path in $certbotCandidates) {
+                if (Test-Path $path) {
+                    $certbotPath = $path
+                    break
+                }
+            }
+            if (-not $certbotPath) {
+                $certbotPath = (Get-Command "certbot" -ErrorAction SilentlyContinue).Source
+            }
+            if (-not $certbotPath) {
+                $certbotPath = "certbot"
+            }
+
+            $renewAction = New-ScheduledTaskAction -Execute $certbotPath -Argument "renew --quiet"
             $renewTrigger = New-ScheduledTaskTrigger -Daily -At 2am
             $renewSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-            Register-ScheduledTask -TaskName $taskName -Action $renewAction -Trigger $renewTrigger -Settings $renewSettings -Description "Auto-renew Let's Encrypt certificate for Dune Dashboard" -ErrorAction SilentlyContinue | Out-Null
+            $renewPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+            Register-ScheduledTask -TaskName $taskName -Action $renewAction -Trigger $renewTrigger -Settings $renewSettings -Principal $renewPrincipal -Description "Auto-renew Let's Encrypt certificate for Dune Dashboard" -ErrorAction SilentlyContinue | Out-Null
             Write-Host "  Auto-renewal scheduled (daily at 2 AM). Certificates renew automatically." -ForegroundColor Green
         }
+    }
     }
 
     # Firewall security hardening
@@ -1757,18 +2023,7 @@ function Start-Dashboard {
     }
 
     # Read settings
-    $readSettingsScript = @"
-import yaml, json, sys, os
-path = sys.argv[1]
-if not os.path.exists(path):
-    print(json.dumps({}))
-    sys.exit(0)
-with open(path, 'r', encoding='utf-8-sig') as f:
-    s = yaml.safe_load(f) or {}
-print(json.dumps(s))
-"@
-    $readSettingsScript | Out-File -FilePath "$env:TEMP\read_settings_start.py" -Encoding utf8 -Force
-    $settingsJson = python "$env:TEMP\read_settings_start.py" $settingsFile 2>$null
+    $settingsJson = python -c "import yaml, json, sys, os; path = sys.argv[1]; d = yaml.safe_load(open(path, encoding='utf-8-sig')) or {} if os.path.exists(path) else {}; print(json.dumps(d))" $settingsFile 2>$null
     if (-not $settingsJson) {
         Write-Host "  [ERROR] Failed to read settings.yaml" -ForegroundColor Red
         return
@@ -2215,18 +2470,7 @@ function Start-DashboardDebug {
     }
 
     # Read current settings
-    $readSettingsScript = @"
-import yaml, json, sys, os
-path = sys.argv[1]
-if not os.path.exists(path):
-    print(json.dumps({}))
-    sys.exit(0)
-with open(path, 'r', encoding='utf-8-sig') as f:
-    s = yaml.safe_load(f) or {}
-print(json.dumps(s))
-"@
-    $readSettingsScript | Out-File -FilePath "$env:TEMP\read_settings_debug.py" -Encoding utf8 -Force
-    $settingsJson = python "$env:TEMP\read_settings_debug.py" $settingsFile 2>$null
+    $settingsJson = python -c "import yaml, json, sys, os; path = sys.argv[1]; d = yaml.safe_load(open(path, encoding='utf-8-sig')) or {} if os.path.exists(path) else {}; print(json.dumps(d))" $settingsFile 2>$null
     if (-not $settingsJson) {
         Write-Host "  [ERROR] Failed to read settings.yaml" -ForegroundColor Red
         return
@@ -2326,18 +2570,7 @@ function Start-NewDashboard {
     }
 
     # Read settings
-    $readSettingsScript = @"
-import yaml, json, sys, os
-path = sys.argv[1]
-if not os.path.exists(path):
-    print(json.dumps({}))
-    sys.exit(0)
-with open(path, 'r', encoding='utf-8-sig') as f:
-    s = yaml.safe_load(f) or {}
-print(json.dumps(s))
-"@
-    $readSettingsScript | Out-File -FilePath "$env:TEMP\read_settings_new.py" -Encoding utf8 -Force
-    $settingsJson = python "$env:TEMP\read_settings_new.py" $settingsFile 2>$null
+    $settingsJson = python -c "import yaml, json, sys, os; path = sys.argv[1]; d = yaml.safe_load(open(path, encoding='utf-8-sig')) or {} if os.path.exists(path) else {}; print(json.dumps(d))" $settingsFile 2>$null
     if (-not $settingsJson) {
         Write-Host "  [ERROR] Failed to read settings.yaml" -ForegroundColor Red
         return
@@ -2655,9 +2888,10 @@ while ($true) {
         "5" { Clean-CaCerts; break }
         "6" { Start-DashboardDebug; break }
         "7" { Start-NewDashboard; break }
+        "8" { Reset-ToFactoryDefaults; break }
         "Q" { Write-Host ""; Write-Host "  Goodbye!"; Write-Host ""; exit 0 }
         "q" { Write-Host ""; Write-Host "  Goodbye!"; Write-Host ""; exit 0 }
-        default { Write-Host ""; Write-Host "  Invalid choice. Please enter 1, 2, 3, 4, 5, 6, 7, or Q." -ForegroundColor Yellow; Write-Host "" }
+        default { Write-Host ""; Write-Host "  Invalid choice. Please enter 1-8, or Q." -ForegroundColor Yellow; Write-Host "" }
     }
 
     Write-Host ""
