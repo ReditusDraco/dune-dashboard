@@ -3,13 +3,13 @@
 import logging
 from datetime import datetime
 
-from app.services.database import DatabaseService
+from app.services.database import DashboardDatabaseService
 
 logger = logging.getLogger(__name__)
 
 
 class AuditService:
-    def __init__(self, db: DatabaseService):
+    def __init__(self, db: DashboardDatabaseService):
         self.db = db
 
     def log(self, action: str, user: str, details: dict | None = None,

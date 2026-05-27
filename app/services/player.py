@@ -41,8 +41,9 @@ def _build_player_filters(search='', faction_id='', guild_id='', map_filter='', 
 
 
 class PlayerService:
-    def __init__(self, db_service):
+    def __init__(self, db_service, dash_db=None):
         self.db = db_service
+        self.dash_db = dash_db
 
     def is_online(self, player_controller_id):
         result = self.db.query(
@@ -131,8 +132,7 @@ class PlayerService:
                 ea.id as account_id, ea.user as account_email,
                 acc.funcom_id,
                 ps.player_controller_id,
-                f.name as faction_name, g.guild_name,
-                pi.ip_address
+                f.name as faction_name, g.guild_name
             FROM dune.actors a
             JOIN dune.encrypted_accounts ea ON a.owner_account_id = ea.id
             LEFT JOIN dune.accounts acc ON ea.id = acc.id
@@ -141,7 +141,6 @@ class PlayerService:
             LEFT JOIN dune.factions f ON pf.faction_id = f.id
             LEFT JOIN dune.guild_members gm ON ps.player_controller_id = gm.player_id
             LEFT JOIN dune.guilds g ON gm.guild_id = g.guild_id
-            LEFT JOIN dashboard.player_ips pi ON ps.player_controller_id = pi.player_id
             WHERE {where_clause}
             ORDER BY player_name
             LIMIT %s OFFSET %s
@@ -151,6 +150,22 @@ class PlayerService:
             return []
 
         player_ids = [p.get('player_controller_id') for p in players if p.get('player_controller_id')]
+
+        # Fetch IPs from the dashboard database separately and merge
+        ip_map = {}
+        if self.dash_db and player_ids:
+            placeholders = ','.join(['%s'] * len(player_ids))
+            ip_rows = self.dash_db.query(
+                f"SELECT player_id, ip_address FROM player_ips WHERE player_id IN ({placeholders})",
+                player_ids
+            ) or []
+            ip_map = {r['player_id']: r['ip_address'] for r in ip_rows if r.get('player_id')}
+        for p in players:
+            pid = p.get('player_controller_id')
+            if pid and pid in ip_map:
+                p['ip_address'] = ip_map[pid]
+            else:
+                p['ip_address'] = None
         actor_ids = [p.get('id') for p in players if p.get('id')]
 
         vehicle_counts = {}

@@ -39,6 +39,7 @@ DEFAULTS = {
         "max_connections": 10,
         "owner": "dune",
         "dashboard_schema": "dashboard",
+        "dashboard_database_name": "dashboard",
     },
     "kubernetes": {
         "namespace": "",

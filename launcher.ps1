@@ -302,9 +302,18 @@ function Show-Menu {
     Write-Host "  [7] Start New Dashboard (React + ChakraUI)" -ForegroundColor Green
     Write-Host "      Launch the modern React dashboard with ChakraUI and Recharts." -ForegroundColor DarkGray
     Write-Host "      Auto-installs dependencies. Frontend: http://localhost:5173" -ForegroundColor DarkGray
+    Write-Host "      NOTE: Not complete. Do not report bugs. May not even work." -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  [8] Reset to Factory Defaults" -ForegroundColor Red
     Write-Host "      Wipe all data and start fresh. Removes settings, logs, certs, and cache." -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  [9] Repair Game Database" -ForegroundColor Yellow
+    Write-Host "      Fixes dashboard schema ownership so game updates won't break." -ForegroundColor DarkGray
+    Write-Host "      Run this if game servers fail to start after an update." -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  [10] Clean up Old Dashboard Schema" -ForegroundColor Red
+    Write-Host "      Drops the old dashboard schema from the game database." -ForegroundColor DarkGray
+    Write-Host "      Only run after confirming dashboard migrated successfully." -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  [Q] Quit" -ForegroundColor White
     Write-Host ""
@@ -2872,6 +2881,208 @@ function Start-NewDashboard {
     Write-Host ""
 }
 
+function Repair-GameDatabase {
+    Write-Host ""
+    Write-Host "  Game Database Repair" -ForegroundColor Cyan
+    Write-Host "  =====================" -ForegroundColor Cyan
+    Write-Host ""
+
+    $settingsFile = Join-Path $ProjectRoot "settings.yaml"
+    if (-not (Test-Path $settingsFile)) {
+        Write-Host "[ERROR] settings.yaml not found. Run setup first (option 2)." -ForegroundColor Red
+        return
+    }
+
+    $settingsJson = python -c "import yaml, json, sys; d = yaml.safe_load(open(sys.argv[1], encoding='utf-8-sig')) or {}; print(json.dumps(d))" $settingsFile 2>$null
+    if (-not $settingsJson) {
+        Write-Host "[ERROR] Could not read settings.yaml." -ForegroundColor Red
+        return
+    }
+    $settings = $settingsJson | ConvertFrom-Json
+
+    $ServerHost = $settings.server.host
+    $SSHUser = $settings.server.user
+    $Namespace = $settings.kubernetes.namespace
+
+    $SSHKey = $null
+    if ($settings.server.ssh_key -and $settings.server.ssh_key -ne 'null') {
+        $SSHKey = $settings.server.ssh_key
+    }
+    if (-not $SSHKey) {
+        $SSHKey = "$env:LOCALAPPDATA\DuneAwakeningServer\sshKey"
+    }
+
+    if (-not $ServerHost -or $ServerHost -eq 'YOUR_SERVER_IP') {
+        Write-Host "[ERROR] Server IP not configured in settings.yaml." -ForegroundColor Red
+        return
+    }
+    if (-not $Namespace) {
+        Write-Host "[ERROR] Kubernetes namespace not configured." -ForegroundColor Red
+        return
+    }
+    if (-not (Test-Path $SSHKey)) {
+        Write-Host "[ERROR] SSH key not found at: $SSHKey" -ForegroundColor Red
+        return
+    }
+
+    Write-Host "  Server: $ServerHost" -ForegroundColor White
+    Write-Host "  Namespace: $Namespace" -ForegroundColor White
+    Write-Host ""
+
+    $confirm = Read-Host "  This will transfer dashboard schema ownership to the dune user. Continue? (y/N)"
+    if ($confirm -ne 'y' -and $confirm -ne 'Y') {
+        Write-Host "  Cancelled." -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host ""
+
+    # 1. Find the database pod
+    Write-Host "[1/4] Finding database pod..." -ForegroundColor Yellow
+    $dbPod = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl get pods -n $Namespace -l app=${Namespace}-db-dbdepl-sts -o jsonpath='{.items[0].metadata.name}'" 2>$null
+    if (-not $dbPod) {
+        Write-Host "[ERROR] Could not find database pod." -ForegroundColor Red
+        return
+    }
+    Write-Host "  [OK]   Database pod: $dbPod" -ForegroundColor Green
+
+    # 2. Run the ownership fix SQL
+    Write-Host "[2/4] Running ownership fix..." -ForegroundColor Yellow
+
+    # Build a temp .ps1 script where each line uses --% with values directly embedded.
+    # After --%, PowerShell passes everything literally to ssh.exe — no parsing issues.
+    $tmpFile = Join-Path $env:TEMP "dune_repair_$([System.IO.Path]::GetRandomFileName()).ps1"
+    $sshBase = "ssh --% -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -i `"$SSHKey`" `"$SSHUser@$ServerHost`""
+
+    $scriptLines = @(
+        "$sshBase `"printf 'ALTER SCHEMA dashboard OWNER TO dune;\n' > /tmp/repair.sql`""
+        "$sshBase `"printf 'DO \x24\x24DECLARE r RECORD; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = \x27dashboard\x27 LOOP EXECUTE \x27ALTER TABLE dashboard.\x27 || quote_ident(r.tablename) || \x27 OWNER TO dune\x27; END LOOP; END\x24\x24;\n' >> /tmp/repair.sql`""
+        "$sshBase `"printf 'DO \x24\x24DECLARE r RECORD; BEGIN FOR r IN SELECT sequencename FROM pg_sequences WHERE schemaname = \x27dashboard\x27 LOOP EXECUTE \x27ALTER SEQUENCE dashboard.\x27 || quote_ident(r.sequencename) || \x27 OWNER TO dune\x27; END LOOP; END\x24\x24;\n' >> /tmp/repair.sql`""
+        "$sshBase `"printf 'ALTER DEFAULT PRIVILEGES IN SCHEMA dashboard GRANT ALL ON TABLES TO dune;\n' >> /tmp/repair.sql`""
+        "$sshBase `"printf 'ALTER DEFAULT PRIVILEGES IN SCHEMA dashboard GRANT ALL ON SEQUENCES TO dune;\n' >> /tmp/repair.sql`""
+        "$sshBase `"cat /tmp/repair.sql | sudo kubectl exec -n $Namespace -i $dbPod -- psql -U postgres -p 15432 -d dune`""
+        "$sshBase `"printf 'CREATE SCHEMA IF NOT EXISTS dashboard;\nGRANT ALL PRIVILEGES ON SCHEMA dashboard TO dune;\n' | sudo kubectl exec -n $Namespace -i $dbPod -- psql -U postgres -p 15432 -d template1`""
+    )
+
+    $scriptLines | Out-File -FilePath $tmpFile -Encoding ASCII
+
+    $sqlResult = powershell -NoProfile -File $tmpFile 2>&1
+    Remove-Item $tmpFile -Force -ErrorAction SilentlyContinue
+    Write-Host "  $sqlResult" -ForegroundColor DarkGray
+    Write-Host "  [OK]   Ownership fix applied" -ForegroundColor Green
+
+    # 3. Delete failed util pods
+    Write-Host "[3/4] Cleaning up failed utility pods..." -ForegroundColor Yellow
+    $deleted = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl get pods -n $Namespace | grep 'db.*util' | grep -v Running | awk '{print \$1}' | xargs -r sudo kubectl delete pod -n $Namespace --wait=false" 2>$null
+    if ($deleted) {
+        Write-Host "  $deleted" -ForegroundColor DarkGray
+        Write-Host "  [OK]   Failed util pods deleted" -ForegroundColor Green
+    } else {
+        Write-Host "  [OK]   No failed util pods found" -ForegroundColor Green
+    }
+
+    # 4. Instructions
+    Write-Host "[4/4] Done!" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host "  Repair Complete!" -ForegroundColor Green
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  If game servers still show errors, restart the battlegroup:" -ForegroundColor White
+    Write-Host "    1. In the battlegroup management UI, select option 5" -ForegroundColor White
+    Write-Host "       (Restart battlegroup)" -ForegroundColor DarkGray
+    Write-Host "    2. Wait for all pods to come back healthy" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  The dashboard will auto-fix ownership on every startup," -ForegroundColor Green
+    Write-Host "  so this should not happen again." -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Press Enter to return to the menu..." -ForegroundColor DarkGray
+    Read-Host
+}
+
+function Cleanup-OldDashboardSchema {
+    Write-Host ""
+    Write-Host "  Clean Up Old Dashboard Schema" -ForegroundColor Cyan
+    Write-Host "  ===============================" -ForegroundColor Cyan
+    Write-Host ""
+
+    $settingsFile = Join-Path $ProjectRoot "settings.yaml"
+    if ( -not (Test-Path $settingsFile) ) {
+        Write-Host "[ERROR] settings.yaml not found." -ForegroundColor Red
+        return
+    }
+
+    $settingsJson = python -c "import yaml, json, sys; d = yaml.safe_load(open(sys.argv[1], encoding='utf-8-sig')) or {}; print(json.dumps(d))" $settingsFile 2>$null
+    if ( -not $settingsJson ) { Write-Host "[ERROR] Could not read settings." -ForegroundColor Red; return }
+    $settings = $settingsJson | ConvertFrom-Json
+    $ServerHost = $settings.server.host
+    $SSHUser = $settings.server.user
+    $Namespace = $settings.kubernetes.namespace
+    $SSHKey = $settings.server.ssh_key
+    if ( -not $SSHKey -or $SSHKey -eq 'null' ) {
+        $SSHKey = "$env:LOCALAPPDATA\DuneAwakeningServer\sshKey"
+    }
+
+    if ( -not $ServerHost -or $ServerHost -eq 'YOUR_SERVER_IP' ) { Write-Host "[ERROR] Server IP not configured." -ForegroundColor Red; return }
+    if ( -not $Namespace ) { Write-Host "[ERROR] Namespace not configured." -ForegroundColor Red; return }
+    if ( -not (Test-Path $SSHKey) ) { Write-Host "[ERROR] SSH key not found." -ForegroundColor Red; return }
+
+    $dbPod = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl get pods -n $Namespace -l app=${Namespace}-db-dbdepl-sts -o jsonpath='{.items[0].metadata.name}'" 2>$null
+    if ( -not $dbPod ) { Write-Host "[ERROR] Could not find database pod." -ForegroundColor Red; return }
+
+    $hasOldSchema = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl exec -n $Namespace -i $dbPod -- psql -U postgres -p 15432 -d dune -t -c ""SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'dashboard'"" 2>&1" 2>$null
+    $hasOldSchema = $hasOldSchema.Trim()
+
+    if ( $hasOldSchema -eq '0' ) {
+        Write-Host "  [OK]   No old dashboard schema found - nothing to clean up." -ForegroundColor Green
+        Write-Host ""
+        Write-Host "  Press Enter to return..." -ForegroundColor DarkGray
+        Read-Host
+        return
+    }
+    if ( -not $hasOldSchema ) {
+        Write-Host "  [OK]   No old dashboard schema found - nothing to clean up." -ForegroundColor Green
+        Write-Host ""
+        Write-Host "  Press Enter to return..." -ForegroundColor DarkGray
+        Read-Host
+        return
+    }
+
+    Write-Host "  [WARN] Old dashboard schema found in the game database." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  This drops: dashboard.audit_log, dashboard.bans, dashboard.player_ips," -ForegroundColor White
+    Write-Host "               dashboard.player_actions, dashboard.chat_history, dashboard.settings" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  Make sure the dashboard has migrated this data to the new database first." -ForegroundColor Yellow
+    Write-Host "  (The dashboard does this automatically on next startup.)" -ForegroundColor DarkGray
+    Write-Host ""
+
+    $confirm = Read-Host "  Type 'yes' to drop the old dashboard schema"
+    if ($confirm -ne 'yes') {
+        Write-Host "  Cancelled." -ForegroundColor Yellow
+        Write-Host "  Press Enter to return..." -ForegroundColor DarkGray
+        Read-Host
+        return
+    }
+
+    $confirm2 = Read-Host "  REALLY drop? This cannot be undone. Type 'yes' again"
+    if ($confirm2 -ne 'yes') {
+        Write-Host "  Cancelled." -ForegroundColor Yellow
+        Write-Host "  Press Enter to return..." -ForegroundColor DarkGray
+        Read-Host
+        return
+    }
+
+    Write-Host ""
+    Write-Host "  Dropping old dashboard schema..." -ForegroundColor Yellow
+    $result = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl exec -n $Namespace -i $dbPod -- psql -U postgres -p 15432 -d dune -c ""DROP SCHEMA IF EXISTS dashboard CASCADE"" 2>&1"
+    Write-Host "  $result" -ForegroundColor DarkGray
+    Write-Host "  [OK]   Old dashboard schema dropped." -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Press Enter to return..." -ForegroundColor DarkGray
+    Read-Host
+}
+
 # ── Main Loop ───────────────────────────────────────────────────────────
 
 Show-Banner
@@ -2889,9 +3100,11 @@ while ($true) {
         "6" { Start-DashboardDebug; break }
         "7" { Start-NewDashboard; break }
         "8" { Reset-ToFactoryDefaults; break }
+        "9" { Repair-GameDatabase; break }
+        "10" { Cleanup-OldDashboardSchema; break }
         "Q" { Write-Host ""; Write-Host "  Goodbye!"; Write-Host ""; exit 0 }
         "q" { Write-Host ""; Write-Host "  Goodbye!"; Write-Host ""; exit 0 }
-        default { Write-Host ""; Write-Host "  Invalid choice. Please enter 1-8, or Q." -ForegroundColor Yellow; Write-Host "" }
+        default { Write-Host ""; Write-Host "  Invalid choice. Please enter 1-10, or Q." -ForegroundColor Yellow; Write-Host "" }
     }
 
     Write-Host ""

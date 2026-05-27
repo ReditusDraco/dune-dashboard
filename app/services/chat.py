@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class ChatService:
     def __init__(self, db_service, k8s_service, ssh_service, cache):
-        self.db = db_service
+        self.db = db_service  # DashboardDatabaseService
         self.k8s = k8s_service
         self.ssh = ssh_service
         self.cache = cache
@@ -20,7 +20,7 @@ class ChatService:
             return True
         try:
             self.db.execute("""
-                CREATE TABLE IF NOT EXISTS dashboard.chat_history (
+                CREATE TABLE IF NOT EXISTS chat_history (
                     id SERIAL PRIMARY KEY,
                     timestamp TIMESTAMP DEFAULT NOW(),
                     channel VARCHAR(50),
@@ -33,7 +33,7 @@ class ChatService:
                     is_admin BOOLEAN DEFAULT FALSE
                 )
             """)
-            self.db.execute("CREATE INDEX IF NOT EXISTS idx_chat_history_timestamp ON dashboard.chat_history (timestamp DESC)")
+            self.db.execute("CREATE INDEX IF NOT EXISTS idx_chat_history_timestamp ON chat_history (timestamp DESC)")
             self.ensured_table = True
             logger.info("Chat history table ready")
             return True
@@ -46,7 +46,7 @@ class ChatService:
         loc_y = location.get('Y', 0) if location else 0
         loc_z = location.get('Z', 0) if location else 0
         return self.db.execute("""
-            INSERT INTO dashboard.chat_history (channel, sender, message, target, location_x, location_y, location_z, is_admin)
+            INSERT INTO chat_history (channel, sender, message, target, location_x, location_y, location_z, is_admin)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, [channel, sender, message, target, loc_x, loc_y, loc_z, is_admin])
 
@@ -61,7 +61,7 @@ class ChatService:
             cur = conn.cursor()
             for msg in messages:
                 cur.execute("""
-                    INSERT INTO dashboard.chat_history (channel, sender, message, target, location_x, location_y, location_z, is_admin)
+                    INSERT INTO chat_history (channel, sender, message, target, location_x, location_y, location_z, is_admin)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, [
                     msg['channel'], msg['sender'], msg['message'],
@@ -87,7 +87,7 @@ class ChatService:
         return self.db.query("""
             SELECT id, timestamp, channel, sender, message, target,
                    location_x, location_y, location_z, is_admin
-            FROM dashboard.chat_history
+            FROM chat_history
             ORDER BY timestamp DESC
             LIMIT %s
         """, [limit])

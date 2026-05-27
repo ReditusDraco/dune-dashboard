@@ -82,6 +82,8 @@ This project is **Source Available** under the [Dune Dashboard Source License (D
     - **[6] Start Dashboard (Debug Mode)** — Launch with full debug logging enabled
     - **[7] Start New Dashboard (React + ChakraUI)** — Launch the modern React dashboard with auto-installed dependencies
     - **[8] Reset to Factory Defaults** — Wipe all data (settings, logs, certs, cache, node_modules) and return to a clean state
+    - **[9] Repair Game Database** — Fix dashboard schema ownership so game updates won't break servers
+    - **[10] Clean up Old Dashboard Schema** — Drop the old `dashboard` schema from the game database (after migration)
     - **[Q] Quit** — Exit the launcher
 
 3. **First-time Setup** (option 2)

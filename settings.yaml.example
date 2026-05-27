@@ -38,6 +38,7 @@ database:
   min_connections: 2
   max_connections: 10
   dashboard_schema: "dashboard"   # Schema for dashboard's own tables (isolated from game DB for backup compatibility)
+  dashboard_database_name: "dashboard"  # Dedicated database for dashboard tables (auto-created on startup)
 
 # Kubernetes
 kubernetes:

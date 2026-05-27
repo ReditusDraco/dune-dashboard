@@ -24,7 +24,7 @@ from app.routes.debug import debug_bp
 from app.routes.chat import chat_bp
 from app.websocket.shell import register_websocket_handlers
 
-from app.services.database import DatabaseService
+from app.services.database import DatabaseService, DashboardDatabaseService
 from app.services.ssh import SSHService
 from app.services.k8s import K8sService
 from app.services.bg_director import BgDirectorService
@@ -156,13 +156,27 @@ def create_app(settings_path=None):
         "database": settings["database"]["name"],
     }
 
+    dash_db_config = {
+        "host": settings["database"]["host"],
+        "port": settings["database"]["port"],
+        "user": settings["database"]["user"],
+        "password": settings["database"]["password"],
+        "database": settings["database"].get("dashboard_database_name", "dashboard"),
+    }
+
     db_service = DatabaseService(
         db_config,
         min_conn=settings["database"]["min_connections"],
         max_conn=settings["database"]["max_connections"],
-        dashboard_schema=settings["database"].get("dashboard_schema", "dashboard"),
     )
-    db_service.ensure_tables()
+
+    dash_db_service = DashboardDatabaseService(
+        dash_db_config,
+        min_conn=settings["database"]["min_connections"],
+        max_conn=settings["database"]["max_connections"],
+        owner=settings["database"].get("owner", "dune"),
+    )
+    dash_db_service.ensure_tables(game_db=db_service)
 
     ssh_service = SSHService(
         host=settings["server"]["host"],
@@ -200,14 +214,15 @@ def create_app(settings_path=None):
     world_svc = WorldService(db_service)
     progression_svc = ProgressionService(db_service)
     character_svc = CharacterService(db_service)
-    audit_svc = AuditService(db_service)
-    chat_svc = ChatService(db_service, k8s_service, ssh_service)
+    audit_svc = AuditService(dash_db_service)
+    chat_svc = ChatService(dash_db_service, k8s_service, ssh_service)
 
     realtime_svc = RealtimeService(bg_director, rmq_admin, chat_svc)
     realtime_svc.start()
 
     _services = {
         "db": db_service,
+        "dash_db": dash_db_service,
         "ssh": ssh_service,
         "k8s": k8s_service,
         "bg_director": bg_director,

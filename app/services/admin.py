@@ -26,9 +26,10 @@ def _validate_ip(ip):
 class AdminService:
     _iptables_lock = threading.Lock()
 
-    def __init__(self, db_service, ssh_service):
+    def __init__(self, db_service, ssh_service, dash_db=None):
         self.db = db_service
         self.ssh = ssh_service
+        self.dash_db = dash_db or db_service
 
     def ban_player(self, player_id, duration=0, reason='', note=''):
         try:
@@ -44,17 +45,11 @@ class AdminService:
         account_id = player_row.get('account_id') if player_row else None
         player_name = player_row.get('character_name', 'Unknown') if player_row else 'Unknown'
 
-        conn = self.db.get_connection()
-        if not conn:
-            return False, "Database connection failed"
-        cur = None
         try:
-            cur = conn.cursor()
-
             if account_id:
                 if duration_int == 0:
-                    cur.execute("""
-                        INSERT INTO dashboard.bans (player_id, account_id, reason, note, duration, banned_at, expires_at, active)
+                    self.dash_db.execute("""
+                        INSERT INTO bans (player_id, account_id, reason, note, duration, banned_at, expires_at, active)
                         VALUES (%s, %s, %s, %s, %s, NOW(), NULL, TRUE)
                         ON CONFLICT (player_id) DO UPDATE SET
                             account_id = EXCLUDED.account_id, reason = EXCLUDED.reason,
@@ -62,8 +57,8 @@ class AdminService:
                             banned_at = NOW(), expires_at = NULL, active = TRUE
                     """, [player_id, account_id, reason, note, duration_int])
                 else:
-                    cur.execute("""
-                        INSERT INTO dashboard.bans (player_id, account_id, reason, note, duration, banned_at, expires_at, active)
+                    self.dash_db.execute("""
+                        INSERT INTO bans (player_id, account_id, reason, note, duration, banned_at, expires_at, active)
                         VALUES (%s, %s, %s, %s, %s, NOW(), NOW() + INTERVAL '1 minute' * %s, TRUE)
                         ON CONFLICT (player_id) DO UPDATE SET
                             account_id = EXCLUDED.account_id, reason = EXCLUDED.reason,
@@ -72,8 +67,8 @@ class AdminService:
                     """, [player_id, account_id, reason, note, duration_int, duration_int, duration_int])
             else:
                 if duration_int == 0:
-                    cur.execute("""
-                        INSERT INTO dashboard.bans (player_id, reason, note, duration, banned_at, expires_at, active)
+                    self.dash_db.execute("""
+                        INSERT INTO bans (player_id, reason, note, duration, banned_at, expires_at, active)
                         VALUES (%s, %s, %s, %s, NOW(), NULL, TRUE)
                         ON CONFLICT (player_id) DO UPDATE SET
                             reason = EXCLUDED.reason, note = EXCLUDED.note,
@@ -81,8 +76,8 @@ class AdminService:
                             expires_at = NULL, active = TRUE
                     """, [player_id, reason, note, duration_int])
                 else:
-                    cur.execute("""
-                        INSERT INTO dashboard.bans (player_id, reason, note, duration, banned_at, expires_at, active)
+                    self.dash_db.execute("""
+                        INSERT INTO bans (player_id, reason, note, duration, banned_at, expires_at, active)
                         VALUES (%s, %s, %s, %s, NOW(), NOW() + INTERVAL '1 minute' * %s, TRUE)
                         ON CONFLICT (player_id) DO UPDATE SET
                             reason = EXCLUDED.reason, note = EXCLUDED.note,
@@ -90,47 +85,47 @@ class AdminService:
                             expires_at = NOW() + INTERVAL '1 minute' * %s, active = TRUE
                     """, [player_id, reason, note, duration_int, duration_int, duration_int])
 
-            conn.commit()
             audit_logger.info(f"BAN: player_id={player_id} player_name={player_name} duration={duration_int}min reason={reason}")
             return True, f"Player {player_name} banned for {duration_int} minutes"
         except Exception as e:
             logger.error(f"Failed to ban player {player_id}: {e}")
-            if conn:
-                conn.rollback()
             return False, str(e)
-        finally:
-            if cur:
-                cur.close()
-            self.db.return_connection(conn)
 
     def unban_player(self, player_id):
-        conn = self.db.get_connection()
-        if not conn:
-            return False, "Database connection failed"
-        cur = None
         try:
-            cur = conn.cursor()
-            cur.execute("DELETE FROM dashboard.bans WHERE player_id = %s", [player_id])
-            conn.commit()
+            # Delete from dashboard bans
+            self.dash_db.execute("DELETE FROM bans WHERE player_id = %s", [player_id])
 
-            cur.execute("SELECT ps.account_id FROM dune.player_state ps WHERE ps.player_controller_id = %s", [player_id])
-            account_row = cur.fetchone()
-            account_id = account_row[0] if account_row and isinstance(account_row, (tuple, list)) else (account_row.get('account_id') if account_row else None)
+            # Look up account info from game database
+            account_row = self.db.query(
+                "SELECT ps.account_id FROM dune.player_state ps WHERE ps.player_controller_id = %s",
+                [player_id], one=True
+            )
+            account_id = account_row.get('account_id') if account_row else None
 
             ips_to_unblock = []
             if account_id:
-                all_ips = self.db.query("""
-                    SELECT ip_address FROM dashboard.player_ips
-                    WHERE player_id IN (SELECT player_controller_id FROM dune.player_state WHERE account_id = %s)
-                """, [account_id]) or []
-                ips_to_unblock = [r.get('ip_address') for r in all_ips if r.get('ip_address')]
+                game_account_players = self.db.query(
+                    "SELECT player_controller_id FROM dune.player_state WHERE account_id = %s",
+                    [account_id]
+                ) or []
+                account_player_ids = [r['player_controller_id'] for r in game_account_players]
+                if account_player_ids:
+                    placeholders = ','.join(['%s'] * len(account_player_ids))
+                    ips_rows = self.dash_db.query(
+                        f"SELECT ip_address FROM player_ips WHERE player_id IN ({placeholders})",
+                        account_player_ids
+                    ) or []
+                    ips_to_unblock = [r.get('ip_address') for r in ips_rows if r.get('ip_address')]
             else:
-                ip_row = self.db.query("SELECT ip_address FROM dashboard.player_ips WHERE player_id = %s", [player_id], one=True)
+                ip_row = self.dash_db.query("SELECT ip_address FROM player_ips WHERE player_id = %s", [player_id], one=True)
                 if ip_row and ip_row.get('ip_address'):
                     ips_to_unblock.append(ip_row.get('ip_address'))
 
-            cur.execute("INSERT INTO dashboard.player_actions (player_id, action_type, reason, duration_minutes) VALUES (%s, 'unban', 'Manual unban', 0)", [player_id])
-            conn.commit()
+            self.dash_db.execute(
+                "INSERT INTO player_actions (player_id, action_type, reason, duration_minutes) VALUES (%s, 'unban', 'Manual unban', 0)",
+                [player_id]
+            )
 
             with self._iptables_lock:
                 for ip in ips_to_unblock:
@@ -144,13 +139,7 @@ class AdminService:
             return True, f"Player unbanned. Cleared {len(ips_to_unblock)} IP block(s)."
         except Exception as e:
             logger.error(f"Failed to unban player {player_id}: {e}")
-            if conn:
-                conn.rollback()
             return False, str(e)
-        finally:
-            if cur:
-                cur.close()
-            self.db.return_connection(conn)
 
     def kick_player(self, player_id):
         player = self.db.query("""
@@ -163,7 +152,7 @@ class AdminService:
             return False, "Player not found"
 
         player_name = player.get('character_name', 'Unknown')
-        ip_row = self.db.query("SELECT ip_address FROM dashboard.player_ips WHERE player_id = %s", [player_id], one=True)
+        ip_row = self.dash_db.query("SELECT ip_address FROM player_ips WHERE player_id = %s", [player_id], one=True)
         player_ip = ip_row.get('ip_address') if ip_row else None
 
         if not player_ip:
@@ -184,7 +173,7 @@ class AdminService:
         thread = threading.Thread(target=temporary_block, args=(player_ip,), daemon=True)
         thread.start()
 
-        self.db.execute("INSERT INTO dashboard.player_actions (player_id, action_type, reason, duration_minutes, ip_address) VALUES (%s, 'kick', 'Temporary kick', 1, %s)", [player_id, player_ip])
+        self.dash_db.execute("INSERT INTO player_actions (player_id, action_type, reason, duration_minutes, ip_address) VALUES (%s, 'kick', 'Temporary kick', 1, %s)", [player_id, player_ip])
         audit_logger.info(f"KICK: player_id={player_id} player_name={player_name} ip={player_ip}")
 
         return True, f"Player {player_name} kicked (IP {player_ip} blocked for 60 seconds)"
@@ -262,14 +251,8 @@ class AdminService:
         if not game_pods:
             return False, "No game server pods found"
 
-        conn = self.db.get_connection()
-        if not conn:
-            return False, "Database connection failed"
-        cur = None
         updated = 0
         try:
-            cur = conn.cursor()
-
             for pod_name, map_name in game_pods:
                 cmd = f'sudo kubectl exec -n {namespace} {pod_name} -- find /home/dune -name "*.log" -path "*/Logs/*" 2>/dev/null | head -5'
                 out_logs, err_logs, rc_logs = self.ssh.run(cmd)
@@ -302,26 +285,25 @@ class AdminService:
 
                     if ip_to_player:
                         for ip, name in ip_to_player.items():
-                            cur.execute("""
+                            player_row = self.db.query("""
                                 SELECT ps.player_controller_id, ps.account_id
                                 FROM dune.player_state ps
                                 JOIN dune.accounts a ON ps.account_id = a.id
                                 WHERE a.funcom_id = %s OR ps.character_name = %s
                                 LIMIT 1
-                            """, [name, name])
-                            row = cur.fetchone()
-                            if row:
-                                pid = row[0] if isinstance(row, (tuple, list)) else row.get('funcom_id')
-                                account_id = row[1] if isinstance(row, (tuple, list)) else row.get('account_id')
-                                cur.execute("""
-                                    INSERT INTO dashboard.player_ips (player_id, ip_address, updated_at)
+                            """, [name, name], one=True)
+                            if player_row:
+                                pid = player_row.get('player_controller_id')
+                                account_id = player_row.get('account_id')
+                                self.dash_db.execute("""
+                                    INSERT INTO player_ips (player_id, ip_address, updated_at)
                                     VALUES (%s, %s, NOW())
                                     ON CONFLICT (player_id) DO UPDATE SET ip_address = EXCLUDED.ip_address, updated_at = NOW()
                                 """, [pid, ip])
                                 updated += 1
 
-                                ban_check = self.db.query("""
-                                    SELECT player_id FROM dashboard.bans
+                                ban_check = self.dash_db.query("""
+                                    SELECT player_id FROM bans
                                     WHERE (player_id = %s OR account_id = %s) AND (active = TRUE OR active IS NULL)
                                     LIMIT 1
                                 """, [pid, account_id], one=True)
@@ -334,21 +316,14 @@ class AdminService:
                                     else:
                                         logger.warning(f"Skipping invalid IP for ban block: {ip}")
 
-            conn.commit()
             return True, f"Updated {updated} player IPs from game logs"
         except Exception as e:
             logger.error(f"Failed to detect player IPs: {e}")
-            if conn:
-                conn.rollback()
             return False, str(e)
-        finally:
-            if cur:
-                cur.close()
-            self.db.return_connection(conn)
 
     def set_player_ip(self, player_id, ip_address):
-        return self.db.execute("""
-            INSERT INTO dashboard.player_ips (player_id, ip_address, updated_at)
+        return self.dash_db.execute("""
+            INSERT INTO player_ips (player_id, ip_address, updated_at)
             VALUES (%s, %s, NOW())
             ON CONFLICT (player_id) DO UPDATE SET ip_address = EXCLUDED.ip_address, updated_at = NOW()
         """, [player_id, ip_address])
@@ -363,21 +338,31 @@ class AdminService:
         return True, f"Unblocked {ip}"
 
     def get_bans(self, limit=50):
-        return self.db.query("""
-            SELECT b.id, b.player_id, b.reason, b.active, b.banned_at, b.expires_at, ps.character_name
-            FROM dashboard.bans b
-            LEFT JOIN dune.player_state ps ON b.player_id = ps.player_controller_id
-            ORDER BY b.banned_at DESC
+        bans = self.dash_db.query("""
+            SELECT id, player_id, reason, active, banned_at, expires_at
+            FROM bans
+            ORDER BY banned_at DESC
             LIMIT %s
         """, [limit]) or []
+        for ban in bans:
+            pid = ban.get('player_id')
+            if pid:
+                player = self.db.query(
+                    "SELECT character_name FROM dune.player_state WHERE player_controller_id = %s",
+                    [pid], one=True
+                )
+                ban['character_name'] = player.get('character_name', '') if player else ''
+            else:
+                ban['character_name'] = ''
+        return bans
 
     def get_player_ban(self, player_id):
-        return self.db.query("SELECT reason, note, duration, banned_at, expires_at FROM dashboard.bans WHERE player_id = %s", [player_id], one=True)
+        return self.dash_db.query("SELECT reason, note, duration, banned_at, expires_at FROM bans WHERE player_id = %s", [player_id], one=True)
 
     def get_player_history(self, player_id, limit=20):
-        return self.db.query("""
+        return self.dash_db.query("""
             SELECT action_type, reason, note, duration_minutes, created_at, ip_address
-            FROM dashboard.player_actions
+            FROM player_actions
             WHERE player_id = %s
             ORDER BY created_at DESC
             LIMIT %s

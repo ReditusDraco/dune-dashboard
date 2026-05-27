@@ -4,13 +4,13 @@ import json
 import logging
 from datetime import datetime
 
-from app.services.database import DatabaseService
+from app.services.database import DashboardDatabaseService
 
 logger = logging.getLogger(__name__)
 
 
 class ChatService:
-    def __init__(self, db: DatabaseService, k8s_service, ssh_service):
+    def __init__(self, db: DashboardDatabaseService, k8s_service, ssh_service):
         self.db = db
         self.k8s = k8s_service
         self.ssh = ssh_service

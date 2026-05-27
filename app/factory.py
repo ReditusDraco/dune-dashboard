@@ -15,7 +15,7 @@ from flask_limiter.util import get_remote_address
 
 from app.config import load_settings
 from app.utils.debug_logging import create_debug_log_handler, sanitize_for_log, log_request_details, log_response_details
-from app.services.database import DatabaseService
+from app.services.database import DatabaseService, DashboardDatabaseService
 from app.services.ssh import SSHService
 from app.services.k8s import K8sService
 from app.services.player import PlayerService
@@ -188,19 +188,32 @@ def create_app(settings_path=None):
         'database': settings['database']['name'],
     }
 
+    dash_db_config = {
+        'host': db_host,
+        'port': settings['database']['port'],
+        'user': settings['database']['user'],
+        'password': settings['database']['password'],
+        'database': settings['database'].get('dashboard_database_name', 'dashboard'),
+    }
+
     db_service = DatabaseService(
         db_config,
         min_conn=settings['database']['min_connections'],
         max_conn=settings['database']['max_connections'],
-        dashboard_schema=settings['database'].get('dashboard_schema', 'dashboard')
     )
     logging.debug(f"DatabaseService initialized: host={db_config['host']}, port={db_config['port']}, user={db_config['user']}")
-    db_service.ensure_tables()
-    logging.debug("Database tables ensured")
+
+    dash_db_service = DashboardDatabaseService(
+        dash_db_config,
+        min_conn=settings['database']['min_connections'],
+        max_conn=settings['database']['max_connections'],
+        owner=settings['database'].get('owner', 'dune'),
+    )
+    dash_db_service.ensure_tables(game_db=db_service)
 
     # Create performance indexes if they don't exist
     try:
-        admin_svc_for_indexes = AdminService(db_service, None)
+        admin_svc_for_indexes = AdminService(db_service, None, dash_db=dash_db_service)
         success, created, error = admin_svc_for_indexes.create_indexes()
         if success and created:
             logging.info(f"Created {len(created)} database indexes")
@@ -223,11 +236,11 @@ def create_app(settings_path=None):
 
     static_cache = MultiCache(ttl_seconds=settings['cache']['static_data_ttl'])
 
-    player_svc = PlayerService(db_service)
+    player_svc = PlayerService(db_service, dash_db=dash_db_service)
     vehicle_svc = VehicleService(db_service)
-    chat_svc = ChatService(db_service, k8s_service, ssh_service, static_cache)
+    chat_svc = ChatService(dash_db_service, k8s_service, ssh_service, static_cache)
     logging.debug("ChatService initialized")
-    admin_svc = AdminService(db_service, ssh_service)
+    admin_svc = AdminService(db_service, ssh_service, dash_db=dash_db_service)
     logging.debug("AdminService initialized")
     updater_svc = UpdateService(base_dir)
     logging.debug("UpdateService initialized")
@@ -242,6 +255,7 @@ def create_app(settings_path=None):
 
     services = {
         'db': db_service,
+        'dash_db': dash_db_service,
         'ssh': ssh_service,
         'k8s': k8s_service,
         'player': player_svc,

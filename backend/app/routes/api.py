@@ -875,8 +875,9 @@ def get_audit_stats():
 @login_required
 def get_settings():
     from app.factory import get_services
-    settings = get_services()["db"].execute_readonly(
-        "SELECT key, value, updated_at FROM dashboard.settings ORDER BY key"
+    dash_db = get_services()["dash_db"]
+    settings = dash_db.execute_readonly(
+        "SELECT key, value, updated_at FROM settings ORDER BY key"
     )
     return jsonify(ApiResponse(success=True, data={r["key"]: r["value"] for r in settings}).model_dump())
 
@@ -891,10 +892,10 @@ def update_settings():
             error=ErrorDetail(code="ValidationError", message="Expected JSON object"),
         ).model_dump()), 400
     from app.factory import get_services
-    db = get_services()["db"]
+    dash_db = get_services()["dash_db"]
     for key, value in data.items():
-        db.execute_mutation(
-            """INSERT INTO dashboard.settings (key, value, updated_at)
+        dash_db.execute_mutation(
+            """INSERT INTO settings (key, value, updated_at)
                VALUES (%s, %s, NOW())
                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()""",
             [key, str(value)],
@@ -912,9 +913,9 @@ def ban_player(player_id):
     reason = data.get("reason", "admin")
     duration = data.get("duration_hours", 0)
     from app.factory import get_services
-    db = get_services()["db"]
-    db.execute_mutation(
-        """INSERT INTO dashboard.bans (player_id, reason, duration, banned_at, expires_at, active)
+    dash_db = get_services()["dash_db"]
+    dash_db.execute_mutation(
+        """INSERT INTO bans (player_id, reason, duration, banned_at, expires_at, active)
            VALUES (%s, %s, %s, NOW(), CASE WHEN %s > 0 THEN NOW() + INTERVAL '%s hours' ELSE NULL END, TRUE)
            ON CONFLICT (player_id) DO UPDATE SET reason = EXCLUDED.reason, duration = EXCLUDED.duration, banned_at = NOW(), expires_at = EXCLUDED.expires_at, active = TRUE""",
         [player_id, reason, duration, duration, duration],
@@ -927,9 +928,9 @@ def ban_player(player_id):
 @login_required
 def unban_player(player_id):
     from app.factory import get_services
-    db = get_services()["db"]
-    db.execute_mutation(
-        "UPDATE dashboard.bans SET active = FALSE WHERE player_id = %s",
+    dash_db = get_services()["dash_db"]
+    dash_db.execute_mutation(
+        "UPDATE bans SET active = FALSE WHERE player_id = %s",
         [player_id],
     )
     _audit("player_unban", {"player_id": player_id})
@@ -940,9 +941,9 @@ def unban_player(player_id):
 @login_required
 def get_player_ban(player_id):
     from app.factory import get_services
-    db = get_services()["db"]
-    rows = db.execute_readonly(
-        "SELECT * FROM dashboard.bans WHERE player_id = %s AND active = TRUE",
+    dash_db = get_services()["dash_db"]
+    rows = dash_db.execute_readonly(
+        "SELECT * FROM bans WHERE player_id = %s AND active = TRUE",
         [player_id],
     )
     return jsonify(ApiResponse(success=True, data=rows[0] if rows else None).model_dump())
@@ -961,9 +962,9 @@ def kick_player(player_id):
 @login_required
 def get_player_history(player_id):
     from app.factory import get_services
-    db = get_services()["db"]
-    logs = db.execute_readonly(
-        """SELECT * FROM dashboard.audit_log
+    dash_db = get_services()["dash_db"]
+    logs = dash_db.execute_readonly(
+        """SELECT * FROM audit_log
            WHERE target_player_id = %s OR (details->>'player_id')::bigint = %s
            ORDER BY created_at DESC LIMIT 100""",
         [player_id, player_id],
