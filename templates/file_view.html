@@ -14,7 +14,9 @@
                 <span id="view-mode-badge" class="badge">View Mode</span>
             </div>
             <div class="view-actions">
+                <button id="dl-btn" class="view-btn" onclick="downloadFile()">Download</button>
                 <button id="edit-btn" class="view-btn" onclick="toggleEdit()">Edit</button>
+                <button id="delete-btn" class="view-btn danger" onclick="deleteViewFile()">Delete</button>
                 <button id="save-btn" class="view-btn primary" style="display:none;" onclick="saveFile()">Save</button>
                 <button id="cancel-btn" class="view-btn" style="display:none;" onclick="cancelEdit()">Cancel</button>
             </div>
@@ -104,6 +106,53 @@ function cancelEdit() {
     cancelBtn.style.display = 'none';
     badge.textContent = 'View Mode';
     badge.classList.remove('edit');
+}
+
+async function deleteViewFile() {
+    const name = filePath.split('/').pop();
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    try {
+        const form = new FormData();
+        form.append('path', filePath);
+        const resp = await csrfFetch('/api/files/delete', { method: 'POST', body: form });
+        const data = await resp.json();
+        if (data.success) {
+            window.close();
+        } else {
+            document.getElementById('view-error').textContent = 'Delete failed: ' + (data.error || 'Unknown');
+            document.getElementById('view-error').style.display = 'block';
+        }
+    } catch (e) {
+        document.getElementById('view-error').textContent = 'Delete failed: ' + e.message;
+        document.getElementById('view-error').style.display = 'block';
+    }
+}
+
+async function downloadFile() {
+    try {
+        const form = new FormData();
+        form.append('path', filePath);
+        const resp = await csrfFetch('/api/files/download', { method: 'POST', body: form });
+        const data = await resp.json();
+        if (!data.success) {
+            document.getElementById('view-error').textContent = 'Error: ' + (data.error || 'Download failed');
+            document.getElementById('view-error').style.display = 'block';
+            return;
+        }
+        const byteChars = atob(data.content);
+        const bytes = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+        const blob = new Blob([bytes]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = data.filename;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        document.getElementById('view-error').textContent = 'Request failed: ' + e.message;
+        document.getElementById('view-error').style.display = 'block';
+    }
 }
 
 async function saveFile() {

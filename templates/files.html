@@ -3,49 +3,79 @@
 {% block content %}
 
 <div class="page-header">
-    <h1>File Browser</h1>
-    <p>Browse server files via SSH</p>
+    <h1>File Manager</h1>
+    <p>Browse, edit, upload, and download server files</p>
 </div>
 
-<div class="card">
-    <div class="card-body">
-        <div class="fb-toolbar">
-            <div class="fb-breadcrumb" id="fb-breadcrumb"></div>
-            <div class="fb-actions">
-                <button id="fb-refresh-btn" class="fb-btn">Refresh</button>
-            </div>
+<div class="fm-layout">
+    <div class="fm-panel">
+        <div class="fm-toolbar">
+            <select id="fm-pod-select" onchange="selectPod()" style="padding:6px 8px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:12px;max-width:180px;">
+                <option value="">Loading...</option>
+            </select>
+            <span style="flex:1;"></span>
+            <input type="file" id="fm-upload-input" style="display:none;" onchange="uploadFile()">
+            <button class="fm-btn" onclick="document.getElementById('fm-upload-input').click()">&#8682; Upload</button>
+            <button class="fm-btn" onclick="loadFiles(currentPath)">&#8635; Refresh</button>
         </div>
-        <div id="fb-error" class="error-banner danger" style="display:none;"></div>
-        <div id="fb-file-list" class="fb-file-list"></div>
+        <div class="fm-breadcrumb" id="fm-breadcrumb"></div>
+        <div id="fm-error" class="error-banner danger" style="display:none;"></div>
+        <div id="fm-file-list" class="fm-file-list"></div>
+    </div>
+    <div class="fm-viewer" id="fm-viewer">
+        <div id="fm-viewer-empty" class="fm-viewer-empty">Select a file to view or edit</div>
+        <div id="fm-viewer-toolbar" class="fm-viewer-toolbar" style="display:none;">
+            <span id="fm-viewer-name" style="font-size:13px;color:var(--text);"></span>
+            <span style="flex:1;"></span>
+            <button class="fm-btn" onclick="toggleEdit()" id="fm-edit-btn">&#9998; Edit</button>
+            <button class="fm-btn" onclick="saveFile()" id="fm-save-btn" style="display:none;">&#128190; Save</button>
+            <button class="fm-btn" onclick="cancelEdit()" id="fm-cancel-btn" style="display:none;">Cancel</button>
+            <button class="fm-btn" onclick="downloadCurrent()">&#128229; Download</button>
+            <button class="fm-btn danger" onclick="deleteCurrent()">&#128465; Delete</button>
+        </div>
+        <pre id="fm-viewer-content" class="fm-viewer-content" style="display:none;"></pre>
+        <textarea id="fm-editor-content" class="fm-editor-content" style="display:none;" spellcheck="false"></textarea>
+        <div id="fm-viewer-status" class="error-banner success" style="display:none;"></div>
     </div>
 </div>
 
 <style>
-.fb-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-hover); border-radius: 6px; margin-bottom: 12px; }
-.fb-breadcrumb { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
-.fb-breadcrumb span { cursor: pointer; color: var(--primary); font-family: monospace; font-size: 13px; }
-.fb-breadcrumb span:hover { text-decoration: underline; }
-.fb-breadcrumb .sep { color: var(--text-muted); cursor: default; font-size: 11px; }
-.fb-breadcrumb .sep:hover { text-decoration: none; }
-.fb-breadcrumb .current { color: var(--text); cursor: default; }
-.fb-breadcrumb .current:hover { text-decoration: none; }
-.fb-actions { display: flex; gap: 8px; }
-.fb-btn { padding: 6px 14px; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 13px; }
-.fb-btn:hover { background: var(--bg-hover); }
-.fb-file-list { }
-.fb-item { display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
-.fb-item:hover { background: var(--bg-hover); }
-.fb-item:last-child { border-bottom: none; }
-.fb-icon { width: 24px; text-align: center; margin-right: 8px; font-size: 16px; }
-.fb-icon.dir { color: var(--accent); }
-.fb-name { flex: 1; font-size: 13px; }
-.fb-name.dir { color: var(--accent); font-weight: 500; cursor: pointer; }
-.fb-name.file { cursor: pointer; }
-.fb-name:hover { text-decoration: underline; }
-.fb-size { color: var(--text-muted); font-size: 12px; margin-right: 12px; min-width: 70px; text-align: right; }
-.fb-date { color: var(--text-muted); font-size: 12px; margin-right: 12px; min-width: 130px; }
-.fb-perms { color: var(--text-muted); font-size: 11px; font-family: monospace; margin-right: 12px; min-width: 80px; }
-.fb-empty { padding: 20px; text-align: center; color: var(--text-muted); }
+.fm-layout { display: grid; grid-template-columns: 340px 1fr; gap: 16px; min-height: calc(100vh - 200px); }
+.fm-panel { min-height: 0; display: flex; flex-direction: column; }
+.fm-toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
+.fm-btn { padding: 6px 12px; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+.fm-btn:hover { background: var(--bg-hover); }
+.fm-btn.danger { color: var(--danger); border-color: var(--danger); }
+.fm-breadcrumb { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; font-size: 12px; margin-bottom: 8px; min-height: 20px; }
+.fm-breadcrumb span { cursor: pointer; color: var(--primary); font-family: monospace; }
+.fm-breadcrumb span:hover { text-decoration: underline; }
+.fm-breadcrumb .sep { color: var(--text-muted); cursor: default; }
+.fm-breadcrumb .sep:hover { text-decoration: none; }
+.fm-breadcrumb .current { color: var(--text); cursor: default; }
+.fm-breadcrumb .current:hover { text-decoration: none; }
+.fm-file-list { flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+.fm-item { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 12px; }
+.fm-item:hover { background: var(--bg-hover); }
+.fm-item.selected { background: var(--bg-hover); border-left: 3px solid var(--primary); }
+.fm-item:last-child { border-bottom: none; }
+.fm-icon { width: 20px; text-align: center; margin-right: 6px; font-size: 14px; flex-shrink: 0; }
+.fm-icon.dir { color: var(--accent); }
+.fm-fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-fname.dir { color: var(--accent); font-weight: 500; }
+.fm-fsize { color: var(--text-muted); font-size: 11px; margin-left: 8px; flex-shrink: 0; }
+.fm-delete-btn { padding: 2px 6px; background: none; border: none; color: var(--danger); cursor: pointer; font-size: 13px; flex-shrink: 0; }
+.fm-delete-btn:hover { background: var(--bg-hover); border-radius: 3px; }
+.fm-empty { padding: 20px; text-align: center; color: var(--text-muted); font-size: 12px; }
+.fm-viewer { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; min-height: 0; }
+.fm-viewer-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-hover); border-radius: 6px 6px 0 0; }
+.fm-viewer-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 14px; }
+.fm-viewer-content { flex: 1; margin: 0; padding: 12px; overflow: auto; font-family: 'Consolas','Courier New',monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; background: var(--bg); color: var(--text); border: none; border-radius: 0 0 6px 6px; }
+.fm-editor-content { flex: 1; padding: 12px; background: var(--bg); color: var(--text); border: none; font-family: 'Consolas','Courier New',monospace; font-size: 12px; line-height: 1.5; resize: none; outline: none; border-radius: 0 0 6px 6px; }
+
+@media (max-width: 768px) {
+    .fm-layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .fm-viewer { min-height: 300px; }
+}
 </style>
 
 {% endblock %}
@@ -53,118 +83,226 @@
 {% block scripts %}
 <script>
 let currentPath = '/srv';
+let currentFile = null;
+let currentPod = '';
+let originalContent = '';
 
-function formatSize(sizeStr) {
-    if (!sizeStr || sizeStr === '-') return '';
-    const bytes = parseInt(sizeStr);
-    if (isNaN(bytes)) return sizeStr;
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    let i = 0;
-    let size = bytes;
-    while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
-    return size.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+async function loadPods() {
+    const sel = document.getElementById('fm-pod-select');
+    try {
+        const r = await csrfFetch('/api/files/pods');
+        const d = await r.json();
+        sel.innerHTML = '';
+        if (d.success && d.pods) {
+            d.pods.forEach(p => { const o = document.createElement('option'); o.value = p; o.textContent = p; sel.appendChild(o); });
+        }
+        // Default to fb-deploy pod if available
+        const fbOpt = Array.from(sel.options).find(o => o.value.includes('fb-deploy'));
+        if (fbOpt) { fbOpt.selected = true; currentPod = fbOpt.value; }
+        else if (sel.options.length) { sel.options[0].selected = true; currentPod = sel.options[0].value; }
+    } catch(e) { sel.innerHTML = '<option>Error loading pods</option>'; }
+}
+
+function selectPod() {
+    currentPod = document.getElementById('fm-pod-select').value;
+    currentFile = null;
+    hideViewer();
+    loadFiles(currentPath);
+}
+
+function buildForm(path) {
+    const f = new FormData();
+    f.append('path', path);
+    if (currentPod) f.append('pod', currentPod);
+    return f;
+}
+
+function formatSize(s) {
+    if (!s || s === '-') return '';
+    const b = parseInt(s); if (isNaN(b)) return s;
+    const u = ['B','KB','MB','GB','TB']; let i = 0, sz = b;
+    while (sz >= 1024 && i < u.length-1) { sz /= 1024; i++; }
+    return sz.toFixed(i===0?0:1) + ' ' + u[i];
 }
 
 function renderBreadcrumb(path) {
-    const parts = path.split('/').filter(Boolean);
-    let html = '<span onclick="loadFiles(\'/\')">&#128193; /</span>';
-    let buildPath = '';
-    for (let i = 0; i < parts.length; i++) {
-        buildPath += '/' + parts[i];
-        const isLast = i === parts.length - 1;
-        if (isLast) {
-            html += `<span class="sep">/</span><span class="current">${parts[i]}</span>`;
-        } else {
-            html += `<span class="sep">/</span><span onclick="loadFiles('${buildPath.replace(/'/g, "\\'")}')">${parts[i]}</span>`;
-        }
+    const p = path.split('/').filter(Boolean);
+    let h = '<span onclick="loadFiles(\'/\')">&#128193; /</span>';
+    let b = '';
+    for (let i=0;i<p.length;i++) {
+        b += '/'+p[i];
+        h += i===p.length-1
+            ? '<span class="sep">/</span><span class="current">'+p[i]+'</span>'
+            : '<span class="sep">/</span><span onclick="loadFiles(\''+b.replace(/'/g,"\\'")+'\')">'+p[i]+'</span>';
     }
-    return html;
+    return h;
 }
+
+function selectFile(path) { currentFile = path; }
 
 async function loadFiles(path) {
-    currentPath = path;
-    const list = document.getElementById('fb-file-list');
-    const error = document.getElementById('fb-error');
-    const breadcrumb = document.getElementById('fb-breadcrumb');
-    error.style.display = 'none';
-    list.innerHTML = '<div class="fb-empty">Loading...</div>';
-    breadcrumb.innerHTML = renderBreadcrumb(path);
-
+    currentPath = path; currentFile = null;
+    document.getElementById('fm-error').style.display = 'none';
+    document.getElementById('fm-breadcrumb').innerHTML = renderBreadcrumb(path);
+    const list = document.getElementById('fm-file-list');
+    list.innerHTML = '<div class="fm-empty">Loading...</div>';
     try {
-        const form = new FormData();
-        form.append('path', path);
-        const resp = await csrfFetch('/api/files/list', { method: 'POST', body: form });
-        const data = await resp.json();
-        if (!data.success) {
-            list.innerHTML = '';
-            error.textContent = 'Error: ' + (data.error || 'Failed to list directory');
-            error.style.display = 'block';
-            return;
-        }
-        const files = data.files || [];
-        if (files.length === 0) {
-            list.innerHTML = '<div class="fb-empty">Empty directory</div>';
-            return;
-        }
-        const sorted = files.sort((a, b) => {
-            if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
-            return a.name.localeCompare(b.name);
-        });
-        let html = '';
-        for (const f of sorted) {
-            const icon = f.is_dir ? '&#128193;' : getFileIcon(f.name);
-            const iconClass = f.is_dir ? 'dir' : '';
-            const nameClass = f.is_dir ? 'dir' : 'file';
-            const fullPath = (path === '/' ? '' : path) + '/' + f.name;
-            const safePath = fullPath.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const safeName = f.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const clickAction = f.is_dir
-                ? `loadFiles('${safePath}')`
-                : `viewFile('${safePath}', '${safeName}')`;
-            html += `<div class="fb-item" onclick="${clickAction}">
-                <span class="fb-icon ${iconClass}">${icon}</span>
-                <span class="fb-name ${nameClass}">${f.name}</span>
-                <span class="fb-perms">${f.perms || ''}</span>
-                <span class="fb-size">${formatSize(f.size)}</span>
-                <span class="fb-date">${f.date || ''}</span>
+        const f = buildForm(path);
+        const r = await csrfFetch('/api/files/list',{method:'POST',body:f});
+        const d = await r.json();
+        if (!d.success) { list.innerHTML = ''; showErr(d.error); return; }
+        const files = (d.files||[]).sort((a,b)=>a.is_dir!==b.is_dir?a.is_dir?-1:1:a.name.localeCompare(b.name));
+        if (!files.length) { list.innerHTML = '<div class="fm-empty">Empty directory</div>'; return; }
+        let h = '';
+        for (const x of files) {
+            const fp = (path==='/'?'':path)+'/'+x.name;
+            const sp = fp.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            const sn = x.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            const icon = x.is_dir ? '&#128193;' : getIcon(x.name);
+            const action = x.is_dir ? `loadFiles('${sp}')` : `openFile('${sp}','${sn}')`;
+            h += `<div class="fm-item" onclick="${action}">
+                <span class="fm-icon ${x.is_dir?'dir':''}">${icon}</span>
+                <span class="fm-fname ${x.is_dir?'dir':''}">${x.name}</span>
+                <span class="fm-fsize">${formatSize(x.size)}</span>
+                <button class="fm-delete-btn" onclick="event.stopPropagation();deleteFile('${sp}','${sn}')" title="Delete">&#128465;</button>
             </div>`;
         }
-        list.innerHTML = html;
-    } catch (e) {
-        list.innerHTML = '';
-        error.textContent = 'Request failed: ' + e.message;
-        error.style.display = 'block';
-    }
+        list.innerHTML = h;
+    } catch(e) { list.innerHTML = ''; showErr(e.message); }
 }
 
-function getFileIcon(name) {
+function getIcon(name) {
+    const icons = {log:'&#128221;',txt:'&#128196;',ini:'&#9881;',cfg:'&#9881;',json:'&#123364;',xml:'&#128196;',yaml:'&#128196;',yml:'&#128196;',sh:'&#9881;',ps1:'&#9881;',bat:'&#9881;',cmd:'&#9881;',zip:'&#128230;',gz:'&#128230;',tar:'&#128230;',sql:'&#128451;',db:'&#128451;',png:'&#127748;',jpg:'&#127748;',jpeg:'&#127748;',gif:'&#127748;',svg:'&#127748;',pdf:'&#128214;',md:'&#128214;',html:'&#127760;',css:'&#127912;',js:'&#128220;',py:'&#128220;'};
+    return icons[name.split('.').pop().toLowerCase()] || '&#128196;';
+}
+
+const textExts = ['log','txt','ini','cfg','json','xml','yaml','yml','sh','ps1','bat','cmd','md','html','css','js','py','conf','env'];
+
+function openFile(path, name) {
+    currentFile = path;
     const ext = name.split('.').pop().toLowerCase();
-    const icons = {
-        log: '&#128221;', txt: '&#128196;', ini: '&#9881;', cfg: '&#9881;',
-        json: '&#123364;', xml: '&#128196;', yaml: '&#128196;', yml: '&#128196;',
-        sh: '&#9881;', ps1: '&#9881;', bat: '&#9881;', cmd: '&#9881;',
-        zip: '&#128230;', gz: '&#128230;', tar: '&#128230;',
-        sql: '&#128451;', db: '&#128451;', sqlite: '&#128451;',
-        png: '&#127748;', jpg: '&#127748;', jpeg: '&#127748;', gif: '&#127748;', svg: '&#127748;',
-        pdf: '&#128214;',
-        md: '&#128214;', html: '&#127760;', css: '&#127912;', js: '&#128220;',
-        py: '&#128220;',
-    };
-    return icons[ext] || '&#128196;';
+    if (!textExts.includes(ext)) { downloadFile(path); return; }
+
+    document.getElementById('fm-viewer-empty').style.display = 'none';
+    document.getElementById('fm-viewer-status').style.display = 'none';
+    document.getElementById('fm-viewer-content').style.display = 'block';
+    document.getElementById('fm-editor-content').style.display = 'none';
+    document.getElementById('fm-edit-btn').style.display = 'inline-block';
+    document.getElementById('fm-save-btn').style.display = 'none';
+    document.getElementById('fm-cancel-btn').style.display = 'none';
+    document.getElementById('fm-viewer-toolbar').style.display = 'flex';
+    document.getElementById('fm-viewer-name').textContent = name;
+
+    const content = document.getElementById('fm-viewer-content');
+    content.textContent = 'Loading...';
+    fetch('/api/files/view?path=' + encodeURIComponent(path) + '&pod=' + encodeURIComponent(currentPod))
+        .then(r=>r.json()).then(d=>{
+            if(!d.success){content.textContent='Error: '+(d.error||'Load failed');return;}
+            originalContent = d.content;
+            content.textContent = d.content;
+        }).catch(e=>{content.textContent='Error: '+e.message;});
+
+    // Highlight selected file
+    document.querySelectorAll('.fm-item').forEach(el=>el.classList.remove('selected'));
 }
 
-function viewFile(path, name) {
-    const ext = name.split('.').pop().toLowerCase();
-    const textExts = ['log', 'txt', 'ini', 'cfg', 'json', 'xml', 'yaml', 'yml', 'sh', 'ps1', 'bat', 'cmd', 'md', 'html', 'css', 'js', 'py', 'conf', 'env'];
-    if (textExts.includes(ext)) {
-        window.open(`/files/view?path=${encodeURIComponent(path)}`, '_blank');
-    } else {
-        alert('File preview is only available for text files. Download via SSH to view this file.');
-    }
+function toggleEdit() {
+    document.getElementById('fm-viewer-content').style.display = 'none';
+    document.getElementById('fm-editor-content').style.display = 'block';
+    document.getElementById('fm-editor-content').value = originalContent;
+    document.getElementById('fm-editor-content').focus();
+    document.getElementById('fm-edit-btn').style.display = 'none';
+    document.getElementById('fm-save-btn').style.display = 'inline-block';
+    document.getElementById('fm-cancel-btn').style.display = 'inline-block';
 }
 
-document.getElementById('fb-refresh-btn')?.addEventListener('click', () => loadFiles(currentPath));
+function cancelEdit() {
+    document.getElementById('fm-editor-content').style.display = 'none';
+    document.getElementById('fm-viewer-content').style.display = 'block';
+    document.getElementById('fm-edit-btn').style.display = 'inline-block';
+    document.getElementById('fm-save-btn').style.display = 'none';
+    document.getElementById('fm-cancel-btn').style.display = 'none';
+}
 
+async function saveFile() {
+    if (!currentFile) return;
+    const content = document.getElementById('fm-editor-content').value;
+    const btn = document.getElementById('fm-save-btn');
+    btn.textContent = 'Saving...'; btn.disabled = true;
+    try {
+        const f = buildForm(currentFile); f.append('content', content);
+        const r = await csrfFetch('/api/files/save',{method:'POST',body:f});
+        const d = await r.json();
+        if(!d.success){showErr(d.error);return;}
+        originalContent = content;
+        document.getElementById('fm-viewer-content').textContent = content;
+        cancelEdit();
+        document.getElementById('fm-viewer-status').textContent = 'Saved'; document.getElementById('fm-viewer-status').style.display='block';
+        setTimeout(()=>document.getElementById('fm-viewer-status').style.display='none',2000);
+    } catch(e) { showErr(e.message); }
+    btn.textContent = '💾 Save'; btn.disabled = false;
+}
+
+function downloadCurrent() {
+    if (!currentFile) return;
+    downloadFile(currentFile);
+}
+
+async function deleteCurrent() {
+    if (!currentFile) return;
+    const name = currentFile.split('/').pop();
+    if (!confirm('Delete "'+name+'"? This cannot be undone.')) return;
+    try {
+        const f = buildForm(currentFile);
+        const r = await csrfFetch('/api/files/delete',{method:'POST',body:f});
+        const d = await r.json();
+        if(d.success){currentFile=null;document.getElementById('fm-viewer-toolbar').style.display='none';document.getElementById('fm-viewer-content').style.display='none';document.getElementById('fm-viewer-empty').style.display='flex';loadFiles(currentPath);}
+        else showErr(d.error||'Delete failed');
+    } catch(e) { showErr(e.message); }
+}
+
+async function uploadFile() {
+    const input = document.getElementById('fm-upload-input');
+    const file = input.files[0]; if(!file)return;
+    const f = buildForm(currentPath); f.append('file',file);
+    try {
+        const r = await csrfFetch('/api/files/upload',{method:'POST',body:f});
+        const d = await r.json();
+        if(d.success){input.value='';loadFiles(currentPath);}
+        else showErr('Upload: '+(d.error||'Unknown'));
+    } catch(e) { showErr(e.message); }
+}
+
+async function downloadFile(path) {
+    try {
+        const f = buildForm(path);
+        const r = await csrfFetch('/api/files/download',{method:'POST',body:f});
+        const d = await r.json();
+        if(!d.success){alert('Download failed: '+(d.error||'Unknown'));return;}
+        const chars=atob(d.content); const bytes=new Uint8Array(chars.length);
+        for(let i=0;i<chars.length;i++)bytes[i]=chars.charCodeAt(i);
+        const blob=new Blob([bytes]),url=URL.createObjectURL(blob);
+        const a=document.createElement('a');a.href=url;a.download=d.filename;
+        document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+    } catch(e) { alert('Download failed: '+e.message); }
+}
+
+async function deleteFile(path,name) {
+    if(!confirm('Delete "'+name+'"? This cannot be undone.'))return;
+    try {
+        const f = buildForm(path);
+        const r = await csrfFetch('/api/files/delete',{method:'POST',body:f});
+        const d = await r.json();
+        if(d.success){ if(currentFile===path){currentFile=null;document.getElementById('fm-viewer-toolbar').style.display='none';document.getElementById('fm-viewer-content').style.display='none';document.getElementById('fm-viewer-empty').style.display='flex';} loadFiles(currentPath); }
+        else showErr(d.error||'Delete failed');
+    } catch(e) { showErr(e.message); }
+}
+
+function showErr(msg) { const e=document.getElementById('fm-error');e.textContent='Error: '+msg;e.style.display='block'; }
+function hideErr() { document.getElementById('fm-error').style.display='none'; }
+function hideViewer() { document.getElementById('fm-viewer-toolbar').style.display='none'; document.getElementById('fm-viewer-content').style.display='none'; document.getElementById('fm-editor-content').style.display='none'; document.getElementById('fm-viewer-empty').style.display='flex'; }
+
+loadPods();
 loadFiles('/srv');
 </script>
 {% endblock %}

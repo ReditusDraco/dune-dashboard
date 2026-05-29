@@ -800,35 +800,66 @@ def register_api_routes(app, services, settings):
     FILEBROWSER_BASE_PATH = '/srv'
 
     def _validate_fb_path(path):
-        """Validate filebrowser path is within allowed directory."""
-        import posixpath
+        """Validate filebrowser path — allow any path, block traversal."""
         path_str = str(path or "").lstrip("/")
         if '..' in path_str or '\x00' in path_str:
             return False
-        normalized = posixpath.normpath("/" + path_str)
-        return normalized == FILEBROWSER_BASE_PATH or normalized.startswith(FILEBROWSER_BASE_PATH + "/")
+        return True
 
     def _get_fb_pod():
-        """Get the FileBrowser pod name dynamically."""
+        """Get the default FileBrowser pod name dynamically."""
         pod = k8s.find_pod_by_pattern('fb-deploy')
         return pod
 
-    def _fb_exec(command, timeout=10):
-        """Execute kubectl exec in the FileBrowser pod with correct namespace placement."""
-        pod = _get_fb_pod()
+    def _list_pods():
+        """List all running pods available for file browsing, plus VM host."""
+        available = ['__VM__ (Host OS)']
+        pods = k8s.get_pods()
+        for p in pods:
+            if p.endswith('-sts-0') or '-deploy-' in p:
+                available.append(p)
+        return available
+
+    def _fb_exec(command, pod_name=None, timeout=10):
+        """Execute a command on the VM host or in a K8s pod."""
+        if pod_name == '__VM__' or (pod_name and pod_name.startswith('__VM__')):
+            return k8s.ssh.run(command, timeout=timeout)
+        pod = pod_name or _get_fb_pod()
         if not pod:
-            return '', 'FileBrowser pod not found', 1
+            return '', 'No pod specified or found', 1
         full_cmd = f'sudo kubectl exec {pod} -n {k8s.namespace} -- {command}'
         return k8s.ssh.run(full_cmd, timeout=timeout)
+
+    def _fb_write_file(content_b64, path, pod_name=None, timeout=30):
+        """Write a file to the pod filesystem."""
+        import base64
+        cmd = f"echo '{content_b64}' | base64 -d > '{path}'"
+        return _fb_exec(f"sh -c {quote_remote(cmd)}", pod_name, timeout)
+
+    def _get_pod_from_request():
+        pod = request.form.get('pod', '') or request.args.get('pod', '') or request.get_json(silent=True)
+        if isinstance(pod, dict):
+            pod = pod.get('pod', '')
+        return pod or None
+
+    @app.route('/api/files/pods')
+    @auth_req
+    def api_files_pods():
+        try:
+            pods = _list_pods()
+            return jsonify({'success': True, 'pods': pods})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
 
     @app.route('/api/files/list', methods=['POST'])
     @auth_req
     def api_files_list():
         path = request.form.get('path', '/srv')
+        pod_name = _get_pod_from_request()
         if not _validate_fb_path(path):
             return jsonify({'success': False, 'error': 'Invalid path: access denied'})
         safe_path = quote_remote(path)
-        out, err, rc = _fb_exec(f'ls -la {safe_path}', timeout=10)
+        out, err, rc = _fb_exec(f'ls -la {safe_path}', pod_name, timeout=10)
         if rc != 0:
             return jsonify({'success': False, 'error': err or 'Failed to list directory'})
 
@@ -855,12 +886,13 @@ def register_api_routes(app, services, settings):
     @auth_req
     def api_files_view():
         path = request.args.get('path', '')
+        pod_name = _get_pod_from_request()
         if not path:
             return jsonify({'success': False, 'error': 'Missing path'})
         if not _validate_fb_path(path):
             return jsonify({'success': False, 'error': 'Invalid path: access denied'})
         safe_path = quote_remote(path)
-        out, err, rc = _fb_exec(f'head -c 100000 {safe_path}', timeout=10)
+        out, err, rc = _fb_exec(f'head -c 100000 {safe_path}', pod_name, timeout=10)
         if rc != 0:
             return jsonify({'success': False, 'error': err or 'Failed to read file'})
         return jsonify({'success': True, 'content': out, 'path': path})
@@ -871,17 +903,71 @@ def register_api_routes(app, services, settings):
     def api_files_save():
         path = request.form.get('path', '')
         content = request.form.get('content', '')
+        pod_name = _get_pod_from_request()
         if not path:
             return jsonify({'success': False, 'error': 'Missing path'})
         if not _validate_fb_path(path):
             return jsonify({'success': False, 'error': 'Invalid path: access denied'})
         import base64
         content_b64 = base64.b64encode(content.encode()).decode()
-        safe_path = quote_remote(path)
-        save_script = quote_remote(f"base64 -d > {safe_path}")
-        out, err, rc = _fb_exec(f"sh -c {save_script}", timeout=15)
+        out, err, rc = _fb_write_file(content_b64, path, pod_name)
         if rc != 0:
             return jsonify({'success': False, 'error': err or 'Failed to save file'})
+        return jsonify({'success': True})
+
+    @app.route('/api/files/download', methods=['POST'])
+    @auth_req
+    def api_files_download():
+        path = request.form.get('path', '')
+        pod_name = _get_pod_from_request()
+        if not path:
+            return jsonify({'success': False, 'error': 'Missing path'})
+        if not _validate_fb_path(path):
+            return jsonify({'success': False, 'error': 'Invalid path: access denied'})
+        import base64
+        safe_path = quote_remote(path)
+        out, err, rc = _fb_exec(f'base64 {safe_path}', pod_name, timeout=30)
+        if rc != 0:
+            return jsonify({'success': False, 'error': err or 'Failed to read file'})
+        filename = path.rsplit('/', 1)[-1] if '/' in path else path
+        return jsonify({'success': True, 'content': out.strip(), 'filename': filename})
+
+    @app.route('/api/files/upload', methods=['POST'])
+    @auth_req
+
+    def api_files_upload():
+        target_path = request.form.get('path', '/srv')
+        uploaded = request.files.get('file')
+        pod_name = _get_pod_from_request()
+        if not uploaded:
+            return jsonify({'success': False, 'error': 'No file provided'})
+        if not _validate_fb_path(target_path):
+            return jsonify({'success': False, 'error': 'Invalid path: access denied'})
+        import base64
+        filename = uploaded.filename.rsplit('/', 1)[-1].rsplit('\\', 1)[-1] if uploaded.filename else 'uploaded_file'
+        dest = target_path.rstrip('/') + '/' + filename
+        if not _validate_fb_path(dest):
+            return jsonify({'success': False, 'error': 'Invalid destination path'})
+        content = uploaded.read()
+        content_b64 = base64.b64encode(content).decode()
+        out, err, rc = _fb_write_file(content_b64, dest, pod_name)
+        if rc != 0:
+            return jsonify({'success': False, 'error': err or 'Failed to upload file'})
+        return jsonify({'success': True, 'filename': filename})
+
+    @app.route('/api/files/delete', methods=['POST'])
+    @auth_req
+    def api_files_delete():
+        path = request.form.get('path', '')
+        pod_name = _get_pod_from_request()
+        if not path:
+            return jsonify({'success': False, 'error': 'Missing path'})
+        if not _validate_fb_path(path):
+            return jsonify({'success': False, 'error': 'Invalid path: access denied'})
+        safe_path = quote_remote(path)
+        out, err, rc = _fb_exec(f'rm -rf {safe_path}', pod_name, timeout=10)
+        if rc != 0:
+            return jsonify({'success': False, 'error': err or 'Failed to delete'})
         return jsonify({'success': True})
 
     director_svc = services.get('director')

@@ -10,13 +10,6 @@
     {% block head_extra %}{% endblock %}
 </head>
 <body>
-    <div id="update-banner" class="update-banner" style="display:none;">
-        <span>🔄 Update available for Dune Dashboard</span>
-        <div class="update-actions">
-            <button onclick="applyUpdate()" class="update-btn primary">Update Now</button>
-            <button onclick="dismissUpdate()" class="update-btn">Later</button>
-        </div>
-    </div>
     <nav>
         <div class="brand">DUNE DASHBOARD</div>
         {% for href, label in nav_pages %}
@@ -104,7 +97,6 @@
             <span class="conn-dot {% if conn_ok %}online{% else %}offline{% endif %}"></span>
             {{ 'Connected' if conn_ok else 'Disconnected' }}
         </span>
-        <button id="check-update-btn" onclick="manualCheckUpdate()" style="font-size:12px;color:var(--nav-text);background:none;border:none;cursor:pointer;padding:4px 8px;" title="Check for updates">🔄 Check Updates</button>
         {% if current_user and current_user.is_authenticated %}
         <a href="/logout" style="font-size:12px;color:var(--nav-text);">Logout</a>
         {% endif %}
@@ -115,13 +107,6 @@
     <footer class="site-footer">
         <span>This is a fan-made project and is not affiliated with, endorsed by, or connected to Funcom, Legendary Entertainment, or any official Dune rights holders. All game assets, trademarks, and intellectual property belong to their respective owners.</span>
     </footer>
-    <div id="update-progress" class="update-progress" style="display:none;">
-        <div class="update-progress-inner">
-            <h3>Updating Dashboard...</h3>
-            <p id="update-status-text">Checking for updates...</p>
-            <div class="update-spinner"></div>
-        </div>
-    </div>
     <script>
     const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 
@@ -130,40 +115,6 @@
         options.headers['X-CSRFToken'] = csrfToken;
         return fetch(url, options);
     }
-
-    let updateDismissed = false;
-    async function checkForUpdate() {
-        if (updateDismissed) return;
-        try {
-            const resp = await fetch('/api/update/status');
-            const data = await resp.json();
-            if (data.available) {
-                document.getElementById('update-banner').style.display = 'flex';
-            }
-        } catch (e) {}
-    }
-    async function manualCheckUpdate() {
-        const progress = document.getElementById('update-progress');
-        const statusText = document.getElementById('update-status-text');
-        progress.style.display = 'flex';
-        statusText.textContent = 'The update system is being reworked for better reliability. Please check back soon.';
-        setTimeout(() => { progress.style.display = 'none'; }, 4000);
-    }
-    function dismissUpdate() {
-        updateDismissed = true;
-        document.getElementById('update-banner').style.display = 'none';
-    }
-    async function applyUpdate() {
-        const banner = document.getElementById('update-banner');
-        const progress = document.getElementById('update-progress');
-        const statusText = document.getElementById('update-status-text');
-        banner.style.display = 'none';
-        progress.style.display = 'flex';
-        statusText.textContent = 'The auto-update system is being reworked to be more reliable and robust. Manual updates from the launcher still work.';
-        setTimeout(() => { progress.style.display = 'none'; }, 5000);
-    }
-    setInterval(checkForUpdate, 60000);
-    checkForUpdate();
 
     // Theme System
     function setTheme(themeName) {
@@ -188,16 +139,6 @@
     </script>
     {% block scripts %}{% endblock %}
     <style>
-    .update-banner { background: var(--hover); border-bottom: 2px solid var(--accent); padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text); }
-    .update-actions { display: flex; gap: 8px; }
-    .update-btn { padding: 4px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-card); color: var(--text); cursor: pointer; font-size: 12px; }
-    .update-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .update-progress { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 9999; }
-    .update-progress-inner { background: var(--bg-card); padding: 30px 40px; border-radius: 8px; text-align: center; color: var(--text); max-width: 400px; }
-    .update-progress-inner h3 { margin: 0 0 10px; }
-    .update-progress-inner p { margin: 0 0 15px; color: var(--text-muted); font-size: 13px; }
-    .update-spinner { width: 30px; height: 30px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto; }
-    @keyframes spin { to { transform: rotate(360deg); } }
     .site-footer { text-align: center; padding: 16px 20px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border); margin-top: 24px; }
     </style>
 </body>

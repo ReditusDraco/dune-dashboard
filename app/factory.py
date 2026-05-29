@@ -44,6 +44,7 @@ def create_app(settings_path=None):
         static_url_path='/static'
     )
     app.config['SECRET_KEY'] = settings['dashboard']['secret_key']
+    app.config['TEMPLATES_AUTO_RELOAD'] = True  # Pick up template changes without restart
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     app.config['PERMANENT_SESSION_LIFETIME'] = 28800  # 8 hours
@@ -305,8 +306,8 @@ def create_app(settings_path=None):
     register_api_routes(app, services, settings)
     register_websocket_handlers(socketio, settings)
 
-    # Start update checker
-    updater_svc.start_checker()
+    # Start update checker (disabled — being reworked)
+    # updater_svc.start_checker()
 
     @app.teardown_appcontext
     def cleanup_db(exc):
