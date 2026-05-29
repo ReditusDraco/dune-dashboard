@@ -289,11 +289,11 @@ def create_app(settings_path=None):
     cors_origins = "*" if settings['dashboard']['host'] == '0.0.0.0' else []
     socketio = SocketIO(app, cors_allowed_origins=cors_origins, async_mode='threading')
 
-    # Initialize rate limiter (disabled)
+    # Initialize rate limiter (enabled, per-route limits only)
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
-        default_limits=["200 per day", "50 per hour"],
+        default_limits=[],  # rate limits applied per-route only (login has 10/min)
         storage_uri="memory://",
     )
     app.limiter = limiter

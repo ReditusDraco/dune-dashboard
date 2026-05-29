@@ -57,7 +57,7 @@ def register_api_routes(app, services, settings):
     # Server actions
     @app.route('/server/action', methods=['POST'])
     @auth_req
-    @limiter.limit("500 per hour")
+
     def server_action():
         deployment = request.form.get('deployment', '')
         action = request.form.get('action', '')
@@ -114,7 +114,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/server/battlegroup/action', methods=['POST'])
     @auth_req
-    @limiter.limit("500 per hour")
+
     def battlegroup_action():
         action = request.form.get('action', '')
         if action not in ('start', 'stop', 'restart'):
@@ -125,7 +125,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/server/battlegroup/update', methods=['POST'])
     @auth_req
-    @limiter.limit("1000 per hour")
+
     def battlegroup_update():
         bg_script = settings['kubernetes']['battlegroup_script']
         out, err, rc = ssh.run(f'{bg_script} update', timeout=600)
@@ -195,7 +195,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/server/firewall/block', methods=['POST'])
     @auth_req
-    @limiter.limit("500 per hour")
+
     def firewall_block():
         port = request.form.get('port', type=int)
         bgd_port = _get_bgd_nodeport()
@@ -239,7 +239,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/server/firewall/unblock', methods=['POST'])
     @auth_req
-    @limiter.limit("500 per hour")
+
     def firewall_unblock():
         port = request.form.get('port', type=int)
         bgd_port = _get_bgd_nodeport()
@@ -345,7 +345,7 @@ def register_api_routes(app, services, settings):
     # Ban management
     @app.route('/api/ban_player', methods=['POST'])
     @auth_req
-    @limiter.limit("1000 per hour")
+
     def api_ban_player():
         try:
             player_id = request.form.get('player_id', type=int)
@@ -408,7 +408,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/api/unban_player', methods=['POST'])
     @auth_req
-    @limiter.limit("1000 per hour")
+
     def api_unban_player():
         try:
             player_id = request.form.get('player_id', type=int)
@@ -434,7 +434,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/api/kick_player', methods=['POST'])
     @auth_req
-    @limiter.limit("500 per hour")
+
     def api_kick_player():
         try:
             player_id = request.form.get('player_id', type=int)
@@ -449,7 +449,7 @@ def register_api_routes(app, services, settings):
     # Vitals editing
     @app.route('/api/edit_vitals', methods=['POST'])
     @auth_req
-    @limiter.limit("500 per hour")
+
     def api_edit_vitals():
         try:
             pawn_id = request.form.get('pawn_id', type=int)
@@ -867,7 +867,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/api/files/save', methods=['POST'])
     @auth_req
-    @limiter.limit("50 per hour")
+
     def api_files_save():
         path = request.form.get('path', '')
         content = request.form.get('content', '')
@@ -1255,7 +1255,7 @@ def register_api_routes(app, services, settings):
     # ── Admin Experimental: Broadcast ─────────────────────────────────
     @app.route('/api/admin-experimental/broadcast', methods=['POST'])
     @auth_req
-    @limiter.limit("100 per hour")
+
     def admin_broadcast():
         data = request.get_json() or {}
         title = (data.get('title') or '').strip()
@@ -1272,7 +1272,7 @@ def register_api_routes(app, services, settings):
     # ── Admin Experimental: Query Database ────────────────────────────
     @app.route('/api/admin-experimental/query', methods=['POST'])
     @auth_req
-    @limiter.limit("300 per hour")
+
     def admin_query():
         data = request.get_json() or {}
         sql = (data.get('sql') or '').strip()
@@ -1311,7 +1311,7 @@ def register_api_routes(app, services, settings):
     # ── Admin Experimental: Adjust Currency ───────────────────────────
     @app.route('/api/admin-experimental/adjust-currency', methods=['POST'])
     @auth_req
-    @limiter.limit("200 per hour")
+
     def admin_adjust_currency():
         data = request.get_json() or {}
         pid = data.get('player_controller_id')
@@ -1325,7 +1325,7 @@ def register_api_routes(app, services, settings):
     # ── Admin Experimental: Change Faction ────────────────────────────
     @app.route('/api/admin-experimental/change-faction', methods=['POST'])
     @auth_req
-    @limiter.limit("100 per hour")
+
     def admin_change_faction():
         data = request.get_json() or {}
         pid = data.get('player_id')
@@ -1365,7 +1365,7 @@ def register_api_routes(app, services, settings):
     # ── Admin Experimental: Teleport Player ───────────────────────────
     @app.route('/api/admin-experimental/teleport', methods=['POST'])
     @auth_req
-    @limiter.limit("100 per hour")
+
     def admin_teleport():
         data = request.get_json() or {}
         fls_id = data.get('fls_id')
@@ -1449,7 +1449,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/api/admin-experimental/disband-guild', methods=['POST'])
     @auth_req
-    @limiter.limit("50 per hour")
+
     def admin_disband_guild():
         data = request.get_json() or {}
         guild_id = data.get('guild_id')
@@ -1463,7 +1463,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/api/admin-experimental/remove-guild-member', methods=['POST'])
     @auth_req
-    @limiter.limit("100 per hour")
+
     def admin_remove_guild_member():
         data = request.get_json() or {}
         guild_id = data.get('guild_id')
@@ -1496,7 +1496,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/api/admin-experimental/flag-cheater', methods=['POST'])
     @auth_req
-    @limiter.limit("50 per hour")
+
     def admin_flag_cheater():
         data = request.get_json() or {}
         account_id = data.get('account_id')
@@ -1555,7 +1555,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/api/admin-experimental/delete-character', methods=['POST'])
     @auth_req
-    @limiter.limit("20 per hour")
+
     def admin_delete_character():
         data = request.get_json() or {}
         actor_id = data.get('actor_id')
@@ -1569,7 +1569,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/api/admin-experimental/delete-account', methods=['POST'])
     @auth_req
-    @limiter.limit("10 per hour")
+
     def admin_delete_account():
         data = request.get_json() or {}
         user_id = data.get('user_id')
@@ -1686,7 +1686,7 @@ def register_api_routes(app, services, settings):
     # ── Admin Experimental: Spice Fields ──────────────────────────────
     @app.route('/api/admin-experimental/spice', methods=['POST'])
     @auth_req
-    @limiter.limit("30 per hour")
+
     def admin_spice():
         data = request.get_json() or {}
         try:
@@ -1701,7 +1701,7 @@ def register_api_routes(app, services, settings):
     # ── Admin Experimental: Server Tools ──────────────────────────────
     @app.route('/api/admin-experimental/server-tools', methods=['POST'])
     @auth_req
-    @limiter.limit("30 per hour")
+
     def admin_server_tools():
         data = request.get_json() or {}
         try:
@@ -1867,7 +1867,7 @@ def register_api_routes(app, services, settings):
 
     @app.route('/api/admin-experimental/functions/<name>/execute', methods=['POST'])
     @auth_req
-    @limiter.limit("200 per hour")
+
     def admin_execute_function(name):
         data = request.get_json() or {}
         params = data.get('params', [])
@@ -1883,7 +1883,7 @@ def register_api_routes(app, services, settings):
     # ── Admin Experimental: SQL Execute (admin functions) ─────────────
     @app.route('/api/admin-experimental/execute', methods=['POST'])
     @auth_req
-    @limiter.limit("200 per hour")
+
     def admin_execute():
         data = request.get_json() or {}
         sql = (data.get('sql') or '').strip()
