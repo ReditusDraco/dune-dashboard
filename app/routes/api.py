@@ -1732,6 +1732,118 @@ def register_api_routes(app, services, settings):
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)})
 
+    # ── Admin Experimental: RMQ Explorer ─────────────────────────────
+    @app.route('/api/admin-experimental/rmq/overview')
+    @auth_req
+    def admin_rmq_overview():
+        try:
+            rmq = services.get('rmq')
+            if not rmq:
+                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
+            data = rmq.combined_overview()
+            return jsonify({'success': True, 'data': data})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/rmq/queues')
+    @auth_req
+    def admin_rmq_queues():
+        try:
+            rmq = services.get('rmq')
+            if not rmq:
+                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
+            data = rmq.combined_queues()
+            return jsonify({'success': True, 'data': data})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/rmq/exchanges')
+    @auth_req
+    def admin_rmq_exchanges():
+        try:
+            rmq = services.get('rmq')
+            if not rmq:
+                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
+            data = rmq.combined_exchanges()
+            return jsonify({'success': True, 'data': data})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/rmq/bindings')
+    @auth_req
+    def admin_rmq_bindings():
+        try:
+            rmq = services.get('rmq')
+            if not rmq:
+                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
+            data = rmq.bindings()
+            return jsonify({'success': True, 'data': data})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/rmq/consumers')
+    @auth_req
+    def admin_rmq_consumers():
+        try:
+            rmq = services.get('rmq')
+            if not rmq:
+                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
+            data = rmq.consumers()
+            return jsonify({'success': True, 'data': data})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/rmq/peek', methods=['POST'])
+    @auth_req
+    def admin_rmq_peek():
+        try:
+            rmq = services.get('rmq')
+            if not rmq:
+                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
+            cfg = request.get_json() or {}
+            queue_name = cfg.get('queue', '')
+            count = int(cfg.get('count', 5))
+            if not queue_name:
+                return jsonify({'success': False, 'error': 'queue name required'}), 400
+            data = rmq.peek_messages(queue_name, count=count)
+            return jsonify({'success': True, 'data': data})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/rmq/publish', methods=['POST'])
+    @auth_req
+    def admin_rmq_publish():
+        try:
+            rmq = services.get('rmq')
+            if not rmq:
+                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
+            cfg = request.get_json() or {}
+            exchange = cfg.get('exchange', '')
+            routing_key = cfg.get('routing_key', '')
+            message = cfg.get('message', '')
+            side = cfg.get('side', 'admin')
+            if not exchange:
+                return jsonify({'success': False, 'error': 'exchange name required'}), 400
+            if side == 'game':
+                result = rmq.game_publish(exchange, routing_key, message)
+            else:
+                result = rmq.publish(exchange, routing_key, message)
+            return jsonify({'success': True, 'data': result})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/admin-experimental/rmq/health')
+    @auth_req
+    def admin_rmq_health():
+        try:
+            rmq = services.get('rmq')
+            if not rmq:
+                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
+            data = rmq.health()
+            return jsonify({'success': True, 'data': data})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
     # ── Admin Experimental: Function Explorer ─────────────────────────
     @app.route('/api/admin-experimental/functions', methods=['GET'])
     @auth_req

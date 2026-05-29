@@ -1,468 +1,106 @@
 {% extends "base.html" %}
-
 {% block title %}Map - Dune Dashboard{% endblock %}
 
-{% block content %}
+{% block head_extra %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 <style>
-.map-page {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    height: calc(100vh - 104px);
-    min-height: 620px;
-}
+.map-page { display:flex; flex-direction:column; height:calc(100vh - 104px); min-height:620px; gap:14px; }
+.map-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-shrink:0; }
+.map-header h2 { margin:0; }
+.map-summary { display:flex; gap:10px; flex-wrap:wrap; }
+.map-summary-item { min-width:92px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--card-bg); }
+.map-summary-item strong { display:block; font-size:18px; line-height:1.1; color:var(--primary); }
+.map-summary-item span { display:block; margin-top:3px; font-size:11px; color:var(--text-muted); text-transform:uppercase; }
+.map-layout { display:grid; grid-template-columns:minmax(0,1fr) 320px; grid-template-rows:1fr; gap:16px; min-height:0; flex:1; }
+#map-container { position:relative; width:100%; height:100%; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#101312; }
+#map-container .leaflet-container { background:#101312; width:100% !important; height:100% !important; }
+.map-panel { min-height:0; overflow:auto; border:1px solid var(--border); border-radius:8px; background:var(--card-bg); display:flex; flex-direction:column; }
+.panel-section { padding:14px; border-bottom:1px solid var(--border); }
+.panel-section:last-child { border-bottom:0; }
+.panel-title { margin:0 0 10px; font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0; }
+.map-choice { display:block; width:100%; padding:10px; margin-bottom:8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); text-align:left; cursor:pointer; }
+.map-choice:hover { border-color:var(--primary); }
+.map-choice.active { border-color:var(--primary); box-shadow:inset 3px 0 0 var(--primary); }
+.map-choice strong { font-size:13px; display:block; }
+.map-choice .counts { font-size:11px; color:var(--text-muted); margin-top:2px; }
+.map-toggle { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 0; font-size:13px; }
+.map-toggle input { accent-color:var(--primary); }
+.legend-dot { display:inline-block; width:10px; height:10px; margin-right:7px; border-radius:999px; border:1px solid #fff; vertical-align:middle; }
+.legend-dot.player { background:#e7c65b; }
+.legend-dot.vehicle { background:#45a3ff; }
+.legend-dot.base { background:#54c878; }
+.search-box { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); font-size:13px; box-sizing:border-box; }
+.search-box::placeholder { color:var(--text-muted); }
+.location-list { display:flex; flex-direction:column; gap:4px; max-height:350px; overflow:auto; }
+.location-item { display:grid; grid-template-columns:1fr auto; gap:2px 8px; padding:7px 8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); text-align:left; cursor:pointer; font-size:12px; }
+.location-item:hover, .location-item.active { border-color:var(--primary); }
+.location-item strong { font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.location-item .meta { font-size:10px; color:var(--text-muted); }
+.leaflet-tooltip.marker-tooltip { font-size:11px; padding:4px 8px; border-radius:4px; background:rgba(0,0,0,0.85); border:none; color:#fff; }
+.leaflet-tooltip.marker-tooltip::before { border-top-color:rgba(0,0,0,0.85); }
+.map-credit { position:absolute; bottom:4px; right:8px; z-index:1000; font-size:11px; color:var(--text-muted); background:rgba(0,0,0,0.7); padding:4px 10px; border-radius:4px; pointer-events:auto; }
+.map-credit a { color:var(--primary); text-decoration:none; }
+.map-credit a:hover { text-decoration:underline; }
+.map-notice { background:rgba(234,179,8,0.1); border:1px solid rgba(234,179,8,0.4); border-left:4px solid #eab308; border-radius:6px; padding:10px 14px; font-size:13px; color:var(--text); line-height:1.5; flex-shrink:0; }
 
-.map-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 16px;
-}
-
-.map-header h2 {
-    margin: 0;
-}
-
-.map-summary {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.map-summary-item {
-    min-width: 92px;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--card-bg);
-}
-
-.map-summary-item strong {
-    display: block;
-    font-size: 18px;
-    line-height: 1.1;
-    color: var(--primary);
-}
-
-.map-summary-item span {
-    display: block;
-    margin-top: 3px;
-    font-size: 11px;
-    color: var(--text-muted);
-    text-transform: uppercase;
-}
-
-.map-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
-    gap: 16px;
-    min-height: 0;
-    flex: 1;
-}
-
-.map-view {
-    position: relative;
-    min-width: 0;
-    min-height: 0;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: #101312;
-}
-
-.map-scroll {
-    width: 100%;
-    height: 100%;
-    overflow: auto;
-    cursor: grab;
-}
-
-.map-scroll.dragging {
-    cursor: grabbing;
-    user-select: none;
-}
-
-.map-canvas {
-    position: relative;
-    margin: 24px;
-    background: #0d0f0f;
-    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
-    display: inline-block;
-    min-width: 100%;
-    min-height: 100%;
-}
-
-.map-image {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    user-select: none;
-}
-
-.map-image-credit {
-    position: absolute;
-    bottom: 32px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 11px;
-    color: var(--text-muted);
-    background: rgba(0, 0, 0, 0.7);
-    padding: 4px 12px;
-    border-radius: 4px;
-    z-index: 10;
-    pointer-events: auto;
-}
-
-.map-image-credit a {
-    color: var(--primary);
-    text-decoration: none;
-}
-
-.map-image-credit a:hover {
-    text-decoration: underline;
-}
-
-.map-marker {
-    position: absolute;
-    width: 14px;
-    height: 14px;
-    border-radius: 999px;
-    border: 2px solid #fff;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
-    transform: translate(-50%, -50%);
-    cursor: pointer;
-    z-index: 5;
-}
-
-.map-marker:hover,
-.map-marker.active {
-    transform: translate(-50%, -50%) scale(1.45);
-    z-index: 10;
-}
-
-.map-marker.player { background: #e7c65b; }
-.map-marker.vehicle { background: #45a3ff; }
-.map-marker.base { background: #54c878; }
-
-.map-tooltip {
-    display: none;
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 8px);
-    transform: translateX(-50%);
-    min-width: 150px;
-    padding: 6px 8px;
-    border-radius: 5px;
-    background: rgba(0, 0, 0, 0.86);
-    color: #fff;
-    font-size: 11px;
-    line-height: 1.4;
-    white-space: nowrap;
-}
-
-.map-marker:hover .map-tooltip {
-    display: block;
-}
-
-.map-empty {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 28px;
-    text-align: center;
-    color: var(--text-muted);
-}
-
-.map-panel {
-    min-height: 0;
-    overflow: auto;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--card-bg);
-}
-
-.panel-section {
-    padding: 14px;
-    border-bottom: 1px solid var(--border);
-}
-
-.panel-section:last-child {
-    border-bottom: 0;
-}
-
-.panel-title {
-    margin: 0 0 10px;
-    font-size: 12px;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0;
-}
-
-.map-choice {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 6px 10px;
-    width: 100%;
-    padding: 10px;
-    margin-bottom: 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--text);
-    text-align: left;
-    cursor: pointer;
-}
-
-.map-choice.active {
-    border-color: var(--primary);
-    box-shadow: inset 3px 0 0 var(--primary);
-}
-
-.map-choice strong {
-    font-size: 13px;
-}
-
-.map-choice span {
-    font-size: 11px;
-    color: var(--text-muted);
-}
-
-.map-controls {
-    display: grid;
-    grid-template-columns: 36px 1fr 36px;
-    align-items: center;
-    gap: 8px;
-}
-
-.map-controls button,
-.map-icon-button {
-    height: 34px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--text);
-    cursor: pointer;
-}
-
-.map-controls input {
-    width: 100%;
-}
-
-.zoom-readout {
-    margin-top: 8px;
-    font-size: 12px;
-    color: var(--text-muted);
-    text-align: center;
-}
-
-.map-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 7px 0;
-    font-size: 13px;
-}
-
-.map-toggle input {
-    accent-color: var(--primary);
-}
-
-.legend-dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    margin-right: 7px;
-    border-radius: 999px;
-    border: 1px solid #fff;
-    vertical-align: middle;
-}
-
-.legend-dot.player { background: #e7c65b; }
-.legend-dot.vehicle { background: #45a3ff; }
-.legend-dot.base { background: #54c878; }
-
-.location-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    max-height: 310px;
-    overflow: auto;
-}
-
-.location-item {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 4px 8px;
-    padding: 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--text);
-    text-align: left;
-    cursor: pointer;
-}
-
-.location-item:hover,
-.location-item.active {
-    border-color: var(--primary);
-}
-
-.location-item strong {
-    font-size: 12px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.location-item span {
-    font-size: 11px;
-    color: var(--text-muted);
-}
-
-.coord-card {
-    display: none;
-    margin-top: 10px;
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    font-family: monospace;
-    font-size: 12px;
-    color: var(--text-light);
-    line-height: 1.5;
-}
-
-@media (max-width: 980px) {
-    .map-page {
-        height: auto;
-    }
-
-    .map-layout {
-        grid-template-columns: 1fr;
-    }
-
-    .map-view {
-        height: 64vh;
-    }
-}
-
-.experimental-banner {
-    background: rgba(220, 38, 38, 0.12);
-    border: 1px solid rgba(220, 38, 38, 0.5);
-    border-left: 4px solid #dc2626;
-    border-radius: 6px;
-    padding: 10px 14px;
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    font-size: 13px;
-    line-height: 1.5;
-    color: var(--text);
-}
-.experimental-banner .banner-icon {
-    font-size: 18px;
-    flex-shrink: 0;
-}
-.experimental-banner strong {
-    color: #ef4444;
+@media (max-width:980px) {
+    .map-page { height:auto; }
+    .map-layout { grid-template-columns:1fr; }
+    #map-container { height:64vh; }
 }
 </style>
+{% endblock %}
 
+{% block content %}
 <div class="map-page">
-    <div class="experimental-banner">
-        <span class="banner-icon">&#9888;</span>
-        <span class="banner-text">This map is still being woven through the spice haze. Your character might be standing on a Sandworm's nose and the map won't know the difference. <strong>Please do not report bugs on this feature</strong> - the Golden Path has not yet been revealed.</span>
-    </div>
     <div class="map-header">
-        <div>
-            <h2>World Map</h2>
-            {% if db_error %}
-            <div class="error-banner danger">{{ db_error }}</div>
-            {% endif %}
-        </div>
+        <h2>World Map</h2>
         <div class="map-summary">
-            <div class="map-summary-item">
-                <strong id="summary-players">0</strong>
-                <span>Players</span>
-            </div>
-            <div class="map-summary-item">
-                <strong id="summary-vehicles">0</strong>
-                <span>Vehicles</span>
-            </div>
-            <div class="map-summary-item">
-                <strong id="summary-bases">0</strong>
-                <span>Bases</span>
-            </div>
+            <div class="map-summary-item"><strong id="summary-players">0</strong><span>Players</span></div>
+            <div class="map-summary-item"><strong id="summary-vehicles">0</strong><span>Vehicles</span></div>
+            <div class="map-summary-item"><strong id="summary-bases">0</strong><span>Bases</span></div>
         </div>
     </div>
-
+    <div class="map-notice">
+        &#9888; This page is still a work in progress - expect bugs and quirks. Base ownership names are inferred heuristically and may be inaccurate.
+    </div>
     <div class="map-layout">
-        <div class="map-view">
-            <div class="map-scroll" id="map-scroll">
-                <div class="map-canvas" id="map-canvas">
-                    <img class="map-image" id="map-image" alt="Selected map">
-                    <div id="map-markers"></div>
-                </div>
-            </div>
-            <div class="map-image-credit">Map images sourced from <a href="https://awakening.wiki/" target="_blank" rel="noopener noreferrer">awakening.wiki</a> &mdash; thank you for the amazing resource!</div>
-            <div class="map-empty" id="map-empty" style="display:none;">
-                <strong>No markers on this map</strong>
-                <span>The selected map has no in-bounds players, vehicles, or bases yet.</span>
-            </div>
+        <div id="map-container">
+            <div class="map-credit">Map images sourced from <a href="https://awakening.wiki/" target="_blank" rel="noopener">awakening.wiki</a> — a massive thank you for their incredible work mapping Arrakis!</div>
         </div>
-
         <aside class="map-panel">
             <section class="panel-section">
                 <h3 class="panel-title">Map</h3>
                 <div id="map-choices"></div>
             </section>
-
-            <section class="panel-section">
-                <h3 class="panel-title">Zoom</h3>
-                <div class="map-controls">
-                    <button type="button" id="zoom-out" title="Zoom out">-</button>
-                    <input type="range" id="zoom-slider" min="15" max="350" value="100" step="10">
-                    <button type="button" id="zoom-in" title="Zoom in">+</button>
-                </div>
-                <div class="zoom-readout" id="zoom-readout">100%</div>
-            </section>
-
             <section class="panel-section">
                 <h3 class="panel-title">Assets</h3>
-                <label class="map-toggle">
-                    <span><i class="legend-dot player"></i>Players</span>
-                    <input type="checkbox" data-filter="player" checked>
-                </label>
-                <label class="map-toggle">
-                    <span><i class="legend-dot vehicle"></i>Vehicles</span>
-                    <input type="checkbox" data-filter="vehicle" checked>
-                </label>
-                <label class="map-toggle">
-                    <span><i class="legend-dot base"></i>Bases</span>
-                    <input type="checkbox" data-filter="base" checked>
-                </label>
+                <label class="map-toggle"><span><i class="legend-dot player"></i>Players</span><input type="checkbox" data-type="player" checked></label>
+                <label class="map-toggle"><span><i class="legend-dot vehicle"></i>Vehicles</span><input type="checkbox" data-type="vehicle" checked></label>
+                <label class="map-toggle"><span><i class="legend-dot base"></i>Bases</span><input type="checkbox" data-type="base" checked></label>
             </section>
-
             <section class="panel-section">
-                <h3 class="panel-title">Visible Assets</h3>
-                <div class="location-list" id="location-list"></div>
-                <div class="coord-card" id="coord-card"></div>
+                <h3 class="panel-title">Search</h3>
+                <input type="text" class="search-box" id="search-input" placeholder="Filter by name, type, or ID...">
+            </section>
+            <section class="panel-section" style="flex:1;min-height:0;display:flex;flex-direction:column;">
+                <h3 class="panel-title">Visible (<span id="list-count">0</span>)</h3>
+                <div class="location-list" id="location-list" style="flex:1;max-height:none;"></div>
             </section>
         </aside>
     </div>
 </div>
+{% endblock %}
 
+{% block scripts %}
+<script id="leaflet-src" src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>if (typeof L === 'undefined') { document.getElementById('map-container').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);padding:40px;text-align:center"><div><h3>Map library failed to load</h3><p>Check network connectivity or refresh the page.</p></div></div>'; }</script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
 const mapOptions = {{ map_options|tojson }};
-const markers = [
+const allMarkers = [
     ...{{ players|tojson }},
     ...{{ vehicles|tojson }},
     ...{{ buildings|tojson }}
@@ -473,258 +111,237 @@ const mapImageUrls = {
     {% endfor %}
 };
 
-let currentMap = "HaggaBasin";
-let currentZoom = 0;
-let defaultZoom = 0.15;
+let currentMap = "{{ default_map }}";
+let mapInstance = null;
+let markerClusterGroup = null;
+let allLayers = { player: [], vehicle: [], base: [] };
 let activeMarkerId = null;
+let searchQuery = '';
 const enabledTypes = { player: true, vehicle: true, base: true };
+const typeColors = { player: '#e7c65b', vehicle: '#45a3ff', base: '#54c878' };
 
-const mapDefaultZoom = 0.15;
-currentZoom = mapDefaultZoom;
-defaultZoom = mapDefaultZoom;
-
-const els = {
-    choices: document.getElementById('map-choices'),
-    scroll: document.getElementById('map-scroll'),
-    canvas: document.getElementById('map-canvas'),
-    image: document.getElementById('map-image'),
-    markers: document.getElementById('map-markers'),
-    empty: document.getElementById('map-empty'),
-    list: document.getElementById('location-list'),
-    coord: document.getElementById('coord-card'),
-    zoomSlider: document.getElementById('zoom-slider'),
-    zoomReadout: document.getElementById('zoom-readout'),
-    summaryPlayers: document.getElementById('summary-players'),
-    summaryVehicles: document.getElementById('summary-vehicles'),
-    summaryBases: document.getElementById('summary-bases'),
-};
-
-function markerKey(marker) {
-    return `${marker.type}-${marker.id}`;
+function markerKey(m) { return `${m.type}-${m.id}`; }
+function markerLabel(m) {
+    if (m.type === 'player') return m.name || `Player ${m.id}`;
+    if (m.type === 'vehicle') {
+        const className = m.class || m.name || `Vehicle ${m.id}`;
+        return className;
+    }
+    if (m.type === 'base') return m.name || m.class || `Base ${m.id}`;
+    return m.name || m.class || '';
 }
-
-function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>"']/g, char => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-    }[char]));
-}
-
-function markerLabel(marker) {
-    if (marker.type === 'player') return marker.name || `Player ${marker.id}`;
-    if (marker.type === 'vehicle') return marker.class || `Vehicle ${marker.id}`;
-    return marker.name || marker.class || `Base ${marker.id}`;
+function escapeHtml(v) {
+    return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 function selectedMapConfig() {
-    return mapOptions.find(map => map.key === currentMap) || mapOptions[0] || null;
+    return mapOptions.find(m => m.key === currentMap) || mapOptions[0] || null;
 }
 
-function visibleMarkers() {
-    return markers.filter(marker =>
-        marker.map === currentMap &&
-        marker.in_bounds &&
-        enabledTypes[marker.type]
+function markersForCurrentMap() {
+    return allMarkers.filter(m => m.map === currentMap && m.in_bounds && enabledTypes[m.type]);
+}
+
+function initMap() {
+    const cfg = selectedMapConfig();
+    if (!cfg) return;
+
+    if (mapInstance) {
+        mapInstance.remove();
+        mapInstance = null;
+    }
+
+    mapInstance = L.map('map-container', {
+        crs: L.CRS.Simple,
+        zoomControl: true,
+        zoomSnap: 0.5,
+        zoomDelta: 1,
+        minZoom: -4,
+        maxZoom: 5,
+        renderer: L.canvas({ padding: 0.5 }),
+        attributionControl: false,
+    });
+
+    var overlayBounds = [[-cfg.height, 0], [0, cfg.width]];
+    L.imageOverlay(mapImageUrls[cfg.key] || '', overlayBounds).addTo(mapInstance);
+    mapInstance.fitBounds(overlayBounds, { padding: [0, 0] });
+    mapInstance.setMinZoom(mapInstance.getZoom());
+    mapInstance.setMaxBounds(overlayBounds);
+
+    markerClusterGroup = (typeof L.markerClusterGroup !== 'undefined')
+        ? L.markerClusterGroup({
+            chunkedLoading: true,
+            maxClusterRadius: 5,
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            iconCreateFunction: function(cluster) {
+                var count = cluster.getChildCount();
+                return L.divIcon({
+                    html: '<div style="background:rgba(231,198,91,0.88);border:2px solid #fff;border-radius:999px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#111">' + count + '</div>',
+                    className: '',
+                    iconSize: L.point(34, 34),
+                });
+            }
+        })
+        : L.layerGroup();
+    mapInstance.addLayer(markerClusterGroup);
+
+    mapInstance.whenReady(function() { mapInstance.invalidateSize(); });
+
+    renderAllMarkers();
+}
+
+function createMarker(m) {
+    const color = typeColors[m.type] || '#888';
+    const py = m.py ?? 0;
+    const px = m.px ?? 0;
+
+    const marker = L.circleMarker([-py, px], {
+        radius: 6,
+        fillColor: color,
+        color: '#fff',
+        weight: 1.5,
+        fillOpacity: 0.88,
+        bubblingMouseEvents: false,
+    });
+
+    const label = markerLabel(m);
+    let tooltipHtml = `<strong>${escapeHtml(m.type.toUpperCase())}</strong>: ${escapeHtml(label)}`;
+    tooltipHtml += `<br>${Number(m.x).toFixed(0)}, ${Number(m.y).toFixed(0)}`;
+    marker.bindTooltip(tooltipHtml,
+        { direction: 'top', offset: [0, -8], className: 'marker-tooltip' }
     );
+
+    marker.on('click', function() { selectMarker(markerKey(m)); });
+    marker._dune = { data: m, key: markerKey(m) };
+    return marker;
 }
 
-function setZoom(nextZoom, keepCenter = true) {
-    const map = selectedMapConfig();
-    if (!map) return;
+function renderAllMarkers() {
+    markerClusterGroup.clearLayers();
+    allLayers = { player: [], vehicle: [], base: [] };
 
-    currentZoom = Math.min(3.5, Math.max(0.15, nextZoom));
-    
-    els.canvas.style.width = `${map.width * currentZoom}px`;
-    els.canvas.style.height = `${map.height * currentZoom}px`;
-    els.zoomSlider.value = Math.round(currentZoom * 100);
-    els.zoomReadout.textContent = `${Math.round(currentZoom * 100)}%`;
+    markersForCurrentMap().forEach(m => {
+        if (!searchQuery || matchesSearch(m)) {
+            const layer = createMarker(m);
+            allLayers[m.type].push(layer);
+            markerClusterGroup.addLayer(layer);
+        }
+    });
+
+    updateSummary();
+    renderList();
+}
+
+function matchesSearch(m) {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    const label = markerLabel(m).toLowerCase();
+    return label.includes(q) || m.type.includes(q) || String(m.id).includes(q);
+}
+
+function updateSummary() {
+    document.getElementById('summary-players').textContent = allLayers.player.length;
+    document.getElementById('summary-vehicles').textContent = allLayers.vehicle.length;
+    document.getElementById('summary-bases').textContent = allLayers.base.length;
+}
+
+function selectMarker(key) {
+    activeMarkerId = key;
+    const m = allMarkers.find(c => markerKey(c) === key);
+    if (!m || !mapInstance) return;
+
+    mapInstance.setView([-(m.py ?? 0), m.px ?? 0], Math.max(mapInstance.getZoom(), 2), { animate: true });
+    renderList();
+
+    const listEl = document.getElementById('location-list');
+    const item = listEl.querySelector(`[data-marker-key="${key}"]`);
+    if (item) {
+        item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function renderList() {
+    const list = document.getElementById('location-list');
+    const countEl = document.getElementById('list-count');
+    const items = [];
+
+    for (const [type, layers] of Object.entries(allLayers)) {
+        for (const layer of layers) {
+            const m = layer._dune && layer._dune.data;
+            if (!m || (searchQuery && !matchesSearch(m))) continue;
+            items.push({ m, type });
+        }
+    }
+
+    items.sort((a, b) => a.type.localeCompare(b.type) || markerLabel(a.m).localeCompare(markerLabel(b.m)));
+    countEl.textContent = items.length;
+    list.innerHTML = '';
+
+    if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'location-item';
+        empty.innerHTML = '<strong>No matching assets</strong>';
+        list.appendChild(empty);
+        return;
+    }
+
+    items.forEach(({ m, type }) => {
+        const key = markerKey(m);
+        const label = escapeHtml(markerLabel(m));
+        const item = document.createElement('div');
+        item.className = `location-item${activeMarkerId === key ? ' active' : ''}`;
+        item.dataset.markerKey = key;
+        item.innerHTML = `
+            <strong><i class="legend-dot ${type}"></i>${label}</strong>
+            <span class="meta">${type}</span>
+            <span class="meta">${Number(m.x).toFixed(0)}, ${Number(m.y).toFixed(0)}</span>
+        `;
+        item.addEventListener('click', () => selectMarker(key));
+        list.appendChild(item);
+    });
+}
+
+function switchMap(mapKey) {
+    currentMap = mapKey;
+    activeMarkerId = null;
+    initMap();
+    renderChoices();
 }
 
 function renderChoices() {
-    els.choices.innerHTML = '';
-    const sortedMaps = [...mapOptions].sort((a, b) => {
+    const container = document.getElementById('map-choices');
+    container.innerHTML = '';
+
+    const sorted = [...mapOptions].sort((a, b) => {
         if (a.key === 'HaggaBasin') return -1;
         if (b.key === 'HaggaBasin') return 1;
         return 0;
     });
-    sortedMaps.forEach(map => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = `map-choice${map.key === currentMap ? ' active' : ''}`;
-        button.innerHTML = `
-            <strong>${escapeHtml(map.label)}</strong>
-            <span>${map.counts.players} P / ${map.counts.vehicles} V / ${map.counts.bases} B</span>
-            <span>${escapeHtml(map.key)}</span>
-            <span>${map.width} x ${map.height}</span>
-        `;
-        button.addEventListener('click', () => {
-            currentMap = map.key;
-            activeMarkerId = null;
-            renderAll(true);
-        });
-        els.choices.appendChild(button);
+
+    sorted.forEach(map => {
+        const btn = document.createElement('button');
+        btn.className = `map-choice${map.key === currentMap ? ' active' : ''}`;
+        btn.innerHTML = `<strong>${escapeHtml(map.label)}</strong><span class="counts">${map.counts.players}P / ${map.counts.vehicles}V / ${map.counts.bases}B</span>`;
+        btn.addEventListener('click', () => switchMap(map.key));
+        container.appendChild(btn);
     });
 }
 
-function renderMarkers() {
-    const map = selectedMapConfig();
-    const current = visibleMarkers();
-    els.markers.innerHTML = '';
-
-    current.forEach(marker => {
-        const key = markerKey(marker);
-        const label = escapeHtml(markerLabel(marker));
-        const node = document.createElement('button');
-        node.type = 'button';
-        node.className = `map-marker ${marker.type}${activeMarkerId === key ? ' active' : ''}`;
-        node.style.left = `${(marker.px / map.width) * 100}%`;
-        node.style.top = `${(marker.py / map.height) * 100}%`;
-        node.title = markerLabel(marker);
-        node.innerHTML = `
-            <span class="map-tooltip">
-                ${label}<br>
-                ${escapeHtml(marker.type.toUpperCase())} | X ${Number(marker.x).toFixed(0)} Y ${Number(marker.y).toFixed(0)}
-            </span>
-        `;
-        node.addEventListener('click', () => selectMarker(key, true));
-        els.markers.appendChild(node);
-    });
-
-    els.empty.style.display = current.length ? 'none' : 'flex';
-}
-
-function renderList() {
-    const current = visibleMarkers();
-    els.list.innerHTML = '';
-
-    if (!current.length) {
-        const empty = document.createElement('div');
-        empty.className = 'location-item';
-        empty.innerHTML = '<strong>No visible assets</strong><span>Adjust map or filters</span>';
-        els.list.appendChild(empty);
-        return;
-    }
-
-    current
-        .sort((a, b) => a.type.localeCompare(b.type) || markerLabel(a).localeCompare(markerLabel(b)))
-        .forEach(marker => {
-            const key = markerKey(marker);
-            const label = escapeHtml(markerLabel(marker));
-            const item = document.createElement('button');
-            item.type = 'button';
-            item.className = `location-item${activeMarkerId === key ? ' active' : ''}`;
-            item.dataset.markerKey = key;
-            item.innerHTML = `
-                <strong><i class="legend-dot ${marker.type}"></i>${label}</strong>
-                <span>${escapeHtml(marker.type)}</span>
-                <span>X ${Number(marker.x).toFixed(0)} | Y ${Number(marker.y).toFixed(0)}</span>
-                <span>Z ${Number(marker.z).toFixed(0)}</span>
-            `;
-            item.addEventListener('click', () => selectMarker(key, true));
-            els.list.appendChild(item);
-        });
-}
-
-function renderSummary() {
-    const scoped = markers.filter(marker => marker.map === currentMap && marker.in_bounds);
-    els.summaryPlayers.textContent = scoped.filter(marker => marker.type === 'player').length;
-    els.summaryVehicles.textContent = scoped.filter(marker => marker.type === 'vehicle').length;
-    els.summaryBases.textContent = scoped.filter(marker => marker.type === 'base').length;
-}
-
-function selectMarker(key, centerMap = false) {
-    activeMarkerId = key;
-    const marker = markers.find(candidate => markerKey(candidate) === key);
-    if (!marker) return;
-
-    els.coord.style.display = 'block';
-    els.coord.innerHTML = `
-        <strong>${escapeHtml(markerLabel(marker))}</strong><br>
-        Type: ${escapeHtml(marker.type)}<br>
-        Map: ${escapeHtml(marker.map)}<br>
-        X: ${Number(marker.x).toFixed(2)} | Y: ${Number(marker.y).toFixed(2)} | Z: ${Number(marker.z).toFixed(2)}
-    `;
-
-    if (centerMap) {
-        els.scroll.scrollLeft = marker.px * currentZoom - els.scroll.clientWidth / 2;
-        els.scroll.scrollTop = marker.py * currentZoom - els.scroll.clientHeight / 2;
-    }
-
-    renderMarkers();
-    renderList();
-}
-
-function renderAll(resetView = false) {
-    const map = selectedMapConfig();
-    renderChoices();
-
-    if (!map) {
-        els.empty.style.display = 'flex';
-        return;
-    }
-
-    els.image.src = mapImageUrls[map.key] || '';
-    els.image.alt = map.label;
-    const mapDefaultZoom = map.default_zoom || 0.15;
-    setZoom(mapDefaultZoom, false);
-    currentZoom = mapDefaultZoom;
-    
-    requestAnimationFrame(() => {
-        els.scroll.scrollLeft = 0;
-        els.scroll.scrollTop = 0;
-    });
-
-    renderSummary();
-    renderMarkers();
-    renderList();
-}
-
-document.querySelectorAll('[data-filter]').forEach(input => {
-    input.addEventListener('change', () => {
-        enabledTypes[input.dataset.filter] = input.checked;
+document.querySelectorAll('[data-type]').forEach(input => {
+    input.addEventListener('change', function() {
+        enabledTypes[this.dataset.type] = this.checked;
         activeMarkerId = null;
-        els.coord.style.display = 'none';
-        renderMarkers();
-        renderList();
+        renderAllMarkers();
     });
 });
 
-document.getElementById('zoom-in').addEventListener('click', () => setZoom(currentZoom + 0.1));
-document.getElementById('zoom-out').addEventListener('click', () => setZoom(currentZoom - 0.1));
-els.zoomSlider.addEventListener('input', event => setZoom(Number(event.target.value) / 100));
-
-els.scroll.addEventListener('wheel', event => {
-    if (!event.ctrlKey && !event.metaKey) return;
-    event.preventDefault();
-    setZoom(currentZoom + (event.deltaY < 0 ? 0.1 : -0.1));
-}, { passive: false });
-
-let dragStart = null;
-els.scroll.addEventListener('mousedown', event => {
-    if (event.button !== 0) return;
-    dragStart = {
-        x: event.clientX,
-        y: event.clientY,
-        left: els.scroll.scrollLeft,
-        top: els.scroll.scrollTop,
-    };
-    els.scroll.classList.add('dragging');
+document.getElementById('search-input').addEventListener('input', function() {
+    searchQuery = this.value.trim();
+    renderAllMarkers();
 });
 
-window.addEventListener('mousemove', event => {
-    if (!dragStart) return;
-    els.scroll.scrollLeft = dragStart.left - (event.clientX - dragStart.x);
-    els.scroll.scrollTop = dragStart.top - (event.clientY - dragStart.y);
-});
-
-window.addEventListener('mouseup', () => {
-    dragStart = null;
-    els.scroll.classList.remove('dragging');
-});
-
-renderAll(true);
+renderChoices();
+setTimeout(() => { initMap(); }, 100);
 </script>
 {% endblock %}

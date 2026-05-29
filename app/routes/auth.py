@@ -2,7 +2,7 @@
 
 import time
 import threading
-from flask import render_template, request, redirect, url_for, flash
+from flask import render_template, request, redirect, url_for, flash, session, make_response
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -13,6 +13,15 @@ login_manager.login_message = 'Please log in.'
 
 # In-memory failed login tracker: {ip: {"count": int, "first_attempt": float}}
 _failed_attempts = {}
+_failed_lock = threading.Lock()
+
+# Reusable Argon2 verifier (created once, not per-request)
+try:
+    from argon2 import PasswordHasher, exceptions as argon2_exceptions
+    _password_hasher = PasswordHasher(time_cost=3, memory_cost=65536)
+except ImportError:
+    _password_hasher = None
+    argon2_exceptions = None
 _failed_lock = threading.Lock()
 _MAX_FAILED_ATTEMPTS = 5
 _BLOCK_DURATION = 900  # 15 minutes
@@ -82,39 +91,41 @@ def init_auth(app, settings, limiter=None, audit_svc=None):
             u = request.form.get('username', '')
             p = request.form.get('password', '')
             auth = settings.get('auth', {})
-
             cfg_u = str(auth.get('username', ''))
             password_hash = auth.get('password_hash')
 
-            if u != cfg_u:
-                if audit_svc:
-                    audit_svc.log('login_failed', {'username': u, 'reason': 'invalid_username'}, user='unknown', severity='warning')
+            if not password_hash:
+                flash('Authentication not configured. Please run setup.')
+                return render_template('login.html')
+
+            try:
+                # Always run Argon2 verify regardless of username (prevents timing enumeration)
+                from argon2 import exceptions
+                _DUMMY = '$argon2id$v=19$m=65536,t=3,p=4$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+                hash_to_verify = password_hash if u == cfg_u else _DUMMY
+                verified = _password_hasher.verify(hash_to_verify, p)
+
+                if verified and u == cfg_u:
+                    _clear_failed_attempts(client_ip)
+                    login_user(AdminUser(u))
+                    if audit_svc:
+                        audit_svc.log('login_success', {'username': u}, user=u, severity='info')
+                    return redirect(url_for('overview'))
+                else:
+                    # Dummy always fails; wrong password also fails here
+                    _record_failed_attempt(client_ip)
+                    if u == cfg_u and audit_svc:
+                        audit_svc.log('login_failed', {'username': u, 'reason': 'invalid_password'}, user=u, severity='warning')
+                    elif audit_svc:
+                        audit_svc.log('login_failed', {'username': u, 'reason': 'invalid_credentials'}, user='unknown', severity='warning')
+                    flash('Invalid username or password')
+                    return render_template('login.html')
+            except exceptions.VerifyMismatchError:
                 _record_failed_attempt(client_ip)
                 flash('Invalid username or password')
                 return render_template('login.html')
-
-            if password_hash:
-                try:
-                    from argon2 import PasswordHasher, exceptions
-                    ph = PasswordHasher(time_cost=3, memory_cost=65536)
-                    if ph.verify(password_hash, p):
-                        _clear_failed_attempts(client_ip)
-                        login_user(AdminUser(u))
-                        if audit_svc:
-                            audit_svc.log('login_success', {'username': u}, user=u, severity='info')
-                        return redirect(url_for('overview'))
-                    else:
-                        if audit_svc:
-                            audit_svc.log('login_failed', {'username': u, 'reason': 'invalid_password'}, user=u, severity='warning')
-                except exceptions.VerifyMismatchError:
-                    if audit_svc:
-                        audit_svc.log('login_failed', {'username': u, 'reason': 'invalid_password'}, user=u, severity='warning')
-                    pass
-                except Exception:
-                    flash('Authentication error. Please try again.')
-                    return render_template('login.html')
-            else:
-                flash('Authentication not configured. Please run setup.')
+            except Exception as e:
+                flash('Authentication error. Please try again.')
                 return render_template('login.html')
 
             _record_failed_attempt(client_ip)
@@ -123,10 +134,13 @@ def init_auth(app, settings, limiter=None, audit_svc=None):
         return render_template('login.html')
 
     @app.route('/logout')
-    @login_required
     def logout():
         user = current_user.id if current_user.is_authenticated else 'unknown'
         logout_user()
+        session.clear()
         if audit_svc:
             audit_svc.log('logout', {}, user=user, severity='info')
-        return redirect(url_for('login'))
+        resp = make_response(redirect(url_for('login')))
+        resp.delete_cookie('session')
+        resp.delete_cookie('remember_token')
+        return resp

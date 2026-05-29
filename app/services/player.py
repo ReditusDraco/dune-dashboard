@@ -269,9 +269,24 @@ class PlayerService:
                     (SELECT COUNT(*)::int FROM dune.building_instances bi WHERE bi.building_id = b.id) as instance_count
                 FROM dune.buildings b
                 JOIN dune.actors a ON b.id = a.id
-                WHERE b.owner_id = %s
+                JOIN LATERAL (
+                    SELECT DISTINCT afe_totem.actor_id as totem_actor_id
+                    FROM dune.building_instances bi
+                    JOIN dune.actor_fgl_entities afe_totem ON afe_totem.entity_id = bi.owner_entity_id
+                    WHERE bi.building_id = b.id
+                    LIMIT 1
+                ) totem ON true
+                JOIN LATERAL (
+                    SELECT pawn.id as pawn_id
+                    FROM dune.actors pawn
+                    WHERE pawn.id BETWEEN totem.totem_actor_id - 6 AND totem.totem_actor_id - 1
+                      AND pawn.class LIKE %s
+                    ORDER BY totem.totem_actor_id - pawn.id
+                    LIMIT 1
+                ) owner ON true
+                WHERE owner.pawn_id = %s
                 ORDER BY a.map
-            """, [player_id]) or []
+            """, [LIKE_PC, player_id]) or []
         except Exception:
             return []
 

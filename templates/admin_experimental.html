@@ -1,10 +1,39 @@
 {% extends "base.html" %}
-{% block title %}Admin Experimental - Dune Awakening Dashboard{% endblock %}
+{% block title %}Experimental - Dune Awakening Dashboard{% endblock %}
 {% block content %}
 
+<div id="exp-gate" class="exp-gate">
+    <div class="exp-gate-box">
+        <div class="exp-gate-icon">&#9888;</div>
+        <h2>Experimental Features — Proceed with Caution</h2>
+        <p>This area contains <strong>untested, experimental tools</strong> that interact directly with your game server's internal systems (RabbitMQ, PostgreSQL, Battlegroup Director).</p>
+        <p>These tools <strong>can corrupt data, crash servers, or delete characters</strong>. Do not report bugs about this page. Always snapshot or backup your server first.</p>
+        <div class="exp-gate-actions">
+            <button onclick="denyExperimental()" class="exp-gate-btn deny">Take Me Back to Safety</button>
+            <button onclick="acceptExperimental()" class="exp-gate-btn accept">I Understand the Risks — Proceed</button>
+        </div>
+    </div>
+</div>
+
+<div id="exp-content" style="display:none;">
+
 <div class="page-header">
-    <h1>Admin Experimental</h1>
+    <h1>Experimental</h1>
     <p>Experimental tools discovered through server research</p>
+</div>
+
+<div class="experimental-warning">
+    <div class="experimental-warning-title">&#9888; DANGER — EXPERIMENTAL FEATURES</div>
+    <div class="experimental-warning-body">
+        <p>This page contains <strong>experimental and potentially destructive</strong> tools that interact directly with your game server's internal systems (RabbitMQ, PostgreSQL, Battlegroup Director).</p>
+        <p><strong>These tools can corrupt your database, crash game servers, delete player data, or render your cluster inoperable.</strong></p>
+        <ul>
+            <li><strong>DO NOT report bugs</strong> found on this page — these features are untested and in active research.</li>
+            <li><strong>USE AT YOUR OWN RISK.</strong> The dashboard authors are not responsible for any damage caused.</li>
+            <li><strong>SNAPSHOT OR BACKUP YOUR SERVER</strong> before using ANY tool on this page.</li>
+            <li>If you don't understand what a button does, <strong>DO NOT CLICK IT.</strong></li>
+        </ul>
+    </div>
 </div>
 
 <div class="card">
@@ -405,10 +434,96 @@
                     <option value="in_demo">In Demo</option>
                     <option value="demo_expired">Demo Expired</option>
                 </select>
-            </div>
-        </div>
-        <button onclick="setDemoState()" style="margin-top:8px;padding:8px 16px;background:var(--bg-hover);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;">Set Demo State</button>
     </div>
+</div>
+
+</div>
+
+<div style="margin-top:24px;">
+    <h2 style="margin-bottom:16px;">RabbitMQ Explorer</h2>
+    <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">
+        Inspect the RMQ clusters. Both Admin (port 30325) and Game (port 32716) instances via SSH tunnel.
+    </p>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+<div class="card">
+    <div class="card-header">RMQ Overview</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Cluster health, node info, message stats.</p>
+        <div id="rmq-overview-status" class="error-banner" style="display:none;"></div>
+        <button onclick="loadRmqOverview()"
+            style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;margin-bottom:8px;">Refresh</button>
+        <pre id="rmq-overview-data" style="max-height:300px;overflow:auto;font-size:11px;background:var(--bg-hover);padding:10px;border-radius:4px;white-space:pre-wrap;word-break:break-all;"></pre>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">RMQ Queues</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">All queues with consumer counts and message depths.</p>
+        <div id="rmq-queues-status" class="error-banner" style="display:none;"></div>
+        <button onclick="loadRmqQueues()"
+            style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;margin-bottom:8px;">Refresh</button>
+        <div id="rmq-queues-data" style="max-height:300px;overflow:auto;font-size:11px;"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">RMQ Exchanges</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">All exchanges with type, durability, and message stats.</p>
+        <div id="rmq-exchanges-status" class="error-banner" style="display:none;"></div>
+        <button onclick="loadRmqExchanges()"
+            style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;margin-bottom:8px;">Refresh</button>
+        <div id="rmq-exchanges-data" style="max-height:300px;overflow:auto;font-size:11px;"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Message Inspector</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Peek at messages in any queue without consuming them.</p>
+        <div id="rmq-peek-status" class="error-banner" style="display:none;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <input type="text" id="rmq-peek-queue" placeholder="Queue name..."
+                style="flex:1;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
+            <input type="number" id="rmq-peek-count" value="5" min="1" max="20"
+                style="width:60px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
+            <button onclick="peekRmqMessages()"
+                style="padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Peek</button>
+        </div>
+        <pre id="rmq-peek-data" style="max-height:300px;overflow:auto;font-size:11px;background:var(--bg-hover);padding:10px;border-radius:4px;white-space:pre-wrap;word-break:break-all;"></pre>
+    </div>
+</div>
+
+<div class="card" style="grid-column:1 / -1;">
+    <div class="card-header">Publish Test Message</div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">
+            Publish a test message to any exchange. <strong>Note:</strong> HTTP API sets user_id to dashboard_admin, which the game server may reject for RPC commands. Use the Erlang eval broadcast for in-game commands.
+        </p>
+        <div id="rmq-publish-status" class="error-banner" style="display:none;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+            <select id="rmq-publish-side" style="padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
+                <option value="admin">Admin (30325)</option>
+                <option value="game">Game (32716)</option>
+            </select>
+            <input type="text" id="rmq-publish-exchange" placeholder="Exchange name..."
+                style="flex:1;min-width:150px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
+            <input type="text" id="rmq-publish-routing" placeholder="Routing key..."
+                style="flex:1;min-width:150px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
+            <button onclick="publishRmqMessage()"
+                style="padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Publish</button>
+        </div>
+        <textarea id="rmq-publish-message" rows="4" placeholder='{"key": "value"}'
+            style="width:100%;padding:8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;font-family:monospace;resize:vertical;"></textarea>
+        <pre id="rmq-publish-data" style="max-height:200px;overflow:auto;font-size:11px;background:var(--bg-hover);padding:10px;border-radius:4px;margin-top:8px;white-space:pre-wrap;word-break:break-all;"></pre>
+    </div>
+</div>
+
+</div>
 </div>
 
 <div class="card">
@@ -539,10 +654,28 @@
 
 </div>
 
+</div>
+
 <style>
 .error-banner { padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; }
 .error-banner.success { background: #1a3a2a; border: 1px solid #2ecc71; color: #2ecc71; display: block; }
 .error-banner.error { background: #3a1a1a; border: 1px solid #e74c3c; color: #e74c3c; display: block; }
+.experimental-warning { background: rgba(220,38,38,0.12); border: 2px solid rgba(220,38,38,0.6); border-left: 6px solid #dc2626; border-radius: 8px; padding: 18px 22px; margin-bottom: 24px; }
+.experimental-warning-title { font-size: 16px; font-weight: 700; color: #ef4444; margin-bottom: 12px; }
+.experimental-warning-body p { margin: 0 0 10px; font-size: 13px; color: var(--text); line-height: 1.6; }
+.experimental-warning-body ul { margin: 8px 0 0; padding-left: 20px; font-size: 13px; color: var(--text); line-height: 1.8; }
+.experimental-warning-body li { margin-bottom: 4px; }
+.exp-gate { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+.exp-gate-box { background: #1a1a1e; border: 2px solid #dc2626; border-radius: 12px; max-width: 560px; width: 90%; padding: 32px; text-align: center; color: #e0e0e0; }
+.exp-gate-icon { font-size: 48px; color: #ef4444; margin-bottom: 16px; }
+.exp-gate-box h2 { font-size: 18px; color: #ef4444; margin: 0 0 16px; }
+.exp-gate-box p { font-size: 13px; line-height: 1.6; margin: 0 0 12px; color: #c0c0c0; }
+.exp-gate-actions { display: flex; gap: 12px; margin-top: 20px; justify-content: center; flex-wrap: wrap; }
+.exp-gate-btn { padding: 12px 24px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.exp-gate-btn.accept { background: #dc2626; color: #fff; }
+.exp-gate-btn.accept:hover { background: #b91c1c; }
+.exp-gate-btn.deny { background: #374151; color: #d0d0d0; }
+.exp-gate-btn.deny:hover { background: #4b5563; }
 code { background: var(--bg-hover); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
 .result-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
 .result-table th { text-align:left; padding:6px 8px; background:var(--bg-hover); border-bottom:2px solid var(--border); }
@@ -1272,11 +1405,131 @@ async function executeFunction(name, paramCount) {
     } catch(e) { resultDiv.innerHTML = `<div class="error-banner error" style="display:block;">${esc(e.message)}</div>`; }
 }
 
+// ── RMQ Explorer ─────────────────────────────────────────────────
+async function loadRmqOverview() {
+    const status = document.getElementById('rmq-overview-status');
+    const output = document.getElementById('rmq-overview-data');
+    hideStatus(status); output.textContent = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/rmq/overview');
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); output.textContent = ''; return; }
+        output.textContent = JSON.stringify(d.data, null, 2);
+    } catch(e) { showError(status, e.message); output.textContent = ''; }
+}
+
+async function loadRmqQueues() {
+    const status = document.getElementById('rmq-queues-status');
+    const output = document.getElementById('rmq-queues-data');
+    hideStatus(status); output.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/rmq/queues');
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); output.innerHTML = ''; return; }
+        const data = d.data || {};
+        let html = '';
+        for (const [side, queues] of Object.entries(data)) {
+            html += `<h4 style="margin:8px 0 4px;font-size:12px;color:var(--text)">RMQ ${side.toUpperCase()}</h4>`;
+            if (!queues || !queues.length) { html += '<p style="font-size:11px;color:var(--text-muted)">No queues or connection failed</p>'; continue; }
+            html += '<table class="result-table"><tr><th>Name</th><th>State</th><th>Ready</th><th>Consumers</th></tr>';
+            for (const q of queues) {
+                html += `<tr><td style="font-size:10px;word-break:break-all">${esc(q.name||'?')}</td>`;
+                html += `<td>${esc(String(q.state||''))}</td>`;
+                html += `<td>${q.messages_ready||0}</td><td>${q.consumers||0}</td></tr>`;
+            }
+            html += '</table>';
+        }
+        output.innerHTML = html;
+    } catch(e) { showError(status, e.message); output.innerHTML = ''; }
+}
+
+async function loadRmqExchanges() {
+    const status = document.getElementById('rmq-exchanges-status');
+    const output = document.getElementById('rmq-exchanges-data');
+    hideStatus(status); output.innerHTML = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/rmq/exchanges');
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); output.innerHTML = ''; return; }
+        const data = d.data || {};
+        let html = '';
+        for (const [side, exchanges] of Object.entries(data)) {
+            html += `<h4 style="margin:8px 0 4px;font-size:12px;color:var(--text)">RMQ ${side.toUpperCase()}</h4>`;
+            if (!exchanges || !exchanges.length) { html += '<p style="font-size:11px;color:var(--text-muted)">No exchanges or connection failed</p>'; continue; }
+            html += '<table class="result-table"><tr><th>Name</th><th>Type</th><th>Durable</th><th>Msgs</th></tr>';
+            for (const x of exchanges) {
+                html += `<tr><td style="font-size:10px;word-break:break-all">${esc(x.name||'?')}</td>`;
+                html += `<td>${esc(x.type||'')}</td><td>${x.durable?'Yes':'No'}</td>`;
+                html += `<td>${x.message_stats?.publish_in||0}</td></tr>`;
+            }
+            html += '</table>';
+        }
+        output.innerHTML = html;
+    } catch(e) { showError(status, e.message); output.innerHTML = ''; }
+}
+
+async function peekRmqMessages() {
+    const status = document.getElementById('rmq-peek-status');
+    const output = document.getElementById('rmq-peek-data');
+    const queue = document.getElementById('rmq-peek-queue').value.trim();
+    const count = parseInt(document.getElementById('rmq-peek-count').value) || 5;
+    if (!queue) { showError(status, 'Enter a queue name'); return; }
+    hideStatus(status); output.textContent = 'Loading...';
+    try {
+        const r = await csrfFetch('/api/admin-experimental/rmq/peek', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({queue, count})
+        });
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); output.textContent = ''; return; }
+        output.textContent = JSON.stringify(d.data, null, 2);
+    } catch(e) { showError(status, e.message); output.textContent = ''; }
+}
+
+async function publishRmqMessage() {
+    const status = document.getElementById('rmq-publish-status');
+    const output = document.getElementById('rmq-publish-data');
+    const side = document.getElementById('rmq-publish-side').value;
+    const exchange = document.getElementById('rmq-publish-exchange').value.trim();
+    const routing_key = document.getElementById('rmq-publish-routing').value.trim();
+    const messageStr = document.getElementById('rmq-publish-message').value.trim();
+    if (!exchange) { showError(status, 'Enter an exchange name'); return; }
+    hideStatus(status); output.textContent = 'Publishing...';
+    let message = messageStr;
+    try { message = JSON.parse(messageStr); } catch(_) {}
+    try {
+        const r = await csrfFetch('/api/admin-experimental/rmq/publish', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({exchange, routing_key, message, side})
+        });
+        const d = await r.json();
+        if (!d.success) { showError(status, d.error); output.textContent = ''; return; }
+        output.textContent = JSON.stringify(d.data, null, 2);
+    } catch(e) { showError(status, e.message); output.textContent = ''; }
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────
 function esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function showError(el, msg) { el.className = 'error-banner error'; el.textContent = msg; el.style.display = 'block'; }
 function showSuccess(el, msg) { el.className = 'error-banner success'; el.textContent = msg; el.style.display = 'block'; }
 function hideStatus(el) { el.style.display = 'none'; }
+
+function acceptExperimental() {
+    document.getElementById('exp-gate').style.display = 'none';
+    document.getElementById('exp-content').style.display = 'block';
+    localStorage.setItem('exp-warning-accepted', '1');
+}
+
+function denyExperimental() {
+    localStorage.removeItem('exp-warning-accepted');
+    window.location.href = '/';
+}
+
+(function() {
+    if (localStorage.getItem('exp-warning-accepted') === '1') {
+        acceptExperimental();
+    }
+})();
 </script>
 
 {% endblock %}

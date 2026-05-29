@@ -24,6 +24,7 @@ from app.services.chat import ChatService
 from app.services.admin import AdminService
 from app.services.updater import UpdateService
 from app.services.director import DirectorService
+from app.services.rmq import RmqService
 from app.utils.cache import MultiCache
 from app.routes.main import register_routes
 from app.routes.api import register_api_routes
@@ -45,6 +46,7 @@ def create_app(settings_path=None):
     app.config['SECRET_KEY'] = settings['dashboard']['secret_key']
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['PERMANENT_SESSION_LIFETIME'] = 28800  # 8 hours
     app.config['WTF_CSRF_ENABLED'] = True
     app.config['WTF_CSRF_TIME_LIMIT'] = None
 
@@ -58,7 +60,6 @@ def create_app(settings_path=None):
         and settings['dashboard']['ssl_key'] != 'null'
     )
 
-    # Set SESSION_COOKIE_SECURE conditional on SSL being enabled
     app.config['SESSION_COOKIE_SECURE'] = ssl_enabled
 
     # Add security headers manually (replaces deprecated Flask-Talisman)
@@ -252,6 +253,13 @@ def create_app(settings_path=None):
         namespace=settings['kubernetes']['namespace'],
     )
     logging.debug(f"DirectorService initialized: port={settings.get('director', {}).get('port', 32479)}")
+    rmq_svc = RmqService(
+        admin_port=settings.get('rabbitmq', {}).get('admin_port', 30325),
+        game_port=settings.get('rabbitmq', {}).get('game_port', 32716),
+        username=settings.get('rabbitmq', {}).get('username', 'dashboard_admin'),
+        password=settings.get('rabbitmq', {}).get('password', ''),
+    )
+    logging.debug(f"RmqService initialized: admin=localhost:{settings.get('rabbitmq', {}).get('admin_port', 30325)} game=localhost:{settings.get('rabbitmq', {}).get('game_port', 32716)}")
 
     services = {
         'db': db_service,
@@ -265,6 +273,7 @@ def create_app(settings_path=None):
         'static_cache': static_cache,
         'updater': updater_svc,
         'director': director_svc,
+        'rmq': rmq_svc,
     }
     logging.debug(f"All services registered: {list(services.keys())}")
 
@@ -284,23 +293,13 @@ def create_app(settings_path=None):
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
-        default_limits=[],
+        default_limits=["200 per day", "50 per hour"],
         storage_uri="memory://",
     )
     app.limiter = limiter
 
     if settings['auth']['enabled']:
         init_auth(app, settings, limiter, audit_svc)
-
-        # Auto-login for SPA frontend — bypasses login page
-        from flask_login import login_user
-        from app.routes.auth import AdminUser
-
-        @app.before_request
-        def auto_login_dev():
-            if not current_user.is_authenticated:
-                cfg_user = str(settings.get("auth", {}).get("username", "dune"))
-                login_user(AdminUser(cfg_user))
 
     register_routes(app, services, settings)
     register_api_routes(app, services, settings)

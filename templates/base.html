@@ -7,6 +7,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='themes.css') }}">
+    {% block head_extra %}{% endblock %}
 </head>
 <body>
     <div id="update-banner" class="update-banner" style="display:none;">
@@ -25,47 +26,77 @@
         <div class="theme-dropdown">
             <button class="theme-btn" title="Theme">🎨</button>
             <div class="theme-dropdown-content">
-                <div class="theme-option active" data-theme="default" onclick="setTheme('default')">
-                    <span class="theme-swatch default"></span> Classic Dune
-                </div>
-                <div class="theme-option" data-theme="atreides" onclick="setTheme('atreides')">
-                    <span class="theme-swatch atrides"></span> House Atreides
-                </div>
-                <div class="theme-option" data-theme="harkonnen" onclick="setTheme('harkonnen')">
-                    <span class="theme-swatch harkonnen"></span> House Harkonnen
-                </div>
-                <div class="theme-option" data-theme="fremen" onclick="setTheme('fremen')">
-                    <span class="theme-swatch fremen"></span> Fremen
-                </div>
-                <div class="theme-option" data-theme="bene-gesserit" onclick="setTheme('bene-gesserit')">
-                    <span class="theme-swatch bene-gesserit"></span> Bene Gesserit
-                </div>
-                <div class="theme-option" data-theme="spacing-guild" onclick="setTheme('spacing-guild')">
-                    <span class="theme-swatch spacing-guild"></span> Spacing Guild
-                </div>
-                <div class="theme-option" data-theme="emperor" onclick="setTheme('emperor')">
-                    <span class="theme-swatch emperor"></span> Emperor
-                </div>
-                <div class="theme-option" data-theme="corrino" onclick="setTheme('corrino')">
-                    <span class="theme-swatch corrino"></span> House Corrino
-                </div>
-                <div class="theme-option" data-theme="mentat" onclick="setTheme('mentat')">
-                    <span class="theme-swatch mentat"></span> Mentat
-                </div>
-                <div class="theme-option" data-theme="sardaukar" onclick="setTheme('sardaukar')">
-                    <span class="theme-swatch sardaukar"></span> Sardaukar
-                </div>
-                <div class="theme-option" data-theme="tleilax" onclick="setTheme('tleilax')">
-                    <span class="theme-swatch tleilax"></span> Bene Tleilax
-                </div>
-                <div class="theme-option" data-theme="ordos" onclick="setTheme('ordos')">
-                    <span class="theme-swatch ordos"></span> House Ordos
-                </div>
-                <div class="theme-option" data-theme="ix" onclick="setTheme('ix')">
-                    <span class="theme-swatch ix"></span> Ix
-                </div>
-                <div class="theme-option" data-theme="choam" onclick="setTheme('choam')">
-                    <span class="theme-swatch choam"></span> CHOAM
+                <div class="theme-grid">
+                    <div class="theme-row" data-family="default">
+                        <span class="theme-row-label">Classic Dune</span>
+                        <span class="theme-swatch default" data-theme="default" onclick="setTheme('default')" title="Classic Dune Light"></span>
+                        <span class="theme-swatch default-dark active-theme" data-theme="default-dark" onclick="setTheme('default-dark')" title="Classic Dune Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="atreides">
+                        <span class="theme-row-label">House Atreides</span>
+                        <span class="theme-swatch atreides" data-theme="atreides" onclick="setTheme('atreides')" title="House Atreides Light"></span>
+                        <span class="theme-swatch atreides-dark" data-theme="atreides-dark" onclick="setTheme('atreides-dark')" title="House Atreides Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="harkonnen">
+                        <span class="theme-row-label">House Harkonnen</span>
+                        <span class="theme-swatch harkonnen-light" data-theme="harkonnen-light" onclick="setTheme('harkonnen-light')" title="House Harkonnen Light"></span>
+                        <span class="theme-swatch harkonnen" data-theme="harkonnen" onclick="setTheme('harkonnen')" title="House Harkonnen Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="fremen">
+                        <span class="theme-row-label">Fremen</span>
+                        <span class="theme-swatch fremen" data-theme="fremen" onclick="setTheme('fremen')" title="Fremen Light"></span>
+                        <span class="theme-swatch fremen-dark" data-theme="fremen-dark" onclick="setTheme('fremen-dark')" title="Fremen Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="bene-gesserit">
+                        <span class="theme-row-label">Bene Gesserit</span>
+                        <span class="theme-swatch bene-gesserit" data-theme="bene-gesserit" onclick="setTheme('bene-gesserit')" title="Bene Gesserit Light"></span>
+                        <span class="theme-swatch bene-gesserit-dark" data-theme="bene-gesserit-dark" onclick="setTheme('bene-gesserit-dark')" title="Bene Gesserit Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="spacing-guild">
+                        <span class="theme-row-label">Spacing Guild</span>
+                        <span class="theme-swatch spacing-guild-light" data-theme="spacing-guild-light" onclick="setTheme('spacing-guild-light')" title="Spacing Guild Light"></span>
+                        <span class="theme-swatch spacing-guild" data-theme="spacing-guild" onclick="setTheme('spacing-guild')" title="Spacing Guild Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="emperor">
+                        <span class="theme-row-label">Emperor</span>
+                        <span class="theme-swatch emperor-light" data-theme="emperor-light" onclick="setTheme('emperor-light')" title="Emperor Light"></span>
+                        <span class="theme-swatch emperor" data-theme="emperor" onclick="setTheme('emperor')" title="Emperor Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="corrino">
+                        <span class="theme-row-label">House Corrino</span>
+                        <span class="theme-swatch corrino" data-theme="corrino" onclick="setTheme('corrino')" title="House Corrino Light"></span>
+                        <span class="theme-swatch corrino-dark" data-theme="corrino-dark" onclick="setTheme('corrino-dark')" title="House Corrino Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="mentat">
+                        <span class="theme-row-label">Mentat</span>
+                        <span class="theme-swatch mentat" data-theme="mentat" onclick="setTheme('mentat')" title="Mentat Light"></span>
+                        <span class="theme-swatch mentat-dark" data-theme="mentat-dark" onclick="setTheme('mentat-dark')" title="Mentat Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="sardaukar">
+                        <span class="theme-row-label">Sardaukar</span>
+                        <span class="theme-swatch sardaukar" data-theme="sardaukar" onclick="setTheme('sardaukar')" title="Sardaukar Light"></span>
+                        <span class="theme-swatch sardaukar-dark" data-theme="sardaukar-dark" onclick="setTheme('sardaukar-dark')" title="Sardaukar Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="tleilax">
+                        <span class="theme-row-label">Bene Tleilax</span>
+                        <span class="theme-swatch tleilax-light" data-theme="tleilax-light" onclick="setTheme('tleilax-light')" title="Bene Tleilax Light"></span>
+                        <span class="theme-swatch tleilax" data-theme="tleilax" onclick="setTheme('tleilax')" title="Bene Tleilax Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="ordos">
+                        <span class="theme-row-label">House Ordos</span>
+                        <span class="theme-swatch ordos" data-theme="ordos" onclick="setTheme('ordos')" title="House Ordos Light"></span>
+                        <span class="theme-swatch ordos-dark" data-theme="ordos-dark" onclick="setTheme('ordos-dark')" title="House Ordos Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="ix">
+                        <span class="theme-row-label">Ix</span>
+                        <span class="theme-swatch ix" data-theme="ix" onclick="setTheme('ix')" title="Ix Light"></span>
+                        <span class="theme-swatch ix-dark" data-theme="ix-dark" onclick="setTheme('ix-dark')" title="Ix Dark"></span>
+                    </div>
+                    <div class="theme-row" data-family="choam">
+                        <span class="theme-row-label">CHOAM</span>
+                        <span class="theme-swatch choam" data-theme="choam" onclick="setTheme('choam')" title="CHOAM Light"></span>
+                        <span class="theme-swatch choam-dark" data-theme="choam-dark" onclick="setTheme('choam-dark')" title="CHOAM Dark"></span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -112,24 +143,11 @@
         } catch (e) {}
     }
     async function manualCheckUpdate() {
-        const btn = document.getElementById('check-update-btn');
-        btn.textContent = 'Checking...';
-        btn.disabled = true;
-        try {
-            const resp = await csrfFetch('/api/update/check', { method: 'POST' });
-            const data = await resp.json();
-            if (data.available) {
-                document.getElementById('update-banner').style.display = 'flex';
-                btn.textContent = 'Update Available!';
-            } else {
-                btn.textContent = 'Up to Date ✓';
-                setTimeout(() => { btn.textContent = '🔄 Check Updates'; }, 3000);
-            }
-        } catch (e) {
-            btn.textContent = 'Check Failed';
-            setTimeout(() => { btn.textContent = '🔄 Check Updates'; }, 3000);
-        }
-        btn.disabled = false;
+        const progress = document.getElementById('update-progress');
+        const statusText = document.getElementById('update-status-text');
+        progress.style.display = 'flex';
+        statusText.textContent = 'The update system is being reworked for better reliability. Please check back soon.';
+        setTimeout(() => { progress.style.display = 'none'; }, 4000);
     }
     function dismissUpdate() {
         updateDismissed = true;
@@ -141,21 +159,8 @@
         const statusText = document.getElementById('update-status-text');
         banner.style.display = 'none';
         progress.style.display = 'flex';
-        try {
-            const resp = await csrfFetch('/api/update/apply', { method: 'POST' });
-            const data = await resp.json();
-            statusText.textContent = data.message || 'Applying update...';
-            if (data.success) {
-                statusText.textContent = 'Update complete! Restarting...';
-                setTimeout(() => { location.reload(); }, 5000);
-            } else {
-                statusText.textContent = 'Update failed: ' + (data.message || 'Unknown error');
-                setTimeout(() => { progress.style.display = 'none'; }, 5000);
-            }
-        } catch (e) {
-            statusText.textContent = 'Update failed: ' + e.message;
-            setTimeout(() => { progress.style.display = 'none'; }, 5000);
-        }
+        statusText.textContent = 'The auto-update system is being reworked to be more reliable and robust. Manual updates from the launcher still work.';
+        setTimeout(() => { progress.style.display = 'none'; }, 5000);
     }
     setInterval(checkForUpdate, 60000);
     checkForUpdate();
@@ -168,16 +173,13 @@
     }
 
     function updateThemeUI(themeName) {
-        document.querySelectorAll('.theme-option').forEach(opt => {
-            opt.classList.remove('active');
-            if (opt.getAttribute('data-theme') === themeName) {
-                opt.classList.add('active');
-            }
+        document.querySelectorAll('.theme-row .theme-swatch').forEach(sw => {
+            sw.classList.toggle('active-theme', sw.getAttribute('data-theme') === themeName);
         });
     }
 
     function initTheme() {
-        const savedTheme = localStorage.getItem('dune-theme') || 'default';
+        const savedTheme = localStorage.getItem('dune-theme') || 'default-dark';
         document.documentElement.setAttribute('data-theme', savedTheme);
         updateThemeUI(savedTheme);
     }

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 
 import httpx
 
@@ -93,7 +94,7 @@ class RmqGameService:
         }
         body = {
             "Version": 2,
-            "AuthToken": "Nu6VmPWUMvdPMeB7qErr",
+            "AuthToken": os.environ.get("DUNE_BROADCAST_TOKEN", "Nu6VmPWUMvdPMeB7qErr"),
             "MessageContent": inner,
         }
         return self.publish(

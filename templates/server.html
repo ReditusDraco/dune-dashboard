@@ -151,7 +151,7 @@
     </div>
     <div class="card-body">
         {% if deploys_ok %}
-        <div style="margin-bottom:10px;padding:10px;background:#1a1a2e;border-radius:6px;font-size:12px;line-height:1.5;color:#a0a0b0;">
+        <div style="margin-bottom:10px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px;line-height:1.5;color:var(--text-light);">
             <strong>Button Guide:</strong>
             <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#e67e22;">Restart</span> — rolling restart of pods</span>
             <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#3498db;">Status</span> — rollout status</span>
@@ -182,12 +182,12 @@
             <code>$env:TEMP\dune-awakening-server-sshKey</code> and the VM is reachable.
         </p>
         {% if ssh_error %}
-        <pre style="background:#1a1a2e;color:#e74c3c;padding:12px;border-radius:6px;font-size:12px;margin-top:8px;">{{ ssh_error }}</pre>
+        <pre style="background:var(--bg);color:var(--danger);padding:12px;border-radius:6px;font-size:12px;margin-top:8px;">{{ ssh_error }}</pre>
         {% endif %}
         {% endif %}
         <div id="action-output" style="margin-top:16px;display:none;">
             <div class="card-header">Command Output</div>
-            <pre id="action-output-text" style="background:#1a1a2e;color:#e0d5c7;padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;margin-top:8px;"></pre>
+            <pre id="action-output-text" style="background:var(--bg);color:var(--text);padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;margin-top:8px;"></pre>
         </div>
     </div>
 </div>
@@ -206,7 +206,7 @@
             <button id="bg-btn-refresh" style="padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Refresh Status</button>
         </div>
         <div id="bg-status-output">
-            <pre id="bg-status-text" style="background:#1a1a2e;color:#e0d5c7;padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;min-height:100px;">Click "Refresh Status" to load battlegroup status...</pre>
+            <pre id="bg-status-text" style="background:var(--bg);color:var(--text);padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;min-height:100px;">Click "Refresh Status" to load battlegroup status...</pre>
         </div>
     </div>
 </div>
@@ -216,7 +216,7 @@
     <div class="card-body">
         <button id="refresh-pods" style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Refresh Pods</button>
         <div id="pods-output" style="margin-top:12px;">
-            <pre id="pods-text" style="background:#1a1a2e;color:#e0d5c7;padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;">Click refresh to load pod status...</pre>
+            <pre id="pods-text" style="background:var(--bg);color:var(--text);padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;">Click refresh to load pod status...</pre>
         </div>
     </div>
 </div>
@@ -227,8 +227,8 @@
         <span id="debug-status" style="font-size:12px;color:var(--text-muted);">Loading...</span>
     </div>
     <div class="card-body" id="debug-section">
-        <div style="margin-bottom:12px;padding:12px;background:#1a1a2e;border-radius:6px;font-size:13px;line-height:1.6;color:#e0d5c7;">
-            <strong style="color:#9b59b6;">📝 Verbose Logging:</strong> Enable to log detailed information about SSH commands, API requests, database queries, and service connections.
+        <div style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:6px;font-size:13px;line-height:1.6;color:var(--text);">
+            <strong style="color:var(--primary);">📝 Verbose Logging:</strong> Enable to log detailed information about SSH commands, API requests, database queries, and service connections.
             Logs are written to <code>logs/debug.log</code>. Sanitizes sensitive data (passwords, tokens) automatically.
         </div>
         <div style="display:flex;align-items:center;gap:16px;">
@@ -248,16 +248,16 @@
     </div>
     <div class="card-body" id="audit-section">
         <div style="margin-bottom:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-            <input type="text" id="audit-search" placeholder="Filter by action..." style="padding:8px 12px;background:#1a1a2e;border:1px solid #333;border-radius:6px;color:#e0d5c7;font-size:13px;width:180px;">
-            <input type="text" id="audit-user" placeholder="Filter by user..." style="padding:8px 12px;background:#1a1a2e;border:1px solid #333;border-radius:6px;color:#e0d5c7;font-size:13px;width:140px;">
-            <select id="audit-severity" style="padding:8px 12px;background:#1a1a2e;border:1px solid #333;border-radius:6px;color:#e0d5c7;font-size:13px;">
+            <input type="text" id="audit-search" placeholder="Filter by action..." style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;width:180px;">
+            <input type="text" id="audit-user" placeholder="Filter by user..." style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;width:140px;">
+            <select id="audit-severity" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
                 <option value="">All Severities</option>
                 <option value="info">Info</option>
                 <option value="warning">Warning</option>
                 <option value="error">Error</option>
             </select>
             <button onclick="loadAuditLogs()" style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Filter</button>
-            <button onclick="refreshAuditLogs()" style="padding:8px 16px;background:#333;color:#e0d5c7;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Refresh</button>
+            <button onclick="refreshAuditLogs()" style="padding:8px 16px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Refresh</button>
         </div>
         <div style="margin-bottom:12px;display:flex;gap:16px;font-size:12px;color:var(--text-muted);">
             <span>Total: <strong id="audit-total">0</strong></span>
@@ -267,13 +267,13 @@
         </div>
         <div id="audit-logs-container" style="max-height:300px;overflow-y:auto;">
             <table style="width:100%;border-collapse:collapse;font-size:12px;">
-                <thead style="position:sticky;top:0;background:#2a2a3e;">
+                <thead style="position:sticky;top:0;background:var(--table-header);">
                     <tr style="text-align:left;color:var(--text-muted);">
-                        <th style="padding:8px;border-bottom:1px solid #333;">Time</th>
-                        <th style="padding:8px;border-bottom:1px solid #333;">Action</th>
-                        <th style="padding:8px;border-bottom:1px solid #333;">User</th>
-                        <th style="padding:8px;border-bottom:1px solid #333;">Severity</th>
-                        <th style="padding:8px;border-bottom:1px solid #333;">Details</th>
+                        <th style="padding:8px;border-bottom:1px solid var(--border);">Time</th>
+                        <th style="padding:8px;border-bottom:1px solid var(--border);">Action</th>
+                        <th style="padding:8px;border-bottom:1px solid var(--border);">User</th>
+                        <th style="padding:8px;border-bottom:1px solid var(--border);">Severity</th>
+                        <th style="padding:8px;border-bottom:1px solid var(--border);">Details</th>
                     </tr>
                 </thead>
                 <tbody id="audit-logs-body">
@@ -290,14 +290,14 @@
         <span id="fw-status-indicator" style="font-size:12px;color:var(--text-muted);">Loading...</span>
     </div>
     <div class="card-body">
-        <div style="margin-bottom:12px;padding:12px;background:#1a1a2e;border-radius:6px;font-size:13px;line-height:1.6;">
+        <div style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:6px;font-size:13px;line-height:1.6;">
             <strong style="color:#e74c3c;">Security Recommendation:</strong> The following services are exposed to the internet without authentication.
             Block them so only localhost (the dashboard via SSH tunnel) can reach them.
         </div>
         <div id="fw-ports-list" style="margin-bottom:16px;"></div>
         <button id="fw-btn-refresh" style="padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Refresh Status</button>
         <div id="fw-action-output" style="margin-top:12px;display:none;">
-            <pre id="fw-action-text" style="background:#1a1a2e;color:#e0d5c7;padding:12px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;"></pre>
+            <pre id="fw-action-text" style="background:var(--bg);color:var(--text);padding:12px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;"></pre>
         </div>
     </div>
 </div>
@@ -600,7 +600,7 @@ async function loadAuditLogs(action = '', user = '', severity = '', limit = 100,
             const details = log.details ? JSON.stringify(log.details) : '-';
             const severityColor = log.severity === 'error' ? 'color:#e74c3c;' : (log.severity === 'warning' ? 'color:#f39c12;' : 'color:#3498db;');
             const timestamp = log.timestamp ? log.timestamp.replace('T', ' ').substring(0, 19) : '-';
-            return '<tr style="border-bottom:1px solid #333;">' +
+            return '<tr style="border-bottom:1px solid var(--border);">' +
                 '<td style="padding:8px;color:var(--text-muted);">' + timestamp + '</td>' +
                 '<td style="padding:8px;font-weight:600;">' + (log.action || '-') + '</td>' +
                 '<td style="padding:8px;">' + (log.user || '-') + '</td>' +

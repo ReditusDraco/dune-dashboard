@@ -6,6 +6,7 @@ from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 from app.utils.constants import NAV_PAGES, GUILD_ROLES
 from app.utils.debug_logging import sanitize_for_log
+from app.services.player import LIKE_PC
 
 logger = logging.getLogger(__name__)
 
@@ -326,20 +327,32 @@ def register_routes(app, services, settings):
         try:
             buildings_list = db.query("""
                 SELECT a.id, a.class, a.map, a.transform::text as transform_text,
-                    COALESCE(NULLIF(ps.character_name, ''), NULLIF(ea.platform_name, ''), 'ID:' || b.owner_id::text) as owner_name,
+                    COALESCE(NULLIF(owner.character_name, ''), 'Base ' || b.id::text) as owner_name,
                     (SELECT COUNT(*)::int FROM dune.building_instances bi WHERE bi.building_id = b.id) as instance_count,
                     a.properties->>'m_bIsPowered' as is_powered,
                     a.properties->>'m_PowerLevel' as power_level,
                     a.properties->'PowerComponent'->>'m_PowerGridID' as power_grid_id
                 FROM dune.buildings b
                 JOIN dune.actors a ON b.id = a.id
-                LEFT JOIN dune.player_state ps ON b.owner_id = ps.player_pawn_id
-                LEFT JOIN dune.encrypted_accounts ea ON ea.id = (
-                    SELECT ps2.account_id FROM dune.player_state ps2 WHERE ps2.player_pawn_id = b.owner_id LIMIT 1
-                )
+                LEFT JOIN LATERAL (
+                    SELECT DISTINCT afe_totem.actor_id as totem_actor_id
+                    FROM dune.building_instances bi
+                    JOIN dune.actor_fgl_entities afe_totem ON afe_totem.entity_id = bi.owner_entity_id
+                    WHERE bi.building_id = b.id
+                    LIMIT 1
+                ) totem ON true
+                LEFT JOIN LATERAL (
+                    SELECT ps.character_name
+                    FROM dune.actors pawn
+                    JOIN dune.player_state ps ON pawn.id = ps.player_pawn_id
+                    WHERE pawn.id BETWEEN totem.totem_actor_id - 6 AND totem.totem_actor_id - 1
+                      AND pawn.class LIKE %s
+                    ORDER BY totem.totem_actor_id - pawn.id
+                    LIMIT 1
+                ) owner ON true
                 ORDER BY owner_name
                 LIMIT 200
-            """) or []
+            """, [LIKE_PC]) or []
             return render_template('buildings.html', buildings=buildings_list)
         except Exception as e:
             logger.exception("Error in buildings route")
@@ -552,7 +565,7 @@ def register_routes(app, services, settings):
                 name: cfg for name, cfg in map_config.items()
                 if isinstance(cfg, dict) and cfg.get('image') and cfg.get('bounds')
             }
-            default_map = map_config.get('default_map', 'DeepDesert')
+            default_map = map_config.get('default_map', 'HaggaBasin')
 
             return map_config, configured_maps, default_map
 
@@ -563,6 +576,7 @@ def register_routes(app, services, settings):
             map_options = []
             for key, cfg in configured_maps.items():
                 image_size = cfg.get('image_size', {})
+                bounds = cfg.get('bounds', {})
                 map_options.append({
                     'key': key,
                     'label': cfg.get('label') or key,
@@ -570,6 +584,7 @@ def register_routes(app, services, settings):
                     'width': image_size.get('width', 1000),
                     'height': image_size.get('height', 1000),
                     'default_zoom': cfg.get('default_zoom', 0.5),
+                    'bounds': bounds,
                     'counts': {
                         'players': sum(1 for p in player_locations if p.get('map') == key and p.get('in_bounds')),
                         'vehicles': sum(1 for v in vehicle_locations if v.get('map') == key and v.get('in_bounds')),
@@ -597,27 +612,43 @@ def register_routes(app, services, settings):
 
             # Get vehicles with coordinates for configured map assets
             vehicles = db.query("""
-                SELECT v.id, a.map, a.transform, a.class
+                SELECT DISTINCT ON (v.id)
+                    v.id, a.map, a.transform, a.class,
+                    COALESCE(NULLIF(ps.character_name, ''), 'Vehicle ' || v.id::text) as owner_name
                 FROM dune.vehicles v
                 JOIN dune.actors a ON v.id = a.id
+                LEFT JOIN dune.permission_actor_rank par ON par.permission_actor_id = v.id
+                LEFT JOIN dune.player_state ps ON par.player_id = ps.player_controller_id
                 WHERE a.transform IS NOT NULL AND a.map = ANY(%s)
-                ORDER BY a.map, a.class
+                ORDER BY v.id, par.rank ASC
             """, [selected_map_keys]) or []
 
             # Get bases/buildings with coordinates for configured map assets
             buildings = db.query("""
                 SELECT b.id, a.map, a.transform, a.class,
-                    COALESCE(NULLIF(ps.character_name, ''), NULLIF(ea.platform_name, ''), 'Base ' || b.id::text) as owner_name
+                    COALESCE(NULLIF(owner.character_name, ''), 'Base ' || b.id::text) as owner_name
                 FROM dune.buildings b
                 JOIN dune.actors a ON b.id = a.id
-                LEFT JOIN dune.player_state ps ON b.owner_id = ps.player_pawn_id
-                LEFT JOIN dune.encrypted_accounts ea ON ea.id = (
-                    SELECT ps2.account_id FROM dune.player_state ps2 WHERE ps2.player_pawn_id = b.owner_id LIMIT 1
-                )
+                LEFT JOIN LATERAL (
+                    SELECT DISTINCT afe_totem.actor_id as totem_actor_id
+                    FROM dune.building_instances bi
+                    JOIN dune.actor_fgl_entities afe_totem ON afe_totem.entity_id = bi.owner_entity_id
+                    WHERE bi.building_id = b.id
+                    LIMIT 1
+                ) totem ON true
+                LEFT JOIN LATERAL (
+                    SELECT ps.character_name
+                    FROM dune.actors pawn
+                    JOIN dune.player_state ps ON pawn.id = ps.player_pawn_id
+                    WHERE pawn.id BETWEEN totem.totem_actor_id - 6 AND totem.totem_actor_id - 1
+                      AND pawn.class LIKE %s
+                    ORDER BY totem.totem_actor_id - pawn.id
+                    LIMIT 1
+                ) owner ON true
                 WHERE a.transform IS NOT NULL AND a.map = ANY(%s)
                 ORDER BY a.map
                 LIMIT 500
-            """, [selected_map_keys]) or []
+            """, [LIKE_PC, selected_map_keys]) or []
 
             # Parse coordinates from transform field
             def parse_transform(t):
@@ -659,7 +690,7 @@ def register_routes(app, services, settings):
                 if coords:
                     vehicle_locations.append({
                         'id': v['id'],
-                        'name': v.get('name', 'Unknown'),
+                        'name': v.get('owner_name') or v.get('class', '').split('/')[-1] if v.get('class') else f'Vehicle {v["id"]}',
                         'map': v['map'],
                         'class': v.get('class', '').split('/')[-1] if v.get('class') else '',
                         'x': coords['x'],

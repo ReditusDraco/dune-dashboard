@@ -224,7 +224,8 @@ table {
 }
 
 thead th {
-    background: #f8f6f2;
+    background: var(--table-header);
+    color: var(--text);
     padding: 10px 14px;
     text-align: left;
     font-weight: 600;

@@ -2069,6 +2069,10 @@ function Start-Dashboard {
     $Namespace = $settings.kubernetes.namespace
     $DashboardPort = [int]$settings.dashboard.port
     $DirectorPort = [int]$settings.director.port
+    $RmqAdminPort = [int]($settings.rabbitmq | ForEach-Object { $_.admin_port })
+    if (-not $RmqAdminPort) { $RmqAdminPort = 30325 }
+    $RmqGamePort = [int]($settings.rabbitmq | ForEach-Object { $_.game_port })
+    if (-not $RmqGamePort) { $RmqGamePort = 32716 }
 
     # Register sensitive values for log sanitization
     Register-SensitiveValue -Key "ServerIP" -Value $ServerHost
@@ -2173,11 +2177,17 @@ function Start-Dashboard {
     Write-Log -Message "Namespace: $Namespace" -Category "k8s"
 
     # Kill existing SSH tunnels on the DB/Director ports
-    Write-Log -Message "Cleaning up existing SSH tunnels on ports $LocalPort and $DirectorPort" -Category "ssh"
+    Write-Log -Message "Cleaning up existing SSH tunnels on ports $LocalPort, $DirectorPort, $RmqAdminPort, $RmqGamePort" -Category "ssh"
     Get-NetTCPConnection -LocalPort $LocalPort -ErrorAction SilentlyContinue | ForEach-Object {
         Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
     }
     Get-NetTCPConnection -LocalPort $DirectorPort -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    Get-NetTCPConnection -LocalPort $RmqAdminPort -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    Get-NetTCPConnection -LocalPort $RmqGamePort -ErrorAction SilentlyContinue | ForEach-Object {
         Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
     }
     Start-Sleep 1
@@ -2193,6 +2203,8 @@ function Start-Dashboard {
         "-o", "ServerAliveCountMax=3",
         "-L", "${LocalPort}:localhost:${LocalPort}",
         "-L", "${DirectorPort}:localhost:${DirectorPort}",
+        "-L", "${RmqAdminPort}:localhost:${RmqAdminPort}",
+        "-L", "${RmqGamePort}:localhost:${RmqGamePort}",
         "-N", "${SSHUser}@${ServerHost}"
     )
     $sshTunnel = Start-Process ssh -ArgumentList $sshArgs -PassThru -WindowStyle Hidden
@@ -2237,7 +2249,7 @@ function Start-Dashboard {
         Stop-Process -Id $sshTunnel.Id -Force -ErrorAction SilentlyContinue
         return
     }
-    Write-Host "[OK]   SSH tunnel up on localhost:$LocalPort (DB), localhost:$DirectorPort (Director)" -ForegroundColor Green
+    Write-Host "[OK]   SSH tunnel up on localhost:$LocalPort (DB), localhost:$DirectorPort (Director), localhost:$RmqAdminPort (RMQ Admin), localhost:$RmqGamePort (RMQ Game)" -ForegroundColor Green
     Write-Log -Message "SSH tunnel connected successfully" -Category "ssh"
 
     # [2/4] DB Port-Forward
@@ -2449,7 +2461,7 @@ function Start-Dashboard {
     Write-Host ""
     Write-Host "Stopping tunnels..." -ForegroundColor Cyan
     Stop-Process -Id $sshTunnel.Id -Force -ErrorAction SilentlyContinue
-    $pkillCmd = 'ssh -i "' + $SSHKey + '" -o StrictHostKeyChecking=accept-new ' + $SSHUser + '@' + $ServerHost + ' "sudo fuser -k 15433/tcp 32479/tcp 2>/dev/null"'
+    $pkillCmd = 'ssh -i "' + $SSHKey + '" -o StrictHostKeyChecking=accept-new ' + $SSHUser + '@' + $ServerHost + ' "sudo fuser -k 15433/tcp 32479/tcp 30325/tcp 32716/tcp 2>/dev/null"'
     cmd /c $pkillCmd 2>$null
 }
 
@@ -2600,6 +2612,10 @@ function Start-NewDashboard {
     $Namespace = $settings.kubernetes.namespace
     $DashboardPort = [int]$settings.dashboard.port
     $DirectorPort = [int]$settings.director.port
+    $RmqAdminPort = [int]($settings.rabbitmq | ForEach-Object { $_.admin_port })
+    if (-not $RmqAdminPort) { $RmqAdminPort = 30325 }
+    $RmqGamePort = [int]($settings.rabbitmq | ForEach-Object { $_.game_port })
+    if (-not $RmqGamePort) { $RmqGamePort = 32716 }
 
     Register-SensitiveValue -Key "ServerIP" -Value $ServerHost
     Register-SensitiveValue -Key "Namespace" -Value $Namespace
@@ -2678,6 +2694,21 @@ function Start-NewDashboard {
     Write-Host ""
 
     # ── SSH Tunnel ────────────────────────────────────────────────────────
+    Write-Log -Message "Cleaning up existing SSH tunnels on ports $LocalPort, $DirectorPort, $RmqAdminPort, $RmqGamePort" -Category "ssh"
+    Get-NetTCPConnection -LocalPort $LocalPort -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    Get-NetTCPConnection -LocalPort $DirectorPort -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    Get-NetTCPConnection -LocalPort $RmqAdminPort -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    Get-NetTCPConnection -LocalPort $RmqGamePort -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep 1
+
     Write-Host "[1/5] Starting SSH tunnel (localhost:$LocalPort -> VM)..." -ForegroundColor Yellow
 
     Get-NetTCPConnection -LocalPort $LocalPort -ErrorAction SilentlyContinue | ForEach-Object {
@@ -2695,6 +2726,8 @@ function Start-NewDashboard {
         "-o", "ServerAliveCountMax=3",
         "-L", "${LocalPort}:localhost:${LocalPort}",
         "-L", "${DirectorPort}:localhost:${DirectorPort}",
+        "-L", "${RmqAdminPort}:localhost:${RmqAdminPort}",
+        "-L", "${RmqGamePort}:localhost:${RmqGamePort}",
         "-N", "${SSHUser}@${ServerHost}"
     )
     $sshTunnel = Start-Process ssh -ArgumentList $sshArgs -PassThru -WindowStyle Hidden
@@ -2720,7 +2753,7 @@ function Start-NewDashboard {
         Stop-Process -Id $sshTunnel.Id -Force -ErrorAction SilentlyContinue
         return
     }
-    Write-Host "[OK]   SSH tunnel up on localhost:$LocalPort" -ForegroundColor Green
+    Write-Host "[OK]   SSH tunnel up on localhost:$LocalPort (DB), localhost:$DirectorPort (Director), localhost:$RmqAdminPort (RMQ Admin), localhost:$RmqGamePort (RMQ Game)" -ForegroundColor Green
 
     # ── DB Port-Forward ───────────────────────────────────────────────────
     Write-Host "[2/5] Starting DB port-forward on VM..." -ForegroundColor Yellow
@@ -2739,7 +2772,7 @@ function Start-NewDashboard {
     }
 
     $RemotePort = 15432
-    ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo fuser -k ${LocalPort}/tcp ${DirectorPort}/tcp 2>/dev/null; sleep 1" 2>$null
+    ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo fuser -k ${LocalPort}/tcp ${DirectorPort}/tcp ${RmqAdminPort}/tcp ${RmqGamePort}/tcp 2>/dev/null; sleep 1" 2>$null
     $pfCmd = "nohup sudo kubectl port-forward -n $Namespace svc/$DBService $LocalPort`:$RemotePort > /tmp/pf.log 2>`&1 `"&`""
     ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "${SSHUser}@${ServerHost}" $pfCmd 2>$null
     Start-Sleep -Seconds 2
@@ -2883,7 +2916,7 @@ function Start-NewDashboard {
     Stop-Process -Id $frontendProcess.Id -Force -ErrorAction SilentlyContinue
     Stop-Process -Id $backendProcess.Id -Force -ErrorAction SilentlyContinue
     Stop-Process -Id $sshTunnel.Id -Force -ErrorAction SilentlyContinue
-    $pkillCmd = 'ssh -i "' + $SSHKey + '" -o StrictHostKeyChecking=accept-new ' + $SSHUser + '@' + $ServerHost + ' "sudo fuser -k ' + $LocalPort + '/tcp ' + $DirectorPort + '/tcp 2>/dev/null"'
+    $pkillCmd = 'ssh -i "' + $SSHKey + '" -o StrictHostKeyChecking=accept-new ' + $SSHUser + '@' + $ServerHost + ' "sudo fuser -k ' + $LocalPort + '/tcp ' + $DirectorPort + '/tcp ' + $RmqAdminPort + '/tcp ' + $RmqGamePort + '/tcp 2>/dev/null"'
     cmd /c $pkillCmd 2>$null
     Write-Host "  All services stopped." -ForegroundColor Green
     Write-Host ""

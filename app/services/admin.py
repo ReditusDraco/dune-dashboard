@@ -798,17 +798,22 @@ class AdminService:
         try:
             import base64
             import json as _json
-            title_json = _json.dumps(title)[1:-1]
-            message_json = _json.dumps(message)[1:-1]
+            import os
+
+            token = os.environ.get('DUNE_BROADCAST_TOKEN',
+                getattr(self, '_broadcast_token', None) or 'Nu6VmPWUMvdPMeB7qErr')
+            title_b64 = base64.b64encode(title.encode('utf-8')).decode()
+            message_b64 = base64.b64encode(message.encode('utf-8')).decode()
 
             erl = (
-                f'Title = unicode:characters_to_binary(<<"{title_json}">>, utf8), '
-                f'Body = unicode:characters_to_binary(<<"{message_json}">>, utf8), '
+                f'Title = base64:decode(<<"{title_b64}">>), '
+                f'Body = base64:decode(<<"{message_b64}">>), '
                 f'Duration = {duration}, '
+                f'Token = <<"{token}">>, '
                 'EntryEn = #{<<"Key">> => <<"en">>, <<"Title">> => Title, <<"Body">> => Body}, '
                 'EntryEnUs = #{<<"Key">> => <<"en-US">>, <<"Title">> => Title, <<"Body">> => Body}, '
                 'Inner = iolist_to_binary(rabbit_json:encode(#{<<"ServerCommand">> => <<"ServiceBroadcast">>, <<"BroadcastType">> => <<"Generic">>, <<"BroadcastPayload">> => #{<<"BroadcastDuration">> => Duration, <<"LocalizedText">> => [EntryEn, EntryEnUs]}})), '
-                'Outer = iolist_to_binary(rabbit_json:encode(#{<<"Version">> => 2, <<"AuthToken">> => <<"Nu6VmPWUMvdPMeB7qErr">>, <<"MessageContent">> => Inner})), '
+                'Outer = iolist_to_binary(rabbit_json:encode(#{<<"Version">> => 2, <<"AuthToken">> => Token, <<"MessageContent">> => Inner})), '
                 'XName = rabbit_misc:r(<<"/">>, exchange, <<"heartbeats">>), '
                 'X = rabbit_exchange:lookup_or_die(XName), '
                 'MsgId = list_to_binary("manual-service-broadcast-" ++ integer_to_list(erlang:system_time(millisecond))), '
