@@ -185,6 +185,7 @@
 <script>
 let bgData = null;
 let charTransferData = null;
+let scaleData = {};
 
 async function loadDirector() {
     const banner = document.getElementById('loading-banner');
@@ -214,6 +215,7 @@ async function loadDirector() {
         if (ctResp.ok) {
             charTransferData = await ctResp.json();
         }
+        await loadScaleData(bgData);
         if (document.getElementById('maps-container').children.length === 0) {
             renderStats();
             renderMaps();
@@ -237,6 +239,21 @@ document.getElementById('btn-retry-director')?.addEventListener('click', () => {
     document.getElementById('loading-banner').style.display = 'block';
     loadDirector();
 });
+
+async function loadScaleData(bg) {
+    const maps = [];
+    const addMaps = (obj) => { if (obj) Object.keys(obj).forEach(k => maps.push(k)); };
+    addMaps(bg.dimensionMaps);
+    addMaps(bg.instancedMaps);
+    addMaps(bg.singleServerMaps);
+    const results = await Promise.allSettled(
+        maps.map(m => fetch(`/api/director/server_set_scale/${encodeURIComponent(m)}`).then(r => r.json()))
+    );
+    maps.forEach((m, i) => {
+        const r = results[i];
+        scaleData[m] = (r.status === 'fulfilled') ? r.value : { replicas: 0, partitions: [] };
+    });
+}
 
 function updateStats() {
     const t = calcTotals();
@@ -300,6 +317,13 @@ function updateMapCards() {
             if (playersSpan) playersSpan.textContent = s.numPlayersInGame || 0;
             const nameSpan = summaryParts[i].querySelector('.name');
             if (nameSpan) nameSpan.title = s.partition?.label || s.label || '';
+        }
+
+        const repInput = document.getElementById(`cfg-${mapName}-replicas`);
+        if (repInput) {
+            const sc = scaleData[mapName] || { replicas: 1, partitions: [] };
+            repInput.value = sc.replicas;
+            repInput.max = sc.partitions.length || 1;
         }
     }
 }
@@ -381,7 +405,7 @@ function renderMaps() {
 }
 
 function buildMapCard(mapName, mapData, type) {
-    const cfg = mapData.cfg || {};
+    const cfg = { ...(mapData.cfg || {}), ...(mapData.webOverrideCfg || {}) };
     let serversHtml = '';
     let configHtml = '';
     let summaryHtml = '';
@@ -505,6 +529,7 @@ function buildDimensionConfig(mapName, cfg) {
     const autoScale = cfg.enableAutomaticInstanceScaling ?? false;
     const throttle = cfg.instanceScalingThrottlingSeconds ?? 30;
     const phCap = cfg.playerHardCap ?? '';
+    const sc = scaleData[mapName] || { replicas: 1, partitions: [] };
     return `
         <div class="config-row">
             <div class="config-field">
@@ -526,6 +551,10 @@ function buildDimensionConfig(mapName, cfg) {
             <div class="config-field">
                 <label>Scale Throttle (s)</label>
                 <input type="number" id="cfg-${mapName}-throttle" value="${throttle}" min="1">
+            </div>
+            <div class="config-field">
+                <label>Replicas</label>
+                <input type="number" id="cfg-${mapName}-replicas" value="${sc.replicas}" min="0" max="${sc.partitions.length || 1}">
             </div>
             <button class="btn-apply-map" onclick="applyConfig('${mapName}','dimension', this)">Apply</button>
             <button class="btn-clear-map" onclick="clearConfig('${mapName}', this)">Clear</button>
@@ -539,6 +568,7 @@ function buildInstancedConfig(mapName, cfg) {
     const autoScale = cfg.enableAutomaticInstanceScaling ?? false;
     const throttle = cfg.instanceScalingThrottlingSeconds ?? 30;
     const phCap = cfg.playerHardCap ?? '';
+    const sc = scaleData[mapName] || { replicas: 1, partitions: [] };
     return `
         <div class="config-row">
             <div class="config-field">
@@ -560,6 +590,10 @@ function buildInstancedConfig(mapName, cfg) {
             <div class="config-field">
                 <label>Scale Throttle (s)</label>
                 <input type="number" id="cfg-${mapName}-throttle" value="${throttle}" min="1">
+            </div>
+            <div class="config-field">
+                <label>Replicas</label>
+                <input type="number" id="cfg-${mapName}-replicas" value="${sc.replicas}" min="0" max="${sc.partitions.length || 1}">
             </div>
             <button class="btn-apply-map" onclick="applyConfig('${mapName}','instanced', this)">Apply</button>
             <button class="btn-clear-map" onclick="clearConfig('${mapName}', this)">Clear</button>
@@ -625,23 +659,45 @@ async function applyConfig(mapName, type, btn) {
     }
 
     try {
-        const resp = await fetch('/api/director/update_config', {
+        const resp = await csrfFetch('/api/director/update_config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(config)
         });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+            let errMsg = `HTTP ${resp.status}`;
+            try { const errData = await resp.json(); if (errData?.error) errMsg = errData.error; } catch(_) {}
+            throw new Error(errMsg);
+        }
         btn.classList.remove('applying');
         btn.classList.add('applied');
         btn.textContent = 'Applied!';
-        setTimeout(() => {
-            btn.classList.remove('applied');
-            btn.textContent = 'Apply';
-            btn.disabled = false;
-        }, 2000);
+        btn.disabled = false;
+
+        const replicasInput = document.getElementById(`cfg-${mapName}-replicas`);
+        if (replicasInput && type !== 'single') {
+            const sc = scaleData[mapName] || { partitions: [], replicas: 1 };
+            const newReplicas = parseInt(replicasInput.value) || 1;
+            if (newReplicas !== sc.replicas) {
+                const partInput = document.getElementById(`cfg-${mapName}-partitions`);
+                let partitions = sc.partitions;
+                if (partInput) {
+                    try { partitions = JSON.parse('[' + partInput.value + ']'); } catch(_){}
+                }
+                csrfFetch(`/api/director/server_set_scale/${encodeURIComponent(mapName)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ replicas: newReplicas, partitions: partitions })
+                }).catch(() => {});
+            }
+        }
+
+        setTimeout(() => { btn.textContent = 'Apply'; btn.classList.remove('applied'); loadDirector(); }, 1200);
     } catch (e) {
         btn.classList.remove('applying');
         btn.textContent = 'Failed';
+        const errDiv = document.getElementById('error-banner');
+        if (errDiv) { errDiv.textContent = 'Config apply error: ' + e.message; errDiv.style.display = 'block'; }
         setTimeout(() => { btn.textContent = 'Apply'; btn.disabled = false; }, 2000);
     }
 }
@@ -650,15 +706,23 @@ async function clearConfig(mapName, btn) {
     btn.disabled = true;
     btn.textContent = 'Clearing...';
     try {
-        const resp = await fetch('/api/director/clear_config', {
+        const resp = await csrfFetch('/api/director/clear_config', {
             method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
             body: mapName
         });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+            let errMsg = `HTTP ${resp.status}`;
+            try { const errData = await resp.json(); if (errData?.error) errMsg = errData.error; } catch(_) {}
+            throw new Error(errMsg);
+        }
         btn.textContent = 'Cleared!';
-        setTimeout(() => { loadDirector(); }, 1500);
+        btn.disabled = false;
+        setTimeout(() => { btn.textContent = 'Clear'; loadDirector(); }, 1200);
     } catch (e) {
         btn.textContent = 'Failed';
+        const errDiv = document.getElementById('error-banner');
+        if (errDiv) { errDiv.textContent = 'Config clear error: ' + e.message; errDiv.style.display = 'block'; }
         setTimeout(() => { btn.textContent = 'Clear'; btn.disabled = false; }, 2000);
     }
 }
@@ -671,17 +735,24 @@ document.getElementById('btn-apply-world')?.addEventListener('click', async func
         ForceIsWorldClosingSoon: document.getElementById('force-world-closing').checked
     };
     try {
-        const resp = await fetch('/api/director/character_transfer', {
+        const resp = await csrfFetch('/api/director/character_transfer', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(config)
         });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+            let errMsg = `HTTP ${resp.status}`;
+            try { const errData = await resp.json(); if (errData?.error) errMsg = errData.error; } catch(_) {}
+            throw new Error(errMsg);
+        }
         document.getElementById('world-status-msg').textContent = 'World status applied and persisted.';
         this.textContent = 'Applied!';
-        setTimeout(() => { this.textContent = 'Apply'; this.disabled = false; }, 2000);
+        this.disabled = false;
+        setTimeout(() => { this.textContent = 'Apply'; }, 2000);
     } catch (e) {
         document.getElementById('world-status-msg').textContent = 'Error: ' + e.message;
+        const errDiv = document.getElementById('error-banner');
+        if (errDiv) { errDiv.textContent = 'World status error: ' + e.message; errDiv.style.display = 'block'; }
         this.textContent = 'Apply'; this.disabled = false;
     }
 });
@@ -691,12 +762,19 @@ document.getElementById('btn-clear-world')?.addEventListener('click', async func
     this.textContent = 'Clearing...';
     try {
         const resp = await csrfFetch('/api/director/character_transfer_clear', { method: 'POST' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+            let errMsg = `HTTP ${resp.status}`;
+            try { const errData = await resp.json(); if (errData?.error) errMsg = errData.error; } catch(_) {}
+            throw new Error(errMsg);
+        }
         document.getElementById('world-status-msg').textContent = 'World status overrides cleared.';
         this.textContent = 'Cleared!';
-        setTimeout(() => { loadDirector(); }, 1500);
+        this.disabled = false;
+        setTimeout(() => { this.textContent = 'Clear'; loadDirector(); }, 1200);
     } catch (e) {
         document.getElementById('world-status-msg').textContent = 'Error: ' + e.message;
+        const errDiv = document.getElementById('error-banner');
+        if (errDiv) { errDiv.textContent = 'World status error: ' + e.message; errDiv.style.display = 'block'; }
         this.textContent = 'Clear'; this.disabled = false;
     }
 });
@@ -716,12 +794,18 @@ document.getElementById('btn-apply-transfer')?.addEventListener('click', async f
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(config)
         });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+            let errMsg = `HTTP ${resp.status}`;
+            try { const errData = await resp.json(); if (errData?.error) errMsg = errData.error; } catch(_) {}
+            throw new Error(errMsg);
+        }
         document.getElementById('transfer-status-msg').textContent = 'Transfer settings applied and persisted.';
         this.textContent = 'Applied!';
         setTimeout(() => { this.textContent = 'Apply'; this.disabled = false; }, 2000);
     } catch (e) {
         document.getElementById('transfer-status-msg').textContent = 'Error: ' + e.message;
+        const errDiv = document.getElementById('error-banner');
+        if (errDiv) { errDiv.textContent = 'Transfer error: ' + e.message; errDiv.style.display = 'block'; }
         this.textContent = 'Apply'; this.disabled = false;
     }
 });
@@ -731,12 +815,19 @@ document.getElementById('btn-clear-transfer')?.addEventListener('click', async f
     this.textContent = 'Clearing...';
     try {
         const resp = await csrfFetch('/api/director/character_transfer_clear', { method: 'POST' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+            let errMsg = `HTTP ${resp.status}`;
+            try { const errData = await resp.json(); if (errData?.error) errMsg = errData.error; } catch(_) {}
+            throw new Error(errMsg);
+        }
         document.getElementById('transfer-status-msg').textContent = 'Transfer settings cleared.';
         this.textContent = 'Cleared!';
-        setTimeout(() => { loadDirector(); }, 1500);
+        this.disabled = false;
+        setTimeout(() => { this.textContent = 'Clear'; loadDirector(); }, 1200);
     } catch (e) {
         document.getElementById('transfer-status-msg').textContent = 'Error: ' + e.message;
+        const errDiv = document.getElementById('error-banner');
+        if (errDiv) { errDiv.textContent = 'Transfer error: ' + e.message; errDiv.style.display = 'block'; }
         this.textContent = 'Clear'; this.disabled = false;
     }
 });

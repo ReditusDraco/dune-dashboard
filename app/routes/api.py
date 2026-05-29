@@ -922,7 +922,8 @@ def register_api_routes(app, services, settings):
             if map_name:
                 kv = director_svc.extract_server_config_kv(config)
                 if kv:
-                    director_svc.update_ini_section(map_name, kv)
+                    if not director_svc.update_ini_section(map_name, kv):
+                        logger.warning("ConfigMap update failed for map %s (director API call succeeded)", map_name)
 
             return result, 200, {'Content-Type': 'application/json'}
         except Exception as e:
@@ -990,6 +991,41 @@ def register_api_routes(app, services, settings):
         except Exception as e:
             if 'refused' in str(e).lower() or 'closed' in str(e).lower() or 'aborted' in str(e).lower():
                 return jsonify({'success': False, 'error': 'Director unavailable. The BGD service is not responding.'}), 503
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/director/server_set_scale/<map_name>')
+    @auth_req
+    def director_server_set_scale_get(map_name):
+        try:
+            if not director_svc:
+                return jsonify({'success': False, 'error': 'Director service not available'}), 503
+            scale = director_svc.get_server_set_scale(map_name)
+            if scale is None:
+                return jsonify({'replicas': 0, 'partitions': []})
+            spec = scale.get('spec', {})
+            return jsonify({
+                'replicas': spec.get('replicas', 0),
+                'partitions': [p for p in spec.get('partitions', []) if p is not None],
+            })
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/director/server_set_scale/<map_name>', methods=['POST'])
+    @auth_req
+    def director_server_set_scale_patch(map_name):
+        try:
+            if not director_svc:
+                return jsonify({'success': False, 'error': 'Director service not available'}), 503
+            config = request.get_json()
+            replicas = int(config.get('replicas', 1))
+            partitions_raw = config.get('partitions', [])
+            partitions = [int(p) for p in partitions_raw if p is not None]
+            if replicas > len(partitions):
+                return jsonify({'success': False, 'error': 'replicas cannot exceed partition count'}), 400
+            if not director_svc.patch_server_set_scale(map_name, replicas, partitions):
+                return jsonify({'success': False, 'error': 'Failed to patch ServerSetScale'}), 500
+            return jsonify({'success': True})
+        except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
 
     # Update management

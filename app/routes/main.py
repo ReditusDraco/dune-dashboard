@@ -426,7 +426,7 @@ def register_routes(app, services, settings):
     def server_status():
         logger.debug(f"Page access: /server by user={current_user.id}")
         try:
-            active_servers = db.query("""
+            active_servers_raw = db.query("""
                 SELECT server_id, map
                 FROM dune.world_partition
                 WHERE server_id IS NOT NULL
@@ -447,6 +447,34 @@ def register_routes(app, services, settings):
 
             deployments = k8s.get_deployments()
             node_metrics = k8s.get_node_metrics()
+
+            active_servers = []
+            for s in active_servers_raw:
+                sid = (s.get('server_id') or '').lower().replace('_', '-')
+                s['deployment'] = ''
+                mp = (s.get('map') or '').lower().replace('_', '-')
+                for d in deployments:
+                    short = d.replace('deployment.apps/', '')
+                    if sid and sid in short.lower():
+                        s['deployment'] = d
+                        break
+                    if mp and mp in short.lower():
+                        s['deployment'] = d
+                        break
+                if not s['deployment']:
+                    mid = '-sg-' + sid
+                    for d in deployments:
+                        short = d.replace('deployment.apps/', '')
+                        if mid in short.lower():
+                            s['deployment'] = d
+                            break
+                if not s['deployment'] and mp:
+                    for d in deployments:
+                        short = d.replace('deployment.apps/', '')
+                        if mp in short.lower() and 'pod' in short.lower():
+                            s['deployment'] = d
+                            break
+                active_servers.append(s)
 
             for p in partitions:
                 sid = (p.get('server_id') or '').lower().replace('_', '-')
@@ -482,7 +510,7 @@ def register_routes(app, services, settings):
                 online_players=online_players, partitions=partitions,
                 overmap_count=overmap_count.get('c') if overmap_count else 0,
                 online_count=online_count.get('c') if online_count else 0,
-                deployments=deployments, deploys_ok=True, ssh_error='',
+                deployments=deployments, deploys_ok=len(deployments) > 0, ssh_error='',
                 node_metrics=node_metrics)
         except Exception as e:
             logger.exception("Error in server_status route")

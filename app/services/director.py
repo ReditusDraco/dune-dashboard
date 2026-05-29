@@ -27,7 +27,13 @@ class DirectorService:
         self.k8s = k8s_service
         self.ssh = ssh_service
         self.namespace = namespace
-        self.cm_name = f"{namespace}-bgd-conf-cm"
+        resource_prefix = namespace
+        for prefix in ['funcom-seabass-']:
+            if resource_prefix.startswith(prefix):
+                resource_prefix = resource_prefix[len(prefix):]
+                break
+        self.resource_prefix = resource_prefix
+        self.cm_name = f"{resource_prefix}-bgd-conf-cm"
 
     def _request(self, path: str, method: str = 'GET', data: Any = None,
                  timeout: int = 15, raw_data: bool = False) -> str:
@@ -141,8 +147,9 @@ class DirectorService:
         Returns:
             True if the update succeeded, False otherwise.
         """
-        cm_out, _, cm_rc = self.k8s.run(f'get configmap {self.cm_name} -o json')
+        cm_out, cm_err, cm_rc = self.k8s.run(f'get configmap {self.cm_name} -o json')
         if cm_rc != 0 or not cm_out:
+            logger.warning("update_ini_section: could not get ConfigMap %s: %s", self.cm_name, cm_err)
             return False
 
         cm = json.loads(cm_out)
@@ -164,6 +171,39 @@ class DirectorService:
         buf = io.StringIO()
         cfg.write(buf)
         return self.patch_configmap(buf.getvalue())
+
+    # ── ServerSetScale management ────────────────────────────────────
+
+    def _map_to_scale_name(self, map_name: str) -> str:
+        safe = map_name.lower().replace('_', '-')
+        return f"{self.resource_prefix}-{safe}"
+
+    def get_server_set_scale(self, map_name: str) -> Optional[Dict]:
+        name = self._map_to_scale_name(map_name)
+        cm_out, cm_err, cm_rc = self.k8s.run(
+            f'get serversetscale {name} -o json')
+        if cm_rc != 0 or not cm_out:
+            return None
+        return json.loads(cm_out)
+
+    def patch_server_set_scale(self, map_name: str, replicas: int,
+                                partitions: list) -> bool:
+        name = self._map_to_scale_name(map_name)
+        patch = json.dumps({
+            'spec': {
+                'partitions': partitions,
+                'replicas': replicas,
+            }
+        })
+        patch_b64 = base64.b64encode(patch.encode()).decode()
+        cmd = (f'echo {patch_b64} | base64 -d | '
+               f'sudo kubectl patch serversetscale {name} -n {self.namespace} '
+               f'--type merge --patch-file /dev/stdin')
+        out, err, rc = self.ssh.run(cmd, timeout=15)
+        if rc != 0:
+            logger.warning("ServerSetScale patch failed for %s: %s", map_name, err)
+            return False
+        return True
 
     # ── Helper: extract config values for INI update ─────────────────
 

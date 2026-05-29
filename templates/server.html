@@ -85,14 +85,28 @@
         <div class="card-header">Active Server IDs</div>
         <div class="card-body">
             {% if active_servers %}
-            <ul style="list-style:none;">
-                {% for s in active_servers %}
-                <li style="padding:4px 0;font-family:monospace;font-size:12px;">
-                    <span style="font-weight:600;">{{ s.server_id }}</span>
-                    {% if s.map %} — <span style="color:var(--primary);">{{ s.map }}</span>{% endif %}
-                </li>
-                {% endfor %}
-            </ul>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Server ID</th><th>Map</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        {% for s in active_servers %}
+                        <tr>
+                            <td style="font-family:monospace;font-size:12px;font-weight:600;">{{ s.server_id }}</td>
+                            <td style="color:var(--primary);">{{ s.map or '' }}</td>
+                            <td>
+                                {% if s.deployment %}
+                                <button class="partition-btn" data-deploy="{{ s.deployment }}" data-map="{{ s.server_id }}" title="Restart this server's deployment. Players on this map will disconnect briefly." style="padding:4px 12px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Restart</button>
+                                {% elif not deployments %}
+                                <span style="color:var(--text-muted);font-size:11px;">K8s offline</span>
+                                {% else %}
+                                <span style="color:var(--text-muted);font-size:11px;">No deploy</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
             {% else %}
             <div class="empty">No active servers</div>
             {% endif %}
@@ -116,7 +130,7 @@
                     <td>{{ p.dimension_index }}</td>
                     <td>{{ 'Yes' if p.blocked else 'No' }}</td>
                     <td>{{ p.label or '' }}</td>
-                    <td>{% if p.deployment %}<button class="partition-btn" data-deploy="{{ p.deployment }}" data-map="{{ p.map }}" style="padding:4px 12px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Restart</button>{% else %}&mdash;{% endif %}</td>
+                    <td>{% if p.deployment %}<div style="display:flex;gap:4px;flex-wrap:wrap;"><button class="partition-btn" data-deploy="{{ p.deployment }}" data-map="{{ p.map }}" title="Restart this partition's deployment. Players on this map will disconnect." style="padding:4px 10px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Restart</button><button class="partition-status-btn" data-deploy="{{ p.deployment }}" data-map="{{ p.map }}" title="Show rollout status for this partition's deployment." style="padding:4px 10px;background:#3498db;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Status</button></div>{% elif not deployments %}<span style="color:var(--text-muted);font-size:11px;">K8s offline</span>{% else %}<span style="color:var(--text-muted);font-size:11px;">No deploy</span>{% endif %}</td>
                 </tr>
                 {% else %}
                 <tr><td colspan="7" class="empty">No partitions found</td></tr>
@@ -137,6 +151,13 @@
     </div>
     <div class="card-body">
         {% if deploys_ok %}
+        <div style="margin-bottom:10px;padding:10px;background:#1a1a2e;border-radius:6px;font-size:12px;line-height:1.5;color:#a0a0b0;">
+            <strong>Button Guide:</strong>
+            <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#e67e22;">Restart</span> — rolling restart of pods</span>
+            <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#3498db;">Status</span> — rollout status</span>
+            <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#e74c3c;">Scale to 0</span> — stop all pods</span>
+            <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#27ae60;">Scale to 1</span> — start a pod</span>
+        </div>
         <div class="table-wrap">
             <table>
                 <thead><tr><th>Deployment</th><th>Actions</th></tr></thead>
@@ -145,10 +166,10 @@
                     <tr>
                         <td style="font-family:monospace;font-size:13px;">{{ d.replace('deployment.apps/','') }}</td>
                         <td>
-                            <button class="btn-action" data-deploy="{{ d }}" data-action="restart" style="padding:4px 12px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Restart</button>
-                            <button class="btn-action" data-deploy="{{ d }}" data-action="status" style="padding:4px 12px;background:#3498db;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Status</button>
-                            <button class="btn-action" data-deploy="{{ d }}" data-action="scale_0" style="padding:4px 12px;background:#e74c3c;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Scale to 0</button>
-                            <button class="btn-action" data-deploy="{{ d }}" data-action="scale_1" style="padding:4px 12px;background:#27ae60;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Scale to 1</button>
+                            <button class="btn-action" data-deploy="{{ d }}" data-action="restart" title="Performs a rolling restart of this deployment's pods. Players will disconnect briefly." style="padding:4px 12px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Restart</button>
+                            <button class="btn-action" data-deploy="{{ d }}" data-action="status" title="Show rollout status: whether the deployment is successfully rolled out, pending, or failed." style="padding:4px 12px;background:#3498db;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Status</button>
+                            <button class="btn-action" data-deploy="{{ d }}" data-action="scale_0" title="Scale to 0 replicas. Stops all pods for this deployment. Use to shut down a server." style="padding:4px 12px;background:#e74c3c;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Scale to 0</button>
+                            <button class="btn-action" data-deploy="{{ d }}" data-action="scale_1" title="Scale to 1 replica. Starts a single pod. Use to bring a stopped server back online." style="padding:4px 12px;background:#27ae60;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Scale to 1</button>
                         </td>
                     </tr>
                     {% endfor %}
@@ -339,7 +360,7 @@ document.querySelectorAll('.partition-btn').forEach(btn => {
         if (!confirm(`Restart "${map}" partition (${deploy})?`)) return;
         if (!confirm('Are you sure? Players on this map will be disconnected.')) return;
         this.disabled = true;
-        this.textContent = 'Restarting...';
+        this.textContent = 'Working...';
         const output = document.getElementById('action-output');
         const outputText = document.getElementById('action-output-text');
         output.style.display = 'block';
@@ -359,10 +380,36 @@ document.querySelectorAll('.partition-btn').forEach(btn => {
     });
 });
 
-document.getElementById('refresh-pods')?.addEventListener('click', async function() {
-    this.disabled = true;
-    this.textContent = 'Loading...';
+document.querySelectorAll('.partition-status-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const deploy = this.dataset.deploy;
+        const map = this.dataset.map;
+        const label = this.textContent.trim();
+        this.disabled = true;
+        this.textContent = 'Loading...';
+        const output = document.getElementById('action-output');
+        const outputText = document.getElementById('action-output-text');
+        output.style.display = 'block';
+        outputText.textContent = `Fetching status for ${deploy}...`;
+        try {
+            const form = new FormData();
+            form.append('deployment', deploy);
+            form.append('action', 'status');
+            const resp = await csrfFetch('/server/action', { method: 'POST', body: form });
+            const data = await resp.json();
+            outputText.textContent = data.output || (data.success ? 'No status output' : 'Failed');
+        } catch (e) {
+            outputText.textContent = 'Error: ' + e.message;
+        }
+        this.disabled = false;
+        this.textContent = label;
+    });
+});
+
+async function refreshPods() {
+    const btn = document.getElementById('refresh-pods');
     const pre = document.getElementById('pods-text');
+    if (btn) { btn.disabled = true; btn.textContent = 'Loading...'; }
     pre.textContent = 'Fetching pod list...';
     try {
         const resp = await fetch('/server/pods');
@@ -371,9 +418,10 @@ document.getElementById('refresh-pods')?.addEventListener('click', async functio
     } catch (e) {
         pre.textContent = 'Error: ' + e.message;
     }
-    this.disabled = false;
-    this.textContent = 'Refresh Pods';
-});
+    if (btn) { btn.disabled = false; btn.textContent = 'Refresh Pods'; }
+}
+
+document.getElementById('refresh-pods')?.addEventListener('click', refreshPods);
 
 async function bgAction(action, btn) {
     const confirmMsgs = {
@@ -603,7 +651,8 @@ debugToggle.addEventListener('change', async function() {
     try {
         const resp = await csrfFetch('/api/settings/debug', {
             method: 'POST',
-            body: { enabled: enabled }
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: enabled })
         });
         const data = await resp.json();
         if (data.success) {
@@ -628,5 +677,9 @@ debugToggle.addEventListener('change', async function() {
 
 // Load debug status on page load
 loadDebugStatus();
+
+// Auto-load battlegroup and pods once on page load, then require manual refresh
+bgRefreshStatus();
+refreshPods();
 </script>
 {% endblock %}

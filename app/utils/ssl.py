@@ -108,7 +108,12 @@ def generate_cert(cert_path, key_path, ca_cert_path=None, ca_key_path=None,
     ])
 
     # Build SAN entries
-    san_entries = [x509.DNSName(common_name)]
+    san_entries = []
+    # Add common_name as the appropriate SAN type
+    try:
+        san_entries.append(x509.IPAddress(ipaddress.ip_address(common_name)))
+    except ValueError:
+        san_entries.append(x509.DNSName(common_name))
     if san_ips:
         for ip in san_ips:
             try:

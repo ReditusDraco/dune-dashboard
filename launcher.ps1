@@ -1535,6 +1535,9 @@ function Run-Setup {
     Write-Host "  Configuring SSL certificate..." -ForegroundColor Yellow
     $CertDir = Join-Path $ProjectRoot "ssl"
     if (-not (Test-Path $CertDir)) { New-Item -ItemType Directory -Path $CertDir -Force | Out-Null }
+    $LeConfigDir = Join-Path $ProjectRoot "certbot\config"
+    $LeWorkDir = Join-Path $ProjectRoot "certbot\work"
+    $LeLogsDir = Join-Path $ProjectRoot "certbot\logs"
     $CaCertPath = Join-Path $CertDir "ca.pem"
     $CaKeyPath = Join-Path $CertDir "ca-key.pem"
     $SslCertPath = Join-Path $CertDir "cert.pem"
@@ -1581,8 +1584,14 @@ function Run-Setup {
 
             $certbotUseModule = ($certbotCmd.Source -eq "python")
 
+            New-Item -ItemType Directory -Path $LeConfigDir -Force | Out-Null
+            New-Item -ItemType Directory -Path $LeWorkDir -Force | Out-Null
+            New-Item -ItemType Directory -Path $LeLogsDir -Force | Out-Null
+
+            $certbotDirArgs = @("--config-dir", $LeConfigDir, "--work-dir", $LeWorkDir, "--logs-dir", $LeLogsDir)
+
             if ($certbotUseModule) {
-                $certbotArgs = @("-m", "certbot", "certonly", "--standalone", "-d", $DomainName, "--non-interactive", "--agree-tos")
+                $certbotArgs = @("-m", "certbot", "certonly", "--standalone", "-d", $DomainName, "--non-interactive", "--agree-tos") + $certbotDirArgs
                 if ($LeEmail) {
                     $certbotArgs += "--email"
                     $certbotArgs += $LeEmail
@@ -1596,7 +1605,7 @@ function Run-Setup {
                     "-d", $DomainName,
                     "--non-interactive",
                     "--agree-tos"
-                )
+                ) + $certbotDirArgs
                 if ($LeEmail) {
                     $certbotArgs += "--email"
                     $certbotArgs += $LeEmail
@@ -1609,13 +1618,9 @@ function Run-Setup {
 
             if ($certbotResult.ExitCode -eq 0) {
                 $UseLetsEncrypt = $true
-                $LeCertPath = "C:\ProgramData\certbot\live\$DomainName\fullchain.pem"
-                $LeKeyPath = "C:\ProgramData\certbot\live\$DomainName\privkey.pem"
-
-                if (-not (Test-Path $LeCertPath)) {
-                    $LeCertPath = "C:\Certbot\live\$DomainName\fullchain.pem"
-                    $LeKeyPath = "C:\Certbot\live\$DomainName\privkey.pem"
-                }
+                $LeLiveDir = Join-Path $LeConfigDir "live\$DomainName"
+                $LeCertPath = Join-Path $LeLiveDir "fullchain.pem"
+                $LeKeyPath = Join-Path $LeLiveDir "privkey.pem"
 
                 if (Test-Path $LeCertPath) {
                     Write-Host "  Let's Encrypt certificate obtained successfully!" -ForegroundColor Green
@@ -1654,8 +1659,11 @@ function Run-Setup {
         }
 
         $SanIpsArray = "['" + ($SanIps -join "', '") + "']"
+        $SanDnsArray = "['localhost'"
+        if ($DomainName) { $SanDnsArray += ", '" + $DomainName + "'" }
+        $SanDnsArray += "]"
         if ($VmHost -ne "YOUR_SERVER_IP") { $CommonName = $VmHost } else { $CommonName = "localhost" }
-        python -c "from app.utils.ssl import generate_cert; generate_cert('$SslCertPathPy', '$SslKeyPathPy', ca_cert_path='$CaCertPathPy', ca_key_path='$CaKeyPathPy', common_name='$CommonName', san_ips=$SanIpsArray, san_dns=['localhost'])"
+        python -c "from app.utils.ssl import generate_cert; generate_cert('$SslCertPathPy', '$SslKeyPathPy', ca_cert_path='$CaCertPathPy', ca_key_path='$CaKeyPathPy', common_name='$CommonName', san_ips=$SanIpsArray, san_dns=$SanDnsArray)"
         $SslCert = "'$SslCertPath'"
         $SslKey = "'$SslKeyPath'"
 
@@ -1787,7 +1795,7 @@ function Run-Setup {
                 $certbotPath = "certbot"
             }
 
-            $renewAction = New-ScheduledTaskAction -Execute $certbotPath -Argument "renew --quiet"
+            $renewAction = New-ScheduledTaskAction -Execute $certbotPath -Argument "renew --quiet --config-dir `"$LeConfigDir`" --work-dir `"$LeWorkDir`" --logs-dir `"$LeLogsDir`""
             $renewTrigger = New-ScheduledTaskTrigger -Daily -At 2am
             $renewSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
             $renewPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
