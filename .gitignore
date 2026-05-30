@@ -14,6 +14,10 @@ frontend/.pnpm-store/
 frontend/.vite/
 frontend/dist/
 
+# New dashboard (removed - legacy only)
+backend/
+frontend/
+
 # Virtual environments
 venv/
 env/

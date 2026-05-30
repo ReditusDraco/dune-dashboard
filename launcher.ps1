@@ -299,19 +299,14 @@ function Show-Menu {
     Write-Host "      Launch dashboard with full debug logging enabled." -ForegroundColor DarkGray
     Write-Host "      Logs written to logs/debug.log - includes SSH, API, DB, K8s details." -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "  [7] Start New Dashboard (React + ChakraUI)" -ForegroundColor Green
-    Write-Host "      Launch the modern React dashboard with ChakraUI and Recharts." -ForegroundColor DarkGray
-    Write-Host "      Auto-installs dependencies. Frontend: http://localhost:5173" -ForegroundColor DarkGray
-    Write-Host "      NOTE: Not complete. Do not report bugs. May not even work." -ForegroundColor DarkGray
-    Write-Host ""
-    Write-Host "  [8] Reset to Factory Defaults" -ForegroundColor Red
+    Write-Host "  [7] Reset to Factory Defaults" -ForegroundColor Red
     Write-Host "      Wipe all data and start fresh. Removes settings, logs, certs, and cache." -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "  [9] Repair Game Database" -ForegroundColor Yellow
+    Write-Host "  [8] Repair Game Database" -ForegroundColor Yellow
     Write-Host "      Fixes dashboard schema ownership so game updates won't break." -ForegroundColor DarkGray
     Write-Host "      Run this if game servers fail to start after an update." -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "  [10] Clean up Old Dashboard Schema" -ForegroundColor Red
+    Write-Host "  [9] Clean up Old Dashboard Schema" -ForegroundColor Red
     Write-Host "      Drops the old dashboard schema from the game database." -ForegroundColor DarkGray
     Write-Host "      Only run after confirming dashboard migrated successfully." -ForegroundColor DarkGray
     Write-Host ""
@@ -976,7 +971,7 @@ function Reset-ToFactoryDefaults {
     if (Test-Path (Join-Path $ProjectRoot "ssl")) { Remove-Item (Join-Path $ProjectRoot "ssl") -Recurse -Force; Write-Host "    Deleted ssl/" -ForegroundColor Green; $count++ }
 
     # -- Log directories --
-    $logDirs = @("logs", "app\logs", "backend\logs")
+    $logDirs = @("logs", "app\logs")
     foreach ($ld in $logDirs) {
         $lp = Join-Path $ProjectRoot $ld
         if (Test-Path $lp) { Remove-Item $lp -Recurse -Force; Write-Host "    Deleted $ld/" -ForegroundColor Green; $count++ }
@@ -2555,372 +2550,6 @@ print('ok')
     Start-Dashboard -PreserveDebug
 }
 
-# ── New Dashboard (React + ChakraUI) ─────────────────────────────────────
-
-function Start-NewDashboard {
-    param(
-        [switch]$PreserveDebug
-    )
-
-    Write-Host ""
-    Write-Host "  Starting NEW dashboard (React + ChakraUI)..." -ForegroundColor Yellow
-    Write-Host ""
-
-    # Check Node.js
-    $nodeVersion = $null
-    try {
-        $nodeVersion = node --version 2>&1
-        Write-Host "  Node.js: $nodeVersion" -ForegroundColor Green
-    } catch {
-        Write-Host "  Node.js: NOT FOUND" -ForegroundColor Red
-        Write-Host ""
-        Write-Host "  Node.js 18+ is required for the new frontend." -ForegroundColor Yellow
-        Write-Host "  Download from https://nodejs.org/" -ForegroundColor Cyan
-        Write-Host ""
-        return
-    }
-
-    # ── Reuse tunnel/setup logic from Start-Dashboard ──────────────────────
-    # Check Python
-    if (-not (Test-Python)) {
-        return
-    }
-
-    # Check dependencies
-    Test-Dependencies | Out-Null
-
-    # Check settings
-    $settingsFile = Join-Path $ProjectRoot "settings.yaml"
-    if (-not (Test-Path $settingsFile)) {
-        Write-Host ""
-        Write-Host "  [ERROR] settings.yaml not found. You need to run setup first." -ForegroundColor Red
-        Write-Host ""
-        return
-    }
-
-    # Read settings
-    $settingsJson = python -c "import yaml, json, sys, os; path = sys.argv[1]; d = yaml.safe_load(open(path, encoding='utf-8-sig')) or {} if os.path.exists(path) else {}; print(json.dumps(d))" $settingsFile 2>$null
-    if (-not $settingsJson) {
-        Write-Host "  [ERROR] Failed to read settings.yaml" -ForegroundColor Red
-        return
-    }
-    $settings = $settingsJson | ConvertFrom-Json
-
-    $ServerHost = $settings.server.host
-    $SSHUser = $settings.server.user
-    $LocalPort = [int]$settings.database.port
-    $Namespace = $settings.kubernetes.namespace
-    $DashboardPort = [int]$settings.dashboard.port
-    $DirectorPort = [int]$settings.director.port
-    $RmqAdminPort = [int]($settings.rabbitmq | ForEach-Object { $_.admin_port })
-    if (-not $RmqAdminPort) { $RmqAdminPort = 30325 }
-    $RmqGamePort = [int]($settings.rabbitmq | ForEach-Object { $_.game_port })
-    if (-not $RmqGamePort) { $RmqGamePort = 32716 }
-
-    Register-SensitiveValue -Key "ServerIP" -Value $ServerHost
-    Register-SensitiveValue -Key "Namespace" -Value $Namespace
-    Register-SensitiveValue -Key "DBPassword" -Value $settings.database.password
-    Register-SensitiveValue -Key "DBUser" -Value $settings.database.user
-    Register-SensitiveValue -Key "DashboardSecret" -Value $settings.dashboard.secret_key
-    Register-SensitiveValue -Key "DirectorToken" -Value $settings.director.token
-    Register-SensitiveValue -Key "AuthSecret" -Value $settings.auth.secret_key
-
-    # Find SSH key (same logic as Start-Dashboard)
-    function Test-SshKeyForNew($keyPath, $targetServer) {
-        if (-not (Test-Path $keyPath)) { return $false }
-        try {
-            $out = ssh -i $keyPath -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -o BatchMode=yes $targetServer "echo ok" 2>$null
-            return $out -eq "ok"
-        } catch { return $false }
-    }
-
-    $SSHKeySrc = $settings.server.ssh_key
-    $LocalKey = Join-Path $ProjectRoot "internal-scripts\ssh\sshKey"
-
-    if ($SSHKeySrc -and $SSHKeySrc -ne 'null' -and -not [string]::IsNullOrEmpty($SSHKeySrc)) {
-        if (Test-SshKeyForNew $SSHKeySrc ($SSHUser + '@' + $ServerHost)) {
-            Register-SensitiveValue -Key "SSHKeyPath" -Value $SSHKeySrc
-            Write-Host "  SSH Key: Using key from settings.yaml" -ForegroundColor Green
-        } else {
-            $SSHKeySrc = $null
-        }
-    }
-
-    if (-not $SSHKeySrc -or -not (Test-Path $SSHKeySrc) -or -not (Test-SshKeyForNew $SSHKeySrc ($SSHUser + '@' + $ServerHost))) {
-        $keyPaths = @(
-            "$env:LOCALAPPDATA\DuneAwakeningServer\sshKey",
-            $LocalKey,
-            "$env:USERPROFILE\.ssh\id_ed25519",
-            "$env:USERPROFILE\.ssh\id_rsa"
-        )
-        foreach ($kp in $keyPaths) {
-            if ($kp -ne $SSHKeySrc -and (Test-Path $kp)) {
-                if (Test-SshKeyForNew $kp ($SSHUser + '@' + $ServerHost)) {
-                    $SSHKeySrc = $kp
-                    Register-SensitiveValue -Key "SSHKeyPath" -Value $kp
-                    Write-Host "  SSH Key: Found working key at $kp" -ForegroundColor Green
-                    break
-                }
-            }
-        }
-    }
-
-    if (-not $SSHKeySrc -or -not (Test-Path $SSHKeySrc)) {
-        Write-Host "  [ERROR] No working SSH key found." -ForegroundColor Red
-        return
-    }
-
-    # Copy key to temp
-    $SSHKey = "$env:TEMP\dune-tunnel-key"
-    $ResolvedSrc = [System.IO.Path]::GetFullPath($SSHKeySrc)
-    $ResolvedDest = [System.IO.Path]::GetFullPath($SSHKey)
-    if ($ResolvedSrc -ne $ResolvedDest) {
-        Copy-Item $SSHKeySrc $SSHKey -Force
-    }
-    try {
-        $acl = Get-Acl $SSHKey -ErrorAction SilentlyContinue
-        if ($acl) {
-            $acl.SetAccessRuleProtection($true, $false)
-            $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("$env:USERNAME", "FullControl", "Allow")
-            $acl.SetAccessRule($rule)
-            Set-Acl -Path $SSHKey -AclObject $acl -ErrorAction SilentlyContinue
-        }
-    } catch {}
-
-    Write-Host ""
-    Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host "  Dune Awakening Dashboard (React Edition)" -ForegroundColor Cyan
-    Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host ""
-
-    # ── SSH Tunnel ────────────────────────────────────────────────────────
-    Write-Log -Message "Cleaning up existing SSH tunnels on ports $LocalPort, $DirectorPort, $RmqAdminPort, $RmqGamePort" -Category "ssh"
-    Get-NetTCPConnection -LocalPort $LocalPort -ErrorAction SilentlyContinue | ForEach-Object {
-        Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
-    }
-    Get-NetTCPConnection -LocalPort $DirectorPort -ErrorAction SilentlyContinue | ForEach-Object {
-        Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
-    }
-    Get-NetTCPConnection -LocalPort $RmqAdminPort -ErrorAction SilentlyContinue | ForEach-Object {
-        Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
-    }
-    Get-NetTCPConnection -LocalPort $RmqGamePort -ErrorAction SilentlyContinue | ForEach-Object {
-        Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
-    }
-    Start-Sleep 1
-
-    Write-Host "[1/5] Starting SSH tunnel (localhost:$LocalPort -> VM)..." -ForegroundColor Yellow
-
-    Get-NetTCPConnection -LocalPort $LocalPort -ErrorAction SilentlyContinue | ForEach-Object {
-        Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
-    }
-    Get-NetTCPConnection -LocalPort $DirectorPort -ErrorAction SilentlyContinue | ForEach-Object {
-        Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'ssh' } | Stop-Process -Force -ErrorAction SilentlyContinue
-    }
-    Start-Sleep 1
-
-    $sshArgs = @(
-        "-i", $SSHKey,
-        "-o", "StrictHostKeyChecking=accept-new",
-        "-o", "ServerAliveInterval=30",
-        "-o", "ServerAliveCountMax=3",
-        "-L", "${LocalPort}:localhost:${LocalPort}",
-        "-L", "${DirectorPort}:localhost:${DirectorPort}",
-        "-L", "${RmqAdminPort}:localhost:${RmqAdminPort}",
-        "-L", "${RmqGamePort}:localhost:${RmqGamePort}",
-        "-N", "${SSHUser}@${ServerHost}"
-    )
-    $sshTunnel = Start-Process ssh -ArgumentList $sshArgs -PassThru -WindowStyle Hidden
-
-    $connected = $false
-    for ($i = 0; $i -lt 30; $i++) {
-        Start-Sleep -Seconds 1
-        if ($sshTunnel.HasExited) {
-            Write-Host "[ERROR] SSH tunnel exited (code: $($sshTunnel.ExitCode))" -ForegroundColor Red
-            Write-Host "  Check server IP and SSH key configuration." -ForegroundColor Yellow
-            return
-        }
-        try {
-            $tcp = New-Object System.Net.Sockets.TcpClient
-            $tcp.Connect("127.0.0.1", $LocalPort)
-            $tcp.Close()
-            $connected = $true
-            break
-        } catch {}
-    }
-    if (-not $connected) {
-        Write-Host "[ERROR] SSH tunnel did not connect within 30 seconds" -ForegroundColor Red
-        Stop-Process -Id $sshTunnel.Id -Force -ErrorAction SilentlyContinue
-        return
-    }
-    Write-Host "[OK]   SSH tunnel up on localhost:$LocalPort (DB), localhost:$DirectorPort (Director), localhost:$RmqAdminPort (RMQ Admin), localhost:$RmqGamePort (RMQ Game)" -ForegroundColor Green
-
-    # ── DB Port-Forward ───────────────────────────────────────────────────
-    Write-Host "[2/5] Starting DB port-forward on VM..." -ForegroundColor Yellow
-
-    if (-not $Namespace -or $Namespace -eq '') {
-        Write-Host "[ERROR] Kubernetes namespace is empty." -ForegroundColor Red
-        Stop-Process -Id $sshTunnel.Id -Force -ErrorAction SilentlyContinue
-        return
-    }
-
-    $DBService = "${Namespace}-db-dbdepl-svc"
-    $pfCheck = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo kubectl get svc -n ${Namespace} -o name" 2>$null
-    if ($pfCheck) {
-        $dbSvc = ($pfCheck -split "`n") | Where-Object { $_ -match 'db.*svc' -or $_ -match 'postgres' -or $_ -match 'pg' } | Select-Object -First 1
-        if ($dbSvc) { $DBService = $dbSvc -replace 'service/', '' }
-    }
-
-    $RemotePort = 15432
-    ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo fuser -k ${LocalPort}/tcp ${DirectorPort}/tcp ${RmqAdminPort}/tcp ${RmqGamePort}/tcp 2>/dev/null; sleep 1" 2>$null
-    $pfCmd = "nohup sudo kubectl port-forward -n $Namespace svc/$DBService $LocalPort`:$RemotePort > /tmp/pf.log 2>`&1 `"&`""
-    ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "${SSHUser}@${ServerHost}" $pfCmd 2>$null
-    Start-Sleep -Seconds 2
-
-    # BGD Director port-forward
-    $bgdSvc = "${Namespace}-bgd-svc"
-    $pfCheckBgd = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo kubectl get svc -n ${Namespace} -o name" 2>$null
-    if ($pfCheckBgd) {
-        $bgdMatch = ($pfCheckBgd -split "`n") | Where-Object { $_ -match 'bgd.*svc' } | Select-Object -First 1
-        if ($bgdMatch) { $bgdSvc = $bgdMatch -replace 'service/', '' }
-    }
-
-    # Check BGD deployment
-    $bgdDeploy = "${Namespace}-bgd-deploy"
-    $bgdReady = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo kubectl get deployment $bgdDeploy -n $Namespace -o jsonpath='{.status.readyReplicas}'" 2>$null
-    if (-not $bgdReady -or $bgdReady -eq '0' -or $bgdReady -eq '') {
-        Write-Host "  BGD deployment is scaled down, starting..." -ForegroundColor Yellow
-        ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 ${SSHUser}@${ServerHost} "sudo kubectl scale deployment $bgdDeploy -n $Namespace --replicas=1" 2>$null
-        Start-Sleep -Seconds 15
-    }
-
-    $directorRemotePort = 11717
-    $directorCmd = "nohup sudo kubectl port-forward -n $Namespace svc/$bgdSvc $DirectorPort`:$directorRemotePort > /tmp/director_pf.log 2>`&1 `"&`""
-    ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "${SSHUser}@${ServerHost}" $directorCmd 2>$null
-    Start-Sleep -Seconds 3
-
-    # ── DB Check ──────────────────────────────────────────────────────────
-    Write-Host "[3/5] Checking database..." -ForegroundColor Yellow
-    $dbTest = $false
-    $dbScript = Join-Path $ProjectRoot "scripts\db_check.py"
-    for ($i = 0; $i -lt 15; $i++) {
-        try {
-            $result = python $dbScript $LocalPort 2>$null
-            if ($result -match 'ok') { $dbTest = $true; break }
-        } catch {}
-        Start-Sleep -Seconds 1
-    }
-    if (-not $dbTest) {
-        Write-Host "[ERROR] Database connection failed." -ForegroundColor Red
-        Stop-Process -Id $sshTunnel.Id -Force -ErrorAction SilentlyContinue
-        return
-    }
-    Write-Host "[OK]   Database connected" -ForegroundColor Green
-
-    # ── Install Dependencies ──────────────────────────────────────────────
-    Write-Host "[4/5] Installing dependencies..." -ForegroundColor Yellow
-
-    # Backend Python deps (project root requirements.txt)
-    if (Test-Path (Join-Path $ProjectRoot "requirements.txt")) {
-        Write-Host "  Checking backend Python dependencies..." -ForegroundColor DarkGray
-        $pipArgs = @("pip", "install", "-r", (Join-Path $ProjectRoot "requirements.txt"), "--quiet")
-        & python @pipArgs 2>$null
-        $pipArgs2 = @("pip", "install", "psycopg[binary]", "--quiet")
-        & python @pipArgs2 2>$null
-        Write-Host "  Backend dependencies OK" -ForegroundColor Green
-    }
-
-    # Frontend npm deps
-    $frontendDir = Join-Path $ProjectRoot "frontend"
-    if (Test-Path (Join-Path $frontendDir "package.json")) {
-        $nodeModulesDir = Join-Path $frontendDir "node_modules"
-        if (-not (Test-Path $nodeModulesDir)) {
-            Write-Host "  Installing frontend npm dependencies..." -ForegroundColor DarkGray
-            $prevLoc = Get-Location
-            Set-Location -LiteralPath $frontendDir
-            npm install 2>&1 | Out-Null
-            Set-Location -LiteralPath $prevLoc
-            Write-Host "  Frontend dependencies installed" -ForegroundColor Green
-        } else {
-            Write-Host "  Frontend dependencies OK" -ForegroundColor Green
-        }
-    }
-
-    # ── Start Backend + Frontend ──────────────────────────────────────────
-    Write-Host "[5/5] Starting dashboard..." -ForegroundColor Yellow
-    Write-Host ""
-
-    # Start the new Flask API backend
-    Write-Host "  Starting backend API (port $DashboardPort)..." -ForegroundColor Cyan
-    $backendDir = Join-Path $ProjectRoot "backend"
-    $backendProcess = Start-Process cmd.exe -ArgumentList "/k", "cd /d `"$backendDir`" && python run.py" -PassThru
-
-    # Wait for backend to be ready
-    Write-Host "  Waiting for backend to start..." -ForegroundColor DarkGray
-    $backendAlive = $false
-    for ($i = 0; $i -lt 30; $i++) {
-        Start-Sleep -Seconds 1
-        try {
-            $wc = New-Object System.Net.WebClient
-            $result = $wc.DownloadString("http://127.0.0.1:${DashboardPort}/api/stats")
-            if ($result) { $backendAlive = $true; break }
-        } catch {}
-    }
-
-    if (-not $backendAlive) {
-        Write-Host "[ERROR] Backend failed to start within 30 seconds." -ForegroundColor Red
-        Write-Host "  Check the backend window for errors." -ForegroundColor Yellow
-        Stop-Process -Id $sshTunnel.Id -Force -ErrorAction SilentlyContinue
-        return
-    }
-    Write-Host "  [OK]   Backend API running on port $DashboardPort" -ForegroundColor Green
-
-    # Start frontend in a visible window
-    Write-Host "  Starting frontend dev server (port 5173)..." -ForegroundColor Cyan
-    $viteDir = Join-Path $ProjectRoot "frontend"
-    $frontendProcess = Start-Process cmd.exe -ArgumentList "/k", "cd /d `"$viteDir`" && npm run dev -- --host 0.0.0.0" -PassThru
-
-    Start-Sleep -Seconds 6
-
-    # Check if frontend is running by probing the port
-    $frontendAlive = $false
-    try {
-        $wc = New-Object System.Net.WebClient
-        $wc.DownloadString("http://127.0.0.1:5173/") | Out-Null
-        $frontendAlive = $true
-    } catch {}
-
-    if (-not $frontendAlive) {
-        Write-Host "[WARN] Frontend may not have started yet. Check the frontend window." -ForegroundColor Yellow
-    } else {
-        Write-Host "  [OK]   Frontend running on port 5173" -ForegroundColor Green
-    }
-
-    Write-Host ""
-    Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host "  New Dashboard Started!" -ForegroundColor Green
-    Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "  Frontend:  http://localhost:5173" -ForegroundColor Cyan
-    Write-Host "  Backend:   http://localhost:${DashboardPort}" -ForegroundColor DarkGray
-    Write-Host ""
-    Write-Host "  Open http://localhost:5173 in your browser" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "  Close the backend and frontend windows to stop, or" -ForegroundColor DarkGray
-    Write-Host "  press Enter here to kill the SSH tunnel and all processes." -ForegroundColor DarkGray
-    Write-Host ""
-    Read-Host "  Press Enter to stop"
-
-    Write-Host ""
-    Write-Host "  Stopping services..." -ForegroundColor Cyan
-    Stop-Process -Id $frontendProcess.Id -Force -ErrorAction SilentlyContinue
-    Stop-Process -Id $backendProcess.Id -Force -ErrorAction SilentlyContinue
-    Stop-Process -Id $sshTunnel.Id -Force -ErrorAction SilentlyContinue
-    $pkillCmd = 'ssh -i "' + $SSHKey + '" -o StrictHostKeyChecking=accept-new ' + $SSHUser + '@' + $ServerHost + ' "sudo fuser -k ' + $LocalPort + '/tcp ' + $DirectorPort + '/tcp ' + $RmqAdminPort + '/tcp ' + $RmqGamePort + '/tcp 2>/dev/null"'
-    cmd /c $pkillCmd 2>$null
-    Write-Host "  All services stopped." -ForegroundColor Green
-    Write-Host ""
-}
 
 function Repair-GameDatabase {
     Write-Host ""
@@ -3139,13 +2768,12 @@ while ($true) {
         "4" { Install-CaCert; break }
         "5" { Clean-CaCerts; break }
         "6" { Start-DashboardDebug; break }
-        "7" { Start-NewDashboard; break }
-        "8" { Reset-ToFactoryDefaults; break }
-        "9" { Repair-GameDatabase; break }
-        "10" { Cleanup-OldDashboardSchema; break }
+        "7" { Reset-ToFactoryDefaults; break }
+        "8" { Repair-GameDatabase; break }
+        "9" { Cleanup-OldDashboardSchema; break }
         "Q" { Write-Host ""; Write-Host "  Goodbye!"; Write-Host ""; exit 0 }
         "q" { Write-Host ""; Write-Host "  Goodbye!"; Write-Host ""; exit 0 }
-        default { Write-Host ""; Write-Host "  Invalid choice. Please enter 1-10, or Q." -ForegroundColor Yellow; Write-Host "" }
+        default { Write-Host ""; Write-Host "  Invalid choice. Please enter 1-9, or Q." -ForegroundColor Yellow; Write-Host "" }
     }
 
     Write-Host ""
