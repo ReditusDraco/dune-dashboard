@@ -219,7 +219,7 @@ class DashboardDatabaseService:
                         for row in old_rows:
                             vals = [row[c] for c in cols]
                             self.execute(
-                                f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})",
+                                f"INSERT INTO {table} ({col_names}) VALUES ({placeholders}) ON CONFLICT DO NOTHING",
                                 vals,
                             )
                         migrated = True

@@ -475,7 +475,7 @@ function Test-SshConnection {
     }
 
     Write-Host "  Testing SSH connection to $serverUser@$serverHost..." -ForegroundColor Yellow
-    $testOut = ssh -i $sshKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o BatchMode=yes "${serverUser}@${serverHost}" "echo ok" 2>$null
+    $testOut = ssh -i $sshKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes "${serverUser}@${serverHost}" "echo ok" 2>$null
     if ($testOut -eq "ok") {
         Write-Host "  SSH Connection: OK" -ForegroundColor Green
         return $true
@@ -1249,13 +1249,18 @@ function Run-Setup {
 
     function Fix-SshKeyPermissions($keyPath) {
         if (-not (Test-Path $keyPath)) { return }
-        $acl = Get-Acl $keyPath
-        $acl.SetAccessRuleProtection($true, $false)
-        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("$env:USERNAME", "FullControl", "Allow")
-        $acl.SetAccessRule($rule)
-        $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule("BUILTIN\Administrators", "FullControl", "Allow")
-        $acl.SetAccessRule($adminRule)
-        Set-Acl -Path $keyPath -AclObject $acl
+        try {
+            $acl = Get-Acl $keyPath -ErrorAction SilentlyContinue
+            if ($acl) {
+                $acl.SetAccessRuleProtection($true, $false)
+                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("$env:USERNAME", "FullControl", "Allow")
+                $acl.SetAccessRule($rule)
+                $adminSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+                $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule($adminSid, "FullControl", "Allow")
+                $acl.SetAccessRule($adminRule)
+                Set-Acl -Path $keyPath -AclObject $acl -ErrorAction SilentlyContinue
+            }
+        } catch {}
     }
 
     if (-not $FoundKey) {
@@ -1426,7 +1431,7 @@ function Run-Setup {
         $sshOk = $false
         for ($i = 0; $i -lt 12; $i++) {
             try {
-                $testOut = ssh -i "$FoundKey" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -o BatchMode=yes dune@$VmHost "echo ok" 2>$null
+                $testOut = ssh -i "$FoundKey" -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes dune@$VmHost "echo ok" 2>$null
                 $testExit = $LASTEXITCODE
                 if ($testOut -match "ok" -and $testExit -eq 0) {
                     $sshOk = $true
@@ -1440,7 +1445,7 @@ function Run-Setup {
         if ($sshOk) {
             Write-Host "  SSH connection OK" -ForegroundColor Green
             try {
-                $nsOut = ssh -i "$FoundKey" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o BatchMode=yes dune@$VmHost "sudo kubectl get namespaces -o name" 2>$null
+                $nsOut = ssh -i "$FoundKey" -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes dune@$VmHost "sudo kubectl get namespaces -o name" 2>$null
             } catch { $nsOut = $null }
             if ($nsOut) {
                 foreach ($line in $nsOut -split "`n") {
@@ -1941,7 +1946,7 @@ logging:
     # Check if SSH key is valid for the server
     $SshValid = $false
     if ($FoundKey -and (Test-Path $FoundKey) -and $VmHost -ne "YOUR_SERVER_IP") {
-        $testOut = ssh -i $FoundKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o BatchMode=yes "${ServerUser}@${VmHost}" "echo ok" 2>$null
+        $testOut = ssh -i $FoundKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes "${ServerUser}@${VmHost}" "echo ok" 2>$null
         $SshValid = ($testOut -eq "ok")
     }
 
@@ -1985,7 +1990,7 @@ logging:
             $bytes = [System.IO.File]::ReadAllBytes($tmpFwScript)
             Remove-Item $tmpFwScript -Force -ErrorAction SilentlyContinue
             $b64 = [Convert]::ToBase64String($bytes)
-            $fwOut = ssh -i $FoundKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 "${ServerUser}@${VmHost}" "echo '$b64' | base64 -d > /tmp/fw.sh && sudo bash /tmp/fw.sh && rm /tmp/fw.sh" 2>&1
+            $fwOut = ssh -i $FoundKey -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${ServerUser}@${VmHost}" "echo '$b64' | base64 -d > /tmp/fw.sh && sudo bash /tmp/fw.sh && rm /tmp/fw.sh" 2>&1
             if ($fwOut -match "FIREWALL_DONE") {
                 Write-Host "  Firewall rules applied successfully!" -ForegroundColor Green
             } else {
@@ -2085,7 +2090,7 @@ function Start-Dashboard {
     function Test-SshKeyForStart($keyPath, $targetServer) {
         if (-not (Test-Path $keyPath)) { return $false }
         try {
-            $out = ssh -i $keyPath -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -o BatchMode=yes $targetServer "echo ok" 2>$null
+            $out = ssh -i $keyPath -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes $targetServer "echo ok" 2>$null
             return $out -eq "ok"
         } catch { return $false }
     }
@@ -2196,7 +2201,9 @@ function Start-Dashboard {
     Write-Log -Message "Starting SSH tunnel to ${SSHUser}@${ServerHost}" -Category "ssh"
     $sshArgs = @(
         "-i", $SSHKey,
-        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "BatchMode=yes",
+        "-o", "ConnectTimeout=10",
         "-o", "ServerAliveInterval=30",
         "-o", "ServerAliveCountMax=3",
         "-L", "${LocalPort}:localhost:${LocalPort}",
@@ -2272,7 +2279,7 @@ function Start-Dashboard {
 
     $DBService = "${Namespace}-db-dbdepl-svc"
 
-    $pfCheck = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo kubectl get svc -n ${Namespace} -o name" 2>$null
+    $pfCheck = ssh -i $SSHKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo kubectl get svc -n ${Namespace} -o name" 2>$null
     if ($pfCheck) {
         $dbSvc = ($pfCheck -split "`n") | Where-Object { $_ -match 'db.*svc' -or $_ -match 'postgres' -or $_ -match 'pg' } | Select-Object -First 1
         if ($dbSvc) {
@@ -2284,13 +2291,13 @@ function Start-Dashboard {
 
     $RemotePort = 15432
     Write-Log -Message "Starting port-forward: ${LocalPort}:${RemotePort} on service $DBService" -Category "database"
-    ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo fuser -k ${LocalPort}/tcp ${DirectorPort}/tcp 2>/dev/null; sleep 1" 2>$null
+    ssh -i $SSHKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo fuser -k ${LocalPort}/tcp ${DirectorPort}/tcp 2>/dev/null; sleep 1" 2>$null
     $pfCmd = "nohup sudo kubectl port-forward -n $Namespace svc/$DBService $LocalPort`:$RemotePort > /tmp/pf.log 2>`&1 `"&`""
-    ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "${SSHUser}@${ServerHost}" $pfCmd 2>$null
+    ssh -i $SSHKey -o StrictHostKeyChecking=no -o ServerAliveInterval=30 "${SSHUser}@${ServerHost}" $pfCmd 2>$null
     Start-Sleep -Seconds 2
 
     $bgdSvc = "${Namespace}-bgd-svc"
-    $pfCheckBgd = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo kubectl get svc -n ${Namespace} -o name" 2>$null
+    $pfCheckBgd = ssh -i $SSHKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo kubectl get svc -n ${Namespace} -o name" 2>$null
     if ($pfCheckBgd) {
         $bgdMatch = ($pfCheckBgd -split "`n") | Where-Object { $_ -match 'bgd.*svc' } | Select-Object -First 1
         if ($bgdMatch) { $bgdSvc = $bgdMatch -replace 'service/', '' }
@@ -2299,11 +2306,11 @@ function Start-Dashboard {
     # Check if BGD deployment is running, scale up if needed
     $bgdDeploy = "${Namespace}-bgd-deploy"
     Write-Log -Message "Checking BGD deployment status: $bgdDeploy" -Category "k8s"
-    $bgdReady = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo kubectl get deployment $bgdDeploy -n $Namespace -o jsonpath='{.status.readyReplicas}'" 2>$null
+    $bgdReady = ssh -i $SSHKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "sudo kubectl get deployment $bgdDeploy -n $Namespace -o jsonpath='{.status.readyReplicas}'" 2>$null
     if (-not $bgdReady -or $bgdReady -eq '0' -or $bgdReady -eq '') {
         Write-Host "  BGD deployment is scaled down, starting..." -ForegroundColor Yellow
         Write-Log -Message "BGD deployment scaled down, scaling to 1 replica" -Category "k8s"
-        $scaleOut = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 ${SSHUser}@${ServerHost} "sudo kubectl scale deployment $bgdDeploy -n $Namespace --replicas=1" 2>$null
+        $scaleOut = ssh -i $SSHKey -o StrictHostKeyChecking=no -o ConnectTimeout=30 ${SSHUser}@${ServerHost} "sudo kubectl scale deployment $bgdDeploy -n $Namespace --replicas=1" 2>$null
         Write-Host "  Waiting for BGD pod to be ready..." -ForegroundColor Yellow
         Start-Sleep -Seconds 15
     }
@@ -2311,7 +2318,7 @@ function Start-Dashboard {
     $directorRemotePort = 11717
     Write-Log -Message "Starting director port-forward: ${DirectorPort}:${directorRemotePort} on service $bgdSvc" -Category "k8s"
     $directorCmd = "nohup sudo kubectl port-forward -n $Namespace svc/$bgdSvc $DirectorPort`:$directorRemotePort > /tmp/director_pf.log 2>`&1 `"&`""
-    ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "${SSHUser}@${ServerHost}" $directorCmd 2>$null
+    ssh -i $SSHKey -o StrictHostKeyChecking=no -o ServerAliveInterval=30 "${SSHUser}@${ServerHost}" $directorCmd 2>$null
 
     Start-Sleep -Seconds 3
 
@@ -2333,7 +2340,7 @@ function Start-Dashboard {
         Write-Host ""
         Write-Host "  Troubleshooting:" -ForegroundColor Cyan
         Write-Host "    1. Check the port-forward log on the VM:" -ForegroundColor White
-        $pfLog = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "cat /tmp/pf.log" 2>$null
+        $pfLog = ssh -i $SSHKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "cat /tmp/pf.log" 2>$null
         if ($pfLog) { Write-Host "       $pfLog" -ForegroundColor Red }
         else { Write-Host "       Log empty or unreadable." -ForegroundColor Yellow }
         Write-Host ""
@@ -2369,7 +2376,7 @@ function Start-Dashboard {
         Write-Host ""
         Write-Host "  Troubleshooting:" -ForegroundColor Cyan
         Write-Host "    1. Check the port-forward log on the VM:" -ForegroundColor White
-        $directorPfLog = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "cat /tmp/director_pf.log" 2>$null
+        $directorPfLog = ssh -i $SSHKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${SSHUser}@${ServerHost} "cat /tmp/director_pf.log" 2>$null
         if ($directorPfLog) { Write-Host "       $directorPfLog" -ForegroundColor Red }
         else { Write-Host "       Log empty or unreadable." -ForegroundColor Yellow }
         Write-Host ""
@@ -2459,7 +2466,7 @@ function Start-Dashboard {
     Write-Host ""
     Write-Host "Stopping tunnels..." -ForegroundColor Cyan
     Stop-Process -Id $sshTunnel.Id -Force -ErrorAction SilentlyContinue
-    $pkillCmd = 'ssh -i "' + $SSHKey + '" -o StrictHostKeyChecking=accept-new ' + $SSHUser + '@' + $ServerHost + ' "sudo fuser -k 15433/tcp 32479/tcp 30325/tcp 32716/tcp 2>/dev/null"'
+    $pkillCmd = 'ssh -i "' + $SSHKey + '" -o StrictHostKeyChecking=no ' + $SSHUser + '@' + $ServerHost + ' "sudo fuser -k 15433/tcp 32479/tcp 30325/tcp 32716/tcp 2>/dev/null"'
     cmd /c $pkillCmd 2>$null
 }
 
@@ -2612,7 +2619,7 @@ function Repair-GameDatabase {
 
     # 1. Find the database pod
     Write-Host "[1/4] Finding database pod..." -ForegroundColor Yellow
-    $dbPod = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl get pods -n $Namespace -l app=${Namespace}-db-dbdepl-sts -o jsonpath='{.items[0].metadata.name}'" 2>$null
+    $dbPod = ssh -i $SSHKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl get pods -n $Namespace -l app=${Namespace}-db-dbdepl-sts -o jsonpath='{.items[0].metadata.name}'" 2>$null
     if (-not $dbPod) {
         Write-Host "[ERROR] Could not find database pod." -ForegroundColor Red
         return
@@ -2625,7 +2632,7 @@ function Repair-GameDatabase {
     # Build a temp .ps1 script where each line uses --% with values directly embedded.
     # After --%, PowerShell passes everything literally to ssh.exe — no parsing issues.
     $tmpFile = Join-Path $env:TEMP "dune_repair_$([System.IO.Path]::GetRandomFileName()).ps1"
-    $sshBase = "ssh --% -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -i `"$SSHKey`" `"$SSHUser@$ServerHost`""
+    $sshBase = "ssh --% -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i `"$SSHKey`" `"$SSHUser@$ServerHost`""
 
     $scriptLines = @(
         "$sshBase `"printf 'ALTER SCHEMA dashboard OWNER TO dune;\n' > /tmp/repair.sql`""
@@ -2646,7 +2653,7 @@ function Repair-GameDatabase {
 
     # 3. Delete failed util pods
     Write-Host "[3/4] Cleaning up failed utility pods..." -ForegroundColor Yellow
-    $deleted = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl get pods -n $Namespace | grep 'db.*util' | grep -v Running | awk '{print \$1}' | xargs -r sudo kubectl delete pod -n $Namespace --wait=false" 2>$null
+    $deleted = ssh -i $SSHKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl get pods -n $Namespace | grep 'db.*util' | grep -v Running | awk '{print \$1}' | xargs -r sudo kubectl delete pod -n $Namespace --wait=false" 2>$null
     if ($deleted) {
         Write-Host "  $deleted" -ForegroundColor DarkGray
         Write-Host "  [OK]   Failed util pods deleted" -ForegroundColor Green
@@ -2700,10 +2707,10 @@ function Cleanup-OldDashboardSchema {
     if ( -not $Namespace ) { Write-Host "[ERROR] Namespace not configured." -ForegroundColor Red; return }
     if ( -not (Test-Path $SSHKey) ) { Write-Host "[ERROR] SSH key not found." -ForegroundColor Red; return }
 
-    $dbPod = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl get pods -n $Namespace -l app=${Namespace}-db-dbdepl-sts -o jsonpath='{.items[0].metadata.name}'" 2>$null
+    $dbPod = ssh -i $SSHKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl get pods -n $Namespace -l app=${Namespace}-db-dbdepl-sts -o jsonpath='{.items[0].metadata.name}'" 2>$null
     if ( -not $dbPod ) { Write-Host "[ERROR] Could not find database pod." -ForegroundColor Red; return }
 
-    $hasOldSchema = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl exec -n $Namespace -i $dbPod -- psql -U postgres -p 15432 -d dune -t -c ""SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'dashboard'"" 2>&1" 2>$null
+    $hasOldSchema = ssh -i $SSHKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl exec -n $Namespace -i $dbPod -- psql -U postgres -p 15432 -d dune -t -c ""SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'dashboard'"" 2>&1" 2>$null
     $hasOldSchema = $hasOldSchema.Trim()
 
     if ( $hasOldSchema -eq '0' ) {
@@ -2748,7 +2755,7 @@ function Cleanup-OldDashboardSchema {
 
     Write-Host ""
     Write-Host "  Dropping old dashboard schema..." -ForegroundColor Yellow
-    $result = ssh -i $SSHKey -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl exec -n $Namespace -i $dbPod -- psql -U postgres -p 15432 -d dune -c ""DROP SCHEMA IF EXISTS dashboard CASCADE"" 2>&1"
+    $result = ssh -i $SSHKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSHUser@$ServerHost" "sudo kubectl exec -n $Namespace -i $dbPod -- psql -U postgres -p 15432 -d dune -c ""DROP SCHEMA IF EXISTS dashboard CASCADE"" 2>&1"
     Write-Host "  $result" -ForegroundColor DarkGray
     Write-Host "  [OK]   Old dashboard schema dropped." -ForegroundColor Green
     Write-Host ""
@@ -2827,7 +2834,8 @@ function Rotate-SSHKey {
                 $acl.SetAccessRuleProtection($true, $false)
                 $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("$env:USERNAME", "FullControl", "Allow")
                 $acl.SetAccessRule($rule)
-                $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule("BUILTIN\Administrators", "FullControl", "Allow")
+                $adminSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+                $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule($adminSid, "FullControl", "Allow")
                 $acl.SetAccessRule($adminRule)
                 Set-Acl -Path $TargetKey -AclObject $acl -ErrorAction SilentlyContinue
             }
