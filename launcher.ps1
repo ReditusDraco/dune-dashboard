@@ -2821,13 +2821,17 @@ function Rotate-SSHKey {
     } else {
         Copy-Item $newestKey.Path $TargetKey -Force
 
-        $acl = Get-Acl $TargetKey
-        $acl.SetAccessRuleProtection($true, $false)
-        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("$env:USERNAME", "FullControl", "Allow")
-        $acl.SetAccessRule($rule)
-        $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule("BUILTIN\Administrators", "FullControl", "Allow")
-        $acl.SetAccessRule($adminRule)
-        Set-Acl -Path $TargetKey -AclObject $acl
+        try {
+            $acl = Get-Acl $TargetKey -ErrorAction SilentlyContinue
+            if ($acl) {
+                $acl.SetAccessRuleProtection($true, $false)
+                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("$env:USERNAME", "FullControl", "Allow")
+                $acl.SetAccessRule($rule)
+                $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule("BUILTIN\Administrators", "FullControl", "Allow")
+                $acl.SetAccessRule($adminRule)
+                Set-Acl -Path $TargetKey -AclObject $acl -ErrorAction SilentlyContinue
+            }
+        } catch {}
 
         Write-Host ""
         Write-Host "  Rotated: $($newestKey.Path)" -ForegroundColor Green
