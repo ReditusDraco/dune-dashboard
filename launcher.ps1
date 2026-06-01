@@ -310,6 +310,9 @@ function Show-Menu {
     Write-Host "      Drops the old dashboard schema from the game database." -ForegroundColor DarkGray
     Write-Host "      Only run after confirming dashboard migrated successfully." -ForegroundColor DarkGray
     Write-Host ""
+    Write-Host "  [10] Rotate SSH Key" -ForegroundColor Yellow
+    Write-Host "      Scan all SSH key locations and copy the newest key to internal-scripts\ssh\sshKey." -ForegroundColor DarkGray
+    Write-Host ""
     Write-Host "  [Q] Quit" -ForegroundColor White
     Write-Host ""
 }
@@ -2753,6 +2756,90 @@ function Cleanup-OldDashboardSchema {
     Read-Host
 }
 
+function Rotate-SSHKey {
+    Write-Host ""
+    Write-Host "  Rotate SSH Key" -ForegroundColor Cyan
+    Write-Host "  ===============" -ForegroundColor Cyan
+    Write-Host ""
+
+    $TargetKey = Join-Path $ProjectRoot "internal-scripts\ssh\sshKey"
+    $ParentKey = Join-Path (Split-Path $ProjectRoot) "internal-scripts\ssh\sshKey"
+    $UserHome = $env:USERPROFILE
+    $TempDir = $env:TEMP
+
+    $searchPaths = @(
+        "$UserHome\.ssh\dune-dashboard-key",
+        "$TempDir\dune-tunnel-key",
+        "$TempDir\dune-awakening-server-sshKey",
+        $ParentKey,
+        "$env:LOCALAPPDATA\DuneAwakeningServer\sshKey",
+        "$UserHome\.ssh\id_ed25519",
+        "$UserHome\.ssh\id_rsa",
+        "$UserHome\.ssh\id_ecdsa"
+    )
+
+    $foundKeys = @()
+    Write-Host "  Scanning for SSH keys..." -ForegroundColor Yellow
+
+    if (Test-Path $TargetKey) {
+        $targetInfo = Get-Item $TargetKey
+        Write-Host "    Current: $TargetKey (modified $($targetInfo.LastWriteTime))" -ForegroundColor DarkGray
+    }
+
+    foreach ($path in $searchPaths) {
+        if (Test-Path $path) {
+            $info = Get-Item $path
+            $foundKeys += [PSCustomObject]@{
+                Path = $path
+                LastWriteTime = $info.LastWriteTime
+                Length = $info.Length
+            }
+            Write-Host "    Found:   $path (modified $($info.LastWriteTime))" -ForegroundColor DarkGray
+        }
+    }
+
+    if ($foundKeys.Count -eq 0) {
+        Write-Host ""
+        Write-Host "  No SSH keys found in any search location." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  Press Enter to return..." -ForegroundColor DarkGray
+        Read-Host
+        return
+    }
+
+    $newestKey = $foundKeys | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+    $targetDir = Join-Path $ProjectRoot "internal-scripts\ssh"
+    if (-not (Test-Path $targetDir)) {
+        New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+    }
+
+    if ($newestKey.Path -eq $TargetKey) {
+        Write-Host ""
+        Write-Host "  The newest key is already at the target location." -ForegroundColor Green
+        Write-Host "  No rotation needed." -ForegroundColor Green
+    } else {
+        Copy-Item $newestKey.Path $TargetKey -Force
+
+        $acl = Get-Acl $TargetKey
+        $acl.SetAccessRuleProtection($true, $false)
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("$env:USERNAME", "FullControl", "Allow")
+        $acl.SetAccessRule($rule)
+        $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule("BUILTIN\Administrators", "FullControl", "Allow")
+        $acl.SetAccessRule($adminRule)
+        Set-Acl -Path $TargetKey -AclObject $acl
+
+        Write-Host ""
+        Write-Host "  Rotated: $($newestKey.Path)" -ForegroundColor Green
+        Write-Host "      -> $TargetKey" -ForegroundColor Green
+        Write-Host "  (modified $($newestKey.LastWriteTime))" -ForegroundColor DarkGray
+    }
+
+    Write-Host ""
+    Write-Host "  Press Enter to return..." -ForegroundColor DarkGray
+    Read-Host
+}
+
 # ── Main Loop ───────────────────────────────────────────────────────────
 
 Show-Banner
@@ -2771,9 +2858,10 @@ while ($true) {
         "7" { Reset-ToFactoryDefaults; break }
         "8" { Repair-GameDatabase; break }
         "9" { Cleanup-OldDashboardSchema; break }
+        "10" { Rotate-SSHKey; break }
         "Q" { Write-Host ""; Write-Host "  Goodbye!"; Write-Host ""; exit 0 }
         "q" { Write-Host ""; Write-Host "  Goodbye!"; Write-Host ""; exit 0 }
-        default { Write-Host ""; Write-Host "  Invalid choice. Please enter 1-9, or Q." -ForegroundColor Yellow; Write-Host "" }
+        default { Write-Host ""; Write-Host "  Invalid choice. Please enter 1-10, or Q." -ForegroundColor Yellow; Write-Host "" }
     }
 
     Write-Host ""
