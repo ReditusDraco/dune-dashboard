@@ -25,20 +25,17 @@ chmod +x start.sh
 
 ## Features
 
-- **Interactive Maps** with calibrated coordinates  
 - **Player Management** (vitals, inventory, vehicles, buildings, guilds, reputation)  
 - **Chat Logs** with channel filtering and auto-refresh  
 - **Director Tools** (battlegroups, world state, transfers)  
 - **SSH File Browser** + **in-browser shell**  
-- **Admin Tools** (ban/kick, history, read‑only SQL viewer)  
 - **Firewall Hardening** via iptables  
 - **Auto‑Update** with safe file replacement  
 - **HTTPS + Remote Access** (self‑signed or Let’s Encrypt)  
 - **Cross‑Platform Launchers**  
 - **Organized Logging** with automatic cleanup and redaction  
-- **Debug Mode** with full request/SSH/K8s tracing  
-- **14 Dune house themes** (Atreides, Harkonnen, Fremen etc.)  
-- And yes, it’s all probably more than you’ll ever need — but it *felt right at the time*.
+- **Debug Mode** with full SSH/K8s tracing  
+- **SSH Key Rotation** — scan all key locations and sync the newest key
 
 ---
 
@@ -46,22 +43,17 @@ chmod +x start.sh
 
 ```
 DuneDashboard/
-├── backend/      # Flask API + services
-├── frontend/     # React + Vite + Tailwind SPA
-├── app/          # Legacy Flask/Jinja2 dashboard
+├── app/          # Flask/Jinja2 dashboard
 ├── launcher.ps1  # Windows launcher
 ├── start.sh      # Linux/macOS launcher
 └── settings.yaml # Generated config (gitignored)
 ```
-
-> The legacy dashboard still works. Like an old Fremen still wandering the desert — reliable, but we don’t talk about it much.
 
 ---
 
 ## Requirements
 
 - Python 3.8+  
-- Node.js 18+  
 - OpenSSH client  
 - `kubectl` access to your Dune Awakening cluster  
 - SSH access to the game server VM  
@@ -84,19 +76,7 @@ DuneDashboard/
 
 ## Development
 
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Backend
-```bash
-cd backend
-pip install -r requirements.txt
-python run.py
-```
+Run `launcher.bat` or `.\launcher.ps1` — the launcher handles dependencies, SSH key configuration, and server setup automatically.
 
 ---
 
