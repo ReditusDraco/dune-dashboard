@@ -1115,6 +1115,79 @@ def register_api_routes(app, services, settings):
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
 
+    # Pod actions (list, logs, delete, describe)
+    @app.route('/api/pods')
+    @auth_req
+    def api_pods_list():
+        try:
+            ns = settings['kubernetes']['namespace']
+            out, err, rc = ssh.run(
+                f'sudo kubectl get pods -n {ns} -o custom-columns=NAME:.metadata.name,ROLE:.metadata.labels.role,STATUS:.status.phase')
+            if rc != 0:
+                return jsonify({'success': False, 'error': err or 'Failed to list pods'})
+            pods = []
+            for line in (out or '').strip().split('\n')[1:]:
+                parts = line.split(None, 2)
+                if len(parts) >= 3:
+                    pods.append({
+                        'name': parts[0],
+                        'role': parts[1] if parts[1] != '<none>' else '',
+                        'status': parts[2],
+                    })
+            return jsonify({'success': True, 'pods': pods})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/pod/logs', methods=['POST'])
+    @auth_req
+    def api_pod_logs():
+        try:
+            data = request.get_json(force=True) or {}
+            pod = data.get('pod', '').strip()
+            if not pod:
+                return jsonify({'success': False, 'error': 'pod name required'})
+            ns = settings['kubernetes']['namespace']
+            out, err, rc = ssh.run(
+                f'sudo kubectl logs -n {ns} {pod} --tail=300 2>/dev/null || echo "NO_LOGS"', timeout=15)
+            if rc != 0 and 'NO_LOGS' not in (out or ''):
+                return jsonify({'success': False, 'error': err or 'Failed to get logs'})
+            logs = (out or '').replace('NO_LOGS\n', '').replace('NO_LOGS', '')
+            return jsonify({'success': True, 'logs': logs, 'pod': pod})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/pod/delete', methods=['POST'])
+    @auth_req
+    def api_pod_delete():
+        try:
+            data = request.get_json(force=True) or {}
+            pod = data.get('pod', '').strip()
+            if not pod:
+                return jsonify({'success': False, 'error': 'pod name required'})
+            ns = settings['kubernetes']['namespace']
+            out, err, rc = ssh.run(f'sudo kubectl delete pod -n {ns} {pod} --wait=false', timeout=30)
+            if rc != 0:
+                return jsonify({'success': False, 'error': err or 'Failed to delete pod'})
+            return jsonify({'success': True, 'message': f'Pod {pod} deleted (will be recreated by its controller)'})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/pod/describe', methods=['POST'])
+    @auth_req
+    def api_pod_describe():
+        try:
+            data = request.get_json(force=True) or {}
+            pod = data.get('pod', '').strip()
+            if not pod:
+                return jsonify({'success': False, 'error': 'pod name required'})
+            ns = settings['kubernetes']['namespace']
+            out, err, rc = ssh.run(f'sudo kubectl describe pod -n {ns} {pod}', timeout=30)
+            if rc != 0:
+                return jsonify({'success': False, 'error': err or 'Failed to describe pod'})
+            return jsonify({'success': True, 'describe': out or '', 'pod': pod})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     # Update management
     @app.route('/api/update/status')
     @auth_req

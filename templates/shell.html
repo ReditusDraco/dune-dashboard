@@ -35,24 +35,76 @@
 </div>
 
 <div class="card">
-    <div class="card-header">Pods ({{ pods|length }})</div>
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Pods (<span id="pod-count">{{ pods|length }}</span>)</span>
+        <button onclick="refreshPodList()" style="padding:4px 12px;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">↻ Refresh</button>
+    </div>
     <div class="table-wrap">
-        <table>
+        <table id="pods-table">
             <thead>
-                <tr><th>Name</th><th>Role</th><th>Status</th></tr>
+                <tr><th>Name</th><th>Role</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody>
                 {% for pod in pods %}
-                <tr>
+                <tr data-pod="{{ pod.name }}" data-role="{{ pod.role }}">
                     <td style="font-family:monospace;font-size:12px;">{{ pod.name }}</td>
-                    <td><span class="badge badge-{{ pod.role.lower() if pod.role else 'default' }}">{{ pod.role or 'default' }}</span></td>
+                    <td><span class="badge badge-{{ (pod.role or 'default').lower() }}">{{ pod.role or 'default' }}</span></td>
                     <td><span class="badge badge-{{ pod.status.lower() }}">{{ pod.status }}</span></td>
+                    <td style="white-space:nowrap;">
+                        <button class="pod-btn shell-btn" onclick="shellPod('{{ pod.name }}')" title="Open shell">[>_]</button>
+                        <button class="pod-btn logs-btn" onclick="fetchPodLogs('{{ pod.name }}')" title="View logs">[&#128196;]</button>
+                        <button class="pod-btn desc-btn" onclick="fetchPodDescribe('{{ pod.name }}')" title="Describe pod">[i]</button>
+                        {% if pod.role == 'igw-database-operation' %}
+                        <button class="pod-btn del-btn-safe" onclick="promptDeletePod('{{ pod.name }}', true)" title="Delete DB backup pod">[&#128465; DB backup]</button>
+                        {% else %}
+                        <button class="pod-btn del-btn" onclick="promptDeletePod('{{ pod.name }}', false)" title="Delete pod">[&#128465;]</button>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="3" class="empty">No pods found</td></tr>
+                <tr><td colspan="4" class="empty">No pods found</td></tr>
                 {% endfor %}
             </tbody>
         </table>
+    </div>
+</div>
+
+<!-- Pod Logs Modal -->
+<div id="logs-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeModal('logs-modal')">
+    <div class="modal" style="max-width:900px;">
+        <div class="modal-header"><h3>Pod Logs — <span id="logs-pod-name"></span></h3></div>
+        <div id="logs-loading" style="padding:20px;text-align:center;color:var(--text-muted);">Loading logs...</div>
+        <pre id="logs-content" style="max-height:500px;overflow:auto;white-space:pre-wrap;display:none;margin:0;padding:16px;font-size:12px;background:var(--bg-card);color:var(--text);border-top:1px solid var(--border);"></pre>
+        <div class="modal-actions" style="padding:12px 16px;border-top:1px solid var(--border);">
+            <button onclick="closeModal('logs-modal')" class="btn-cancel">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Pod Describe Modal -->
+<div id="describe-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeModal('describe-modal')">
+    <div class="modal" style="max-width:900px;">
+        <div class="modal-header"><h3>Describe Pod — <span id="describe-pod-name"></span></h3></div>
+        <div id="describe-loading" style="padding:20px;text-align:center;color:var(--text-muted);">Loading...</div>
+        <pre id="describe-content" style="max-height:500px;overflow:auto;white-space:pre-wrap;display:none;margin:0;padding:16px;font-size:12px;background:var(--bg-card);color:var(--text);border-top:1px solid var(--border);"></pre>
+        <div class="modal-actions" style="padding:12px 16px;border-top:1px solid var(--border);">
+            <button onclick="closeModal('describe-modal')" class="btn-cancel">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="delete-modal" class="modal-overlay" style="display:none;">
+    <div class="modal" style="max-width:450px;">
+        <div class="modal-header"><h3 id="delete-modal-title">Delete Pod</h3></div>
+        <div class="modal-body" style="padding:20px;">
+            <p id="delete-modal-message">Are you sure you want to delete this pod?</p>
+            <p style="font-family:monospace;font-size:14px;padding:8px 12px;background:var(--bg-card);border-radius:4px;margin:12px 0 0;" id="delete-pod-name-display"></p>
+        </div>
+        <div class="modal-actions" style="padding:12px 16px;border-top:1px solid var(--border);">
+            <button onclick="closeModal('delete-modal')" class="btn-cancel">Cancel</button>
+            <button id="delete-confirm-btn" onclick="confirmDeletePod()" class="btn-danger" style="margin-left:8px;">Delete Pod</button>
+        </div>
     </div>
 </div>
 
@@ -178,9 +230,208 @@ function setupTerminalInput(term, type) {
         socket.emit('shell_input', {data: data, type: type});
     });
 }
+
+// ── Pod action functions ──────────────────────────────────────────
+
+let _pendingDeletePod = null;
+
+function openModal(id) {
+    document.getElementById(id).style.display = '';
+}
+
+function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
+}
+
+function shellPod(name) {
+    const sel = document.getElementById('pod-select');
+    for (let i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === name) {
+            sel.selectedIndex = i;
+            break;
+        }
+    }
+    if (!connectedPod) {
+        toggleShell('pod');
+    }
+}
+
+function fetchPodLogs(name) {
+    document.getElementById('logs-pod-name').textContent = name;
+    document.getElementById('logs-content').style.display = 'none';
+    document.getElementById('logs-loading').style.display = '';
+    document.getElementById('logs-content').textContent = '';
+    openModal('logs-modal');
+    csrfFetch('/api/pod/logs', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pod: name}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('logs-loading').style.display = 'none';
+        if (data.success) {
+            const el = document.getElementById('logs-content');
+            el.textContent = data.logs || '(empty logs)';
+            el.style.display = '';
+        } else {
+            document.getElementById('logs-content').textContent = 'Error: ' + (data.error || 'Unknown');
+            document.getElementById('logs-content').style.display = '';
+        }
+    })
+    .catch(err => {
+        document.getElementById('logs-loading').style.display = 'none';
+        document.getElementById('logs-content').textContent = 'Request failed: ' + err;
+        document.getElementById('logs-content').style.display = '';
+    });
+}
+
+function fetchPodDescribe(name) {
+    document.getElementById('describe-pod-name').textContent = name;
+    document.getElementById('describe-content').style.display = 'none';
+    document.getElementById('describe-loading').style.display = '';
+    document.getElementById('describe-content').textContent = '';
+    openModal('describe-modal');
+    csrfFetch('/api/pod/describe', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pod: name}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('describe-loading').style.display = 'none';
+        if (data.success) {
+            const el = document.getElementById('describe-content');
+            el.textContent = data.describe || '(empty)';
+            el.style.display = '';
+        } else {
+            document.getElementById('describe-content').textContent = 'Error: ' + (data.error || 'Unknown');
+            document.getElementById('describe-content').style.display = '';
+        }
+    })
+    .catch(err => {
+        document.getElementById('describe-loading').style.display = 'none';
+        document.getElementById('describe-content').textContent = 'Request failed: ' + err;
+        document.getElementById('describe-content').style.display = '';
+    });
+}
+
+function promptDeletePod(name, safe) {
+    _pendingDeletePod = name;
+    document.getElementById('delete-pod-name-display').textContent = name;
+    const title = document.getElementById('delete-modal-title');
+    const msg = document.getElementById('delete-modal-message');
+    const btn = document.getElementById('delete-confirm-btn');
+    if (safe) {
+        title.textContent = 'Delete DB Backup Pod';
+        msg.innerHTML = 'This pod stores database backups. It is <strong>safe to delete</strong> — Kubernetes will recreate it automatically. Continue?';
+        btn.className = 'btn-edit';
+        btn.textContent = 'Delete Backup Pod';
+    } else {
+        title.textContent = 'Delete Pod?';
+        msg.innerHTML = 'Deleting a pod will restart it. Depending on the pod role, this may cause a brief service interruption. Proceed?';
+        btn.className = 'btn-danger';
+        btn.textContent = 'Delete Pod';
+    }
+    openModal('delete-modal');
+}
+
+function confirmDeletePod() {
+    const name = _pendingDeletePod;
+    if (!name) return;
+    closeModal('delete-modal');
+    const btn = document.querySelector(`[data-pod="${name}"] .del-btn, [data-pod="${name}"] .del-btn-safe`);
+    if (btn) { btn.textContent = '...'; btn.disabled = true; }
+    csrfFetch('/api/pod/delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pod: name}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            setTimeout(refreshPodList, 3000);
+        } else {
+            alert('Delete failed: ' + (data.error || 'Unknown'));
+        }
+    })
+    .catch(err => {
+        alert('Delete request failed: ' + err);
+    })
+    .finally(() => {
+        _pendingDeletePod = null;
+    });
+}
+
+function refreshPodList() {
+    csrfFetch('/api/pods')
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success) return;
+        const tbody = document.querySelector('#pods-table tbody');
+        const countEl = document.getElementById('pod-count');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        if (!data.pods || data.pods.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="empty">No pods found</td></tr>';
+            if (countEl) countEl.textContent = '0';
+            // Also update pod select
+            const sel = document.getElementById('pod-select');
+            sel.innerHTML = '';
+            return;
+        }
+        if (countEl) countEl.textContent = data.pods.length;
+        // Rebuild pod select
+        const sel = document.getElementById('pod-select');
+        sel.innerHTML = '';
+        data.pods.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.name;
+            opt.textContent = p.name;
+            sel.appendChild(opt);
+            // Build table row
+            const tr = document.createElement('tr');
+            tr.dataset.pod = p.name;
+            tr.dataset.role = p.role || '';
+            const role = p.role || 'default';
+            const roleLower = role.toLowerCase();
+            tr.innerHTML = `
+                <td style="font-family:monospace;font-size:12px;">${p.name}</td>
+                <td><span class="badge badge-${roleLower}">${role}</span></td>
+                <td><span class="badge badge-${p.status.toLowerCase()}">${p.status}</span></td>
+                <td style="white-space:nowrap;">
+                    <button class="pod-btn shell-btn" onclick="shellPod('${p.name}')" title="Open shell">[>_]</button>
+                    <button class="pod-btn logs-btn" onclick="fetchPodLogs('${p.name}')" title="View logs">[📄]</button>
+                    <button class="pod-btn desc-btn" onclick="fetchPodDescribe('${p.name}')" title="Describe pod">[i]</button>
+                    ${p.role === 'igw-database-operation'
+                        ? `<button class="pod-btn del-btn-safe" onclick="promptDeletePod('${p.name}', true)" title="Delete DB backup pod">[🗑 DB backup]</button>`
+                        : `<button class="pod-btn del-btn" onclick="promptDeletePod('${p.name}', false)" title="Delete pod">[🗑]</button>`
+                    }
+                </td>`;
+            tbody.appendChild(tr);
+        });
+    })
+    .catch(() => {});
+}
 </script>
 <style>
 .xterm { height: 100%; }
 .xterm-viewport { overflow-y: auto !important; }
+.pod-btn {
+    padding: 2px 6px; border: none; border-radius: 3px;
+    cursor: pointer; font-size: 11px; font-family: monospace;
+    margin: 0 2px; line-height: 1.6;
+}
+.shell-btn { background: var(--primary); color: #fff; }
+.shell-btn:hover { opacity: .85; }
+.logs-btn { background: #5a6c7d; color: #fff; }
+.logs-btn:hover { opacity: .85; }
+.desc-btn { background: #6c5a7d; color: #fff; }
+.desc-btn:hover { opacity: .85; }
+.del-btn { background: #c0392b; color: #fff; }
+.del-btn:hover { opacity: .85; }
+.del-btn-safe { background: #27ae60; color: #fff; padding: 2px 8px; }
+.del-btn-safe:hover { opacity: .85; }
+.pod-btn:disabled { opacity: .5; cursor: not-allowed; }
 </style>
 {% endblock %}

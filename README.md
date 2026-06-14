@@ -29,6 +29,7 @@ chmod +x start.sh
 - **Chat Logs** with channel filtering and auto-refresh  
 - **Director Tools** (battlegroups, world state, transfers)  
 - **SSH File Browser** + **in-browser shell**  
+- **Pod Management** (list, logs, describe, delete with safe-mode for DB backup pods)  
 - **Firewall Hardening** via iptables  
 - **Auto‑Update** with safe file replacement  
 - **HTTPS + Remote Access** (self‑signed or Let’s Encrypt)  
