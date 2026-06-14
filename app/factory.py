@@ -238,6 +238,16 @@ def create_app(settings_path=None):
     )
     logging.debug(f"K8sService initialized: namespace={settings['kubernetes']['namespace']}")
 
+    # Auto-detect namespace if not set in config — must run before
+    # services that consume the namespace (director, backup, etc.).
+    if settings['kubernetes']['namespace'] == '':
+        try:
+            k8s_service.auto_detect_namespace()
+            if k8s_service.namespace:
+                settings['kubernetes']['namespace'] = k8s_service.namespace
+        except Exception as e:
+            logging.warning(f"Could not auto-detect K8s namespace: {e}")
+
     static_cache = MultiCache(ttl_seconds=settings['cache']['static_data_ttl'])
 
     player_svc = PlayerService(db_service, dash_db=dash_db_service)
@@ -249,7 +259,7 @@ def create_app(settings_path=None):
     updater_svc = UpdateService(base_dir)
     logging.debug("UpdateService initialized")
     director_svc = DirectorService(
-        host='127.0.0.1',
+        host=settings.get('director', {}).get('host') or '127.0.0.1',
         node_port=settings.get('director', {}).get('port', 32479),
         k8s_service=k8s_service,
         ssh_service=ssh_service,
@@ -318,14 +328,6 @@ def create_app(settings_path=None):
     @app.teardown_appcontext
     def cleanup_db(exc):
         pass
-
-    if settings['kubernetes']['namespace'] == '':
-        try:
-            k8s_service.auto_detect_namespace()
-            if k8s_service.namespace:
-                settings['kubernetes']['namespace'] = k8s_service.namespace
-        except Exception as e:
-            logging.warning(f"Could not auto-detect K8s namespace: {e}")
 
     # Check SSL certificate expiry and start background monitor
     if ssl_enabled:
@@ -428,7 +430,7 @@ def create_app(settings_path=None):
         def _connection_monitor():
             """Background thread that monitors and auto-reconnects services."""
             import time
-            check_interval = 60  # Check every 60 seconds
+            check_interval = 30  # Check every 30 seconds
             consecutive_failures = 0
             max_consecutive_failures = 5
             last_ssh_ok = True  # Track SSH state to detect reconnection
@@ -521,6 +523,10 @@ def create_app(settings_path=None):
                         except Exception:
                             continue
                         if time.time() >= next_ts:
+                            ssh_svc = services.get('ssh')
+                            if ssh_svc and not ssh_svc.check_connection():
+                                logging.warning('Backup scheduler: SSH unavailable, skipping backup')
+                                continue
                             logging.info('Backup scheduler: Triggering scheduled backup')
                             backup_svc.run_scheduled_backup()
                     except Exception as e:

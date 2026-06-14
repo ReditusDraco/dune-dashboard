@@ -7,6 +7,8 @@ import paramiko
 from app.utils.ssh_key import resolve_ssh_key
 from app.utils.debug_logging import sanitize_for_log, log_ssh_command, log_ssh_result
 
+KEEPALIVE_INTERVAL = 15
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,6 +39,11 @@ class SSHService:
                 transport = self._client.get_transport()
                 if transport and transport.is_active():
                     return self._client
+                logger.debug("SSH: closing stale client before reconnect")
+                try:
+                    self._client.close()
+                except Exception:
+                    pass
                 self._client = None
 
             client = paramiko.SSHClient()
@@ -56,6 +63,9 @@ class SSHService:
             try:
                 client.connect(**connect_kwargs)
                 logger.debug("SSH connection established to %s@%s", self.user, self.host)
+                transport = client.get_transport()
+                if transport:
+                    transport.set_keepalive(KEEPALIVE_INTERVAL)
             except paramiko.AuthenticationException:
                 logger.error("SSH authentication failed for %s@%s", self.user, self.host)
                 raise

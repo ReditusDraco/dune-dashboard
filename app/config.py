@@ -46,6 +46,7 @@ DEFAULTS = {
         'battlegroup_script': '/home/dune/.dune/bin/battlegroup',
     },
     'director': {
+        'host': '',
         'port': 32479,
     },
     'filebrowser': {

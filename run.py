@@ -67,6 +67,12 @@ if __name__ == '__main__':
             print("  [WARN] Binding to 0.0.0.0 without SSL! Credentials sent in cleartext.")
             print("  [WARN] DUNE_ALLOW_INSECURE_REMOTE is set - override is active\n")
 
+    import signal
+    def _shutdown(sig, frame):
+        logging.getLogger(__name__).info("Shutdown signal received, exiting...")
+        os._exit(0)
+    signal.signal(signal.SIGINT, _shutdown)
+
     # Start optional HTTP -> HTTPS redirect server when SSL is enabled.
     # This is convenience only; the dashboard works without port 80 if users visit https://host:port.
     if ssl_context and settings['dashboard'].get('http_redirect', False):

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import urllib.error
 import urllib.request
 import configparser
 import io
@@ -9,6 +10,9 @@ import base64
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+# Internal port the BGD container listens on (used with service cluster IP)
+_BGD_CONTAINER_PORT = 11717
 
 
 class DirectorService:
@@ -27,6 +31,7 @@ class DirectorService:
         self.k8s = k8s_service
         self.ssh = ssh_service
         self.namespace = namespace
+        self._bgd_svc_url = None  # cached cluster URL for SSH fallback
         resource_prefix = namespace
         for prefix in ['funcom-seabass-']:
             if resource_prefix.startswith(prefix):
@@ -35,9 +40,31 @@ class DirectorService:
         self.resource_prefix = resource_prefix
         self.cm_name = f"{resource_prefix}-bgd-conf-cm"
 
+    def _resolve_bgd_svc_url(self):
+        """Find the BGD Service cluster IP via kubectl (stable across pod restarts)."""
+        out, err, rc = self.k8s.run('get svc -o name', timeout=10)
+        if rc != 0:
+            return None
+        for line in (out or '').split('\n'):
+            line = line.strip()
+            if 'bgd-svc' in line:
+                svc_name = line.split('/')[-1]
+                ip_out, ip_err, ip_rc = self.k8s.run(
+                    f'get svc {svc_name} -o jsonpath={{.spec.clusterIP}}', timeout=10)
+                if ip_rc == 0 and ip_out:
+                    ip = ip_out.strip()
+                    logger.info("Director: resolved BGD svc cluster IP %s", ip)
+                    return f'http://{ip}:{_BGD_CONTAINER_PORT}'
+        logger.warning("Director: no BGD service found in namespace %s", self.namespace)
+        return None
+
     def _request(self, path: str, method: str = 'GET', data: Any = None,
                  timeout: int = 15, raw_data: bool = False) -> str:
-        """Execute HTTP request to director service via NodePort.
+        """Execute HTTP request to director service.
+
+        Tries local HTTP first (SSH tunnel + kubectl port-forward).
+        Falls back to SSH + wget directly to the BGD service cluster IP,
+        which survives server restarts without needing a port-forward.
 
         Args:
             path: URL path (e.g., '/v0/battlegroup').
@@ -67,8 +94,44 @@ class DirectorService:
                 method=method
             )
 
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read().decode()
+        # Try local HTTP first (SSH tunnel + kubectl port-forward on VM)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read().decode()
+        except (urllib.error.URLError, ConnectionError, OSError) as e:
+            logger.debug("Director local HTTP failed, trying SSH fallback: %s", e)
+
+        # Fallback: SSH to BGD service cluster IP (always works, no tunnel needed)
+        if not self._bgd_svc_url:
+            self._bgd_svc_url = self._resolve_bgd_svc_url()
+        if self._bgd_svc_url:
+            svc_url = f"{self._bgd_svc_url}{path}"
+            logger.debug("Director SSH fallback: %s %s", method, svc_url)
+            if method == 'GET':
+                out, err, rc = self.ssh.run(f'wget -qO- {svc_url}', timeout=timeout)
+            else:
+                body_bytes = None
+                if raw_data and isinstance(data, str):
+                    body_bytes = data.encode()
+                elif data is not None:
+                    body_bytes = json.dumps(data).encode()
+                body_b64 = base64.b64encode(body_bytes).decode() if body_bytes else ''
+                tmp = f'/tmp/director_{int(time.time())}_{id(self)}'
+                self.ssh.run(f'echo {body_b64} | base64 -d > {tmp}', timeout=5)
+                try:
+                    out, err, rc = self.ssh.run(
+                        f'wget -qO- --post-file={tmp} '
+                        f'--header="Content-Type: application/json" {svc_url}',
+                        timeout=timeout)
+                finally:
+                    self.ssh.run(f'rm -f {tmp}', timeout=5)
+            if rc == 0 and out:
+                return out
+            logger.warning("Director SSH fallback failed (rc=%d): %s",
+                           rc, err[:100] if err else 'none')
+            self._bgd_svc_url = None  # stale cache, re-resolve next time
+
+        raise ConnectionError("Connection refused: Director unreachable via local HTTP or SSH fallback")
 
     # ── Director API methods ──────────────────────────────────────────
 
