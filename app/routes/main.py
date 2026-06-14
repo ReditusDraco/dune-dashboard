@@ -535,6 +535,12 @@ def register_routes(app, services, settings):
     def admin_experimental():
         return render_template('admin_experimental.html')
 
+    # Backup / Restore
+    @app.route('/backup')
+    @login_required
+    def backup_page():
+        return render_template('backup.html')
+
     # Map - shows locations of players, vehicles, buildings
     @app.route('/map')
     @login_required

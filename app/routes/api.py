@@ -38,6 +38,7 @@ def register_api_routes(app, services, settings):
     chat_svc = services['chat']
     admin_svc = services['admin']
     vehicle_svc = services['vehicle']
+    backup_svc = services.get('backup')
     audit_svc = services.get('audit')
 
 # Get or create rate limiter - use existing one from factory if available
@@ -1981,3 +1982,108 @@ def register_api_routes(app, services, settings):
             return jsonify({'success': False, 'error': 'SQL prefix not allowed'})
         success, result = admin_svc.admin_db_execute(sql)
         return jsonify({'success': success, 'result': result if success else str(result)})
+
+    # ── Backup Endpoints ──────────────────────────────────────────────
+    if backup_svc:
+
+        @app.route('/api/backup/list')
+        @auth_req
+        def api_backup_list():
+            return jsonify({'success': True, 'backups': backup_svc.list_backups()})
+
+        @app.route('/api/backup/create', methods=['POST'])
+        @auth_req
+        def api_backup_create():
+            data = request.get_json() or {}
+            password = data.get('password', '')
+            result = backup_svc.create_backup(password=password)
+            return jsonify(result)
+
+        @app.route('/api/backup/info', methods=['POST'])
+        @auth_req
+        def api_backup_info():
+            data = request.get_json() or {}
+            name = data.get('name', '')
+            if not name:
+                return jsonify({'success': False, 'error': 'Backup name required'})
+            path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                'backups', f'{name}.tar.gz')
+            info = backup_svc.get_backup_info(path)
+            return jsonify({'success': True, 'info': info})
+
+        @app.route('/api/backup/delete', methods=['POST'])
+        @auth_req
+        def api_backup_delete():
+            data = request.get_json() or {}
+            name = data.get('name', '')
+            if not name:
+                return jsonify({'success': False, 'error': 'Backup name required'})
+            deleted = backup_svc.delete_backup(name)
+            return jsonify({'success': deleted})
+
+        @app.route('/api/backup/verify', methods=['POST'])
+        @auth_req
+        def api_backup_verify():
+            data = request.get_json() or {}
+            name = data.get('name', '')
+            password = data.get('password', '')
+            if not name:
+                return jsonify({'success': False, 'error': 'Backup name required'})
+            result = backup_svc.verify_backup(name, password=password)
+            return jsonify(result)
+
+        @app.route('/api/backup/restore/preview', methods=['POST'])
+        @auth_req
+        def api_backup_restore_preview():
+            data = request.get_json() or {}
+            name = data.get('name', '')
+            if not name:
+                return jsonify({'success': False, 'error': 'Backup name required'})
+            result = backup_svc.restore_preview(name)
+            return jsonify(result)
+
+        @app.route('/api/backup/restore/test-connection', methods=['POST'])
+        @auth_req
+        def api_backup_test_connection():
+            result = backup_svc.test_connection()
+            return jsonify(result)
+
+        @app.route('/api/backup/restore/start', methods=['POST'])
+        @auth_req
+        def api_backup_restore_start():
+            data = request.get_json() or {}
+            name = data.get('name', '')
+            options = data.get('options', {})
+            if not name:
+                return jsonify({'success': False, 'error': 'Backup name required'})
+            result = backup_svc.start_restore(name, options)
+            return jsonify(result)
+
+        @app.route('/api/backup/restore/status', methods=['POST'])
+        @auth_req
+        def api_backup_restore_status():
+            data = request.get_json() or {}
+            restore_id = data.get('restore_id', '')
+            if not restore_id:
+                return jsonify({'success': False, 'error': 'Restore ID required'})
+            result = backup_svc.get_restore_status(restore_id)
+            return jsonify(result)
+
+        @app.route('/api/backup/schedule', methods=['GET'])
+        @auth_req
+        def api_backup_schedule_get():
+            return jsonify({'success': True, 'schedule': backup_svc.get_schedule()})
+
+        @app.route('/api/backup/schedule', methods=['POST'])
+        @auth_req
+        def api_backup_schedule_set():
+            data = request.get_json() or {}
+            result = backup_svc.update_schedule(data)
+            return jsonify({'success': True, 'schedule': result})
+
+        @app.route('/api/backup/run-scheduled', methods=['POST'])
+        @auth_req
+        def api_backup_run_scheduled():
+            result = backup_svc.run_scheduled_backup()
+            return jsonify(result)

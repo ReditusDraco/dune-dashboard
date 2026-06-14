@@ -7,6 +7,14 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='themes.css') }}">
+    <script>
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    async function csrfFetch(url, options = {}) {
+        options.headers = options.headers || {};
+        options.headers['X-CSRFToken'] = csrfToken;
+        return fetch(url, options);
+    }
+    </script>
     {% block head_extra %}{% endblock %}
 </head>
 <body>
@@ -108,14 +116,6 @@
         <span>This is a fan-made project and is not affiliated with, endorsed by, or connected to Funcom, Legendary Entertainment, or any official Dune rights holders. All game assets, trademarks, and intellectual property belong to their respective owners.</span>
     </footer>
     <script>
-    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-
-    async function csrfFetch(url, options = {}) {
-        options.headers = options.headers || {};
-        options.headers['X-CSRFToken'] = csrfToken;
-        return fetch(url, options);
-    }
-
     // Theme System
     function setTheme(themeName) {
         document.documentElement.setAttribute('data-theme', themeName);

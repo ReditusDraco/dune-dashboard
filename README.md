@@ -36,6 +36,8 @@ chmod +x start.sh
 - **Organized Logging** with automatic cleanup and redaction  
 - **Debug Mode** with full SSH/K8s tracing  
 - **SSH Key Rotation** — scan all key locations and sync the newest key
+- **Backup & Restore** — full server snapshots (game DB, K8s resources, RMQ config, dashboard schema) with optional AES-256 encryption and password protection
+- **Scheduled Backups** — configurable interval or day/time-based scheduling with automatic retention cleanup
 
 ---
 

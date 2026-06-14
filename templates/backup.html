@@ -1,0 +1,722 @@
+{% extends "base.html" %}
+{% block title %}Backup - Dune Awakening Dashboard{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <h1>Backup &amp; Restore</h1>
+    <p>Create full server backups and restore to a new VM</p>
+</div>
+
+<div id="backup-status" class="error-banner" style="display:none;"></div>
+
+<div style="background:rgba(220,38,38,0.12);border:2px solid rgba(220,38,38,0.6);border-left:6px solid #dc2626;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+    <div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px;">&#9888; SECURITY WARNING</div>
+    <div style="font-size:13px;color:var(--text);line-height:1.6;">
+        Backups contain <strong>sensitive information</strong> including database contents, K8s secrets, and server configuration.
+        Store backup files in a <strong>secure, offline location</strong>. Use a password to encrypt backups containing private data.
+        Do not share backup files or expose them in insecure storage.
+        <strong style="color:#ef4444;display:block;margin-top:8px;">&#9888; If you set a password, never forget it — lost passwords cannot be recovered and the backup will be permanently unrecoverable.</strong>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+    <div class="card-header">
+        <span>Backups</span>
+        <button onclick="createBackup()" id="create-btn" style="padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">Create Backup</button>
+    </div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px;">
+            Creates a full snapshot: game database, K8s resources, RMQ definitions, and dashboard settings.
+            Backups are stored locally in <code>./backups/</code>.
+        </p>
+        <div id="backup-list">
+            <p style="color:var(--text-muted);font-size:13px;">Loading backups...</p>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+    <div class="card-header">
+        <span>Scheduled Backups</span>
+        <button onclick="runScheduledNow()" id="run-sched-btn" style="padding:6px 16px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:13px;">Run Now</button>
+        <button onclick="saveSchedule()" id="save-sched-btn" style="padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">Save</button>
+    </div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px;">
+            Automatically create backups on a schedule. Old backups beyond the keep limit are deleted.
+        </p>
+        <div id="schedule-status" style="font-size:13px;margin-bottom:10px;color:var(--text-muted);">Loading schedule...</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:8px;">
+                    <input type="checkbox" id="sched-enabled"> <span>Enable scheduled backups</span>
+                </label>
+                <div style="margin-bottom:8px;">
+                    <div style="display:flex;gap:8px;margin-bottom:8px;">
+                        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;">
+                            <input type="radio" name="sched-mode" value="interval" checked onchange="toggleSchedMode()">
+                            Interval
+                        </label>
+                        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;">
+                            <input type="radio" name="sched-mode" value="schedule" onchange="toggleSchedMode()">
+                            Specific days &amp; time
+                        </label>
+                    </div>
+                    <div id="sched-interval-fields" style="display:flex;gap:6px;align-items:center;">
+                        <input type="number" id="sched-days" value="1" min="0" max="365"
+                            style="width:60px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                        <span style="font-size:12px;color:var(--text-muted);">days</span>
+                        <input type="number" id="sched-hours" value="0" min="0" max="23"
+                            style="width:60px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                        <span style="font-size:12px;color:var(--text-muted);">hours</span>
+                        <input type="number" id="sched-mins" value="0" min="0" max="59"
+                            style="width:60px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                        <span style="font-size:12px;color:var(--text-muted);">mins</span>
+                    </div>
+                    <div id="sched-schedule-fields" style="display:none;">
+                        <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;">
+                            <label style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:3px;cursor:pointer;">
+                                <input type="checkbox" class="sched-day" value="0"> Mon
+                            </label>
+                            <label style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:3px;cursor:pointer;">
+                                <input type="checkbox" class="sched-day" value="1"> Tue
+                            </label>
+                            <label style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:3px;cursor:pointer;">
+                                <input type="checkbox" class="sched-day" value="2"> Wed
+                            </label>
+                            <label style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:3px;cursor:pointer;">
+                                <input type="checkbox" class="sched-day" value="3"> Thu
+                            </label>
+                            <label style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:3px;cursor:pointer;">
+                                <input type="checkbox" class="sched-day" value="4"> Fri
+                            </label>
+                            <label style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:3px;cursor:pointer;">
+                                <input type="checkbox" class="sched-day" value="5"> Sat
+                            </label>
+                            <label style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:3px;cursor:pointer;">
+                                <input type="checkbox" class="sched-day" value="6"> Sun
+                            </label>
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">Times</label>
+                            <div id="sched-times-list">
+                                <div style="display:flex;gap:6px;margin-bottom:4px;">
+                                    <input type="time" class="sched-time" value="05:00"
+                                        style="padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                                    <button onclick="removeSchedTime(this)" style="padding:6px 10px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">&times;</button>
+                                </div>
+                            </div>
+                            <button onclick="addSchedTime()" style="margin-top:4px;padding:4px 12px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px;">+ Add time</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div style="margin-bottom:8px;">
+                    <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:2px;">Keep last N backups (0 = unlimited)</label>
+                    <input type="number" id="sched-keep" value="5" min="0" max="100"
+                        style="width:100%;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:2px;">Encryption password (leave blank for no encryption)</label>
+                    <input type="password" id="sched-password" placeholder="All scheduled backups use this password"
+                        style="width:100%;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                </div>
+            </div>
+        </div>
+        <div id="sched-next-run" style="font-size:12px;color:var(--text-muted);margin-top:8px;"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <span>Restore to Configured VM</span>
+    </div>
+    <div class="card-body">
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">
+            Restore a backup onto a <strong>freshly provisioned VM</strong> (Alpine Linux + K3s already installed).
+            The dashboard will guide you through each step.
+        </p>
+
+        <div id="restore-steps">
+            <div class="restore-step" data-step="1">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <div class="step-title">Select Backup</div>
+                    <div class="step-body">
+                        <select id="restore-backup-select" style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;margin-bottom:8px;">
+                            <option value="">-- Select a backup --</option>
+                        </select>
+                        <div id="restore-preview" style="display:none;font-size:13px;color:var(--text-muted);"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="restore-step" data-step="2">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <div class="step-title">Verify Connection</div>
+                    <div class="step-body">
+                        <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
+                            Uses the SSH key and host configured in <code>settings.yaml</code>.
+                            Ensure the dashboard is already set up to manage the target VM before restoring.
+                        </p>
+                        <button onclick="testConnection()" id="test-conn-btn" style="padding:8px 20px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">Test Connection</button>
+                        <div id="conn-result" style="margin-top:8px;font-size:13px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="restore-step" data-step="3">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <div class="step-title">Restore Options</div>
+                    <div class="step-body">
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;cursor:pointer;">
+                            <input type="checkbox" id="opt-db" checked> <span>Game database (from battlegroup backup)</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;cursor:pointer;">
+                            <input type="checkbox" id="opt-dash-db" checked> <span>Dashboard database (bans, audit log, chat history, player IPs, settings)</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;cursor:pointer;">
+                            <input type="checkbox" id="opt-k8s" checked> <span>K8s secrets &amp; configmaps</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;cursor:pointer;">
+                            <input type="checkbox" id="opt-battlegroup" checked> <span>Battlegroup CRD (triggers pod provisioning)</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;cursor:pointer;">
+                            <input type="checkbox" id="opt-rmq" checked> <span>Re-create RMQ dashboard_admin user</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;cursor:pointer;">
+                            <input type="checkbox" id="opt-ping-fix" checked> <span>Apply HOST_DATACENTER ping fix</span>
+                        </label>
+                        <div id="new-ip-group" style="margin:8px 0 0 24px;display:none;">
+                            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:2px;">New public IP for ping fix</label>
+                            <input type="text" id="restore-new-ip" placeholder="Same as VM IP if unchanged"
+                                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                        </div>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;cursor:pointer;">
+                            <input type="checkbox" id="opt-settings" checked> <span>Restore dashboard settings.yaml</span>
+                        </label>
+                        <div style="margin:12px 0 0 0;padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;">
+                            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Backup password (if encrypted)</div>
+                            <input type="password" id="restore-password" placeholder="Leave blank if not password-protected"
+                                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="restore-step" data-step="4">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                    <div class="step-title">Execute Restore</div>
+                    <div class="step-body">
+                        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">
+                            This will <strong>overwrite all data</strong> on the target VM. Ensure you have selected the correct backup and VM.
+                        </p>
+                        <button onclick="startRestore()" id="restore-btn" style="padding:10px 24px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:14px;font-weight:bold;">
+                            Start Restore
+                        </button>
+                        <div id="restore-progress" style="display:none;margin-top:16px;">
+                            <div style="background:var(--border);border-radius:4px;height:20px;overflow:hidden;margin-bottom:12px;">
+                                <div id="progress-bar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width 0.5s;"></div>
+                            </div>
+                            <div id="progress-steps" style="font-size:13px;"></div>
+                            <div id="restore-complete" style="display:none;margin-top:12px;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;font-size:13px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.restore-step {
+    display:flex;gap:16px;padding:16px 0;
+    border-bottom:1px solid var(--border);
+}
+.restore-step:last-child { border-bottom:none; }
+.step-number {
+    width:32px;height:32px;border-radius:50%;
+    background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:bold;font-size:14px;flex-shrink:0;
+}
+.step-content { flex:1; }
+.step-title { font-weight:bold;font-size:14px;margin-bottom:8px;color:var(--text); }
+.step-body { padding-left:0; }
+#restore-steps .restore-step.disabled { opacity:0.4;pointer-events:none; }
+.backup-row {
+    display:flex;align-items:center;padding:8px 12px;
+    border-bottom:1px solid var(--border);font-size:13px;
+}
+.backup-row:last-child { border-bottom:none; }
+.backup-row:hover { background:var(--bg-hover); }
+.backup-name { flex:1;font-weight:bold; }
+.backup-size { width:80px;text-align:right;color:var(--text-muted); }
+.backup-date { width:160px;color:var(--text-muted); }
+.backup-actions { width:120px;text-align:right; }
+.backup-actions button {
+    padding:4px 10px;font-size:12px;border:none;border-radius:3px;
+    cursor:pointer;margin-left:4px;
+}
+</style>
+
+<script>
+let restorePollInterval = null;
+
+function showStatus(msg, type) {
+    const el = document.getElementById('backup-status');
+    el.textContent = msg;
+    el.className = 'error-banner ' + (type || 'info');
+    el.style.display = 'block';
+}
+
+function hideStatus() {
+    document.getElementById('backup-status').style.display = 'none';
+}
+
+function bytesStr(bytes) {
+    if (!bytes) return '0 B';
+    const u = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    let v = bytes;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return v.toFixed(1) + ' ' + u[i];
+}
+
+function esc(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Backup Management ──────────────────────────────────────────────
+
+async function loadBackups() {
+    try {
+        const r = await csrfFetch('/api/backup/list');
+        const d = await r.json();
+        const container = document.getElementById('backup-list');
+        if (!d.success || !d.backups || d.backups.length === 0) {
+            container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No backups found. Click "Create Backup" to create one.</p>';
+            return;
+        }
+        let html = '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;">';
+        html += '<div class="backup-row" style="font-weight:bold;color:var(--text-muted);font-size:12px;">';
+        html += '<div class="backup-name">Name</div><div class="backup-date">Created</div><div class="backup-size">Size</div><div class="backup-actions">Actions</div></div>';
+        for (const b of d.backups) {
+            html += '<div class="backup-row">';
+            const lock = b.password_protected ? ' &#128274;' : '';
+            html += '<div class="backup-name">' + esc(b.name) + lock + '</div>';
+            html += '<div class="backup-date">' + esc(b.created) + '</div>';
+            html += '<div class="backup-size">' + bytesStr(b.size) + '</div>';
+            html += '<div class="backup-actions">';
+            html += '<button onclick="verifyBackup(\'' + esc(b.name) + '\')" title="Verify">&#10003;</button>';
+            html += '<button onclick="deleteBackup(\'' + esc(b.name) + '\')" title="Delete" style="background:#c0392b;color:#fff;">&#10005;</button>';
+            html += '</div></div>';
+        }
+        html += '</div>';
+        container.innerHTML = html;
+        populateRestoreSelect(d.backups);
+    } catch (e) {
+        document.getElementById('backup-list').innerHTML = '<p style="color:red;font-size:13px;">Failed to load backups: ' + esc(e.message) + '</p>';
+    }
+}
+
+function populateRestoreSelect(backups) {
+    const sel = document.getElementById('restore-backup-select');
+    sel.innerHTML = '<option value="">-- Select a backup --</option>';
+    for (const b of backups) {
+        sel.innerHTML += '<option value="' + esc(b.name) + '">' + esc(b.name) + ' (' + bytesStr(b.size) + ')</option>';
+    }
+}
+
+async function createBackup() {
+    const pw = prompt('Optional: Enter a password to encrypt this backup (leave blank for no encryption):', '');
+    const btn = document.getElementById('create-btn');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+    showStatus('Creating backup... this may take several minutes.', 'info');
+    try {
+        const r = await csrfFetch('/api/backup/create', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({password: pw || ''})
+        });
+        const d = await r.json();
+        if (d.success) {
+            const note = pw ? ' (password protected)' : '';
+            showStatus('Backup created successfully (' + bytesStr(d.size) + ')' + note, 'success');
+        } else {
+            showStatus('Backup failed: ' + esc(d.error), 'error');
+        }
+    } catch (e) {
+        showStatus('Error: ' + esc(e.message), 'error');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Create Backup';
+    loadBackups();
+}
+
+async function verifyBackup(name) {
+    const pw = prompt('Enter backup password (leave blank if not encrypted):', '');
+    showStatus('Verifying ' + name + '...', 'info');
+    try {
+        const r = await csrfFetch('/api/backup/verify', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({name, password: pw || ''})
+        });
+        const d = await r.json();
+        if (d.success && d.valid) {
+            if (d.encrypted && d.files === 0) {
+                showStatus(name + ' is encrypted. ' + esc(d.note || 'Enter password to verify contents.'), 'info');
+            } else {
+                showStatus(name + ' verified: ' + d.files + ' files, ' + bytesStr(d.size), 'success');
+            }
+        } else {
+            showStatus('Verification failed: ' + esc(d.error || 'Corrupt backup'), 'error');
+        }
+    } catch (e) {
+        showStatus('Error: ' + esc(e.message), 'error');
+    }
+}
+
+async function deleteBackup(name) {
+    if (!confirm('Delete backup "' + name + '"? This cannot be undone.')) return;
+    try {
+        const r = await csrfFetch('/api/backup/delete', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({name})
+        });
+        const d = await r.json();
+        if (d.success) {
+            showStatus('Backup deleted.', 'info');
+            loadBackups();
+        } else {
+            showStatus('Delete failed.', 'error');
+        }
+    } catch (e) {
+        showStatus('Error: ' + esc(e.message), 'error');
+    }
+}
+
+// ── Schedule ─────────────────────────────────────────────────────
+
+function toggleSchedMode() {
+    const isInterval = document.querySelector('input[name="sched-mode"]:checked').value === 'interval';
+    document.getElementById('sched-interval-fields').style.display = isInterval ? 'flex' : 'none';
+    document.getElementById('sched-schedule-fields').style.display = isInterval ? 'none' : 'block';
+}
+
+function schedDaysArray() {
+    const days = [];
+    document.querySelectorAll('.sched-day:checked').forEach(cb => days.push(parseInt(cb.value)));
+    return days;
+}
+
+function schedTimesArray() {
+    const times = [];
+    document.querySelectorAll('.sched-time').forEach(inp => { if (inp.value) times.push(inp.value); });
+    return times;
+}
+
+function addSchedTime() {
+    const list = document.getElementById('sched-times-list');
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:6px;margin-bottom:4px;';
+    div.innerHTML = '<input type="time" class="sched-time" value="05:00" style="padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">'
+        + '<button onclick="removeSchedTime(this)" style="padding:6px 10px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">&times;</button>';
+    list.appendChild(div);
+}
+
+function removeSchedTime(btn) {
+    const list = document.getElementById('sched-times-list');
+    if (list.children.length > 1) {
+        btn.parentElement.remove();
+    }
+}
+
+async function loadSchedule() {
+    try {
+        const r = await csrfFetch('/api/backup/schedule');
+        const d = await r.json();
+        if (!d.success) return;
+        const s = d.schedule;
+        document.getElementById('sched-enabled').checked = s.enabled;
+        const mode = s.mode || 'interval';
+        const radio = document.querySelector('input[name="sched-mode"][value="' + mode + '"]');
+        if (radio) radio.checked = true;
+        toggleSchedMode();
+        if (s.interval_minutes) {
+            const total = s.interval_minutes;
+            document.getElementById('sched-days').value = Math.floor(total / 1440);
+            document.getElementById('sched-hours').value = Math.floor((total % 1440) / 60);
+            document.getElementById('sched-mins').value = total % 60;
+        }
+        (s.schedule_days || []).forEach(v => {
+            const cb = document.querySelector('.sched-day[value="' + v + '"]');
+            if (cb) cb.checked = true;
+        });
+        const times = s.schedule_times || ['05:00'];
+        const list = document.getElementById('sched-times-list');
+        list.innerHTML = '';
+        times.forEach(t => {
+            const div = document.createElement('div');
+            div.style.cssText = 'display:flex;gap:6px;margin-bottom:4px;';
+            div.innerHTML = '<input type="time" class="sched-time" value="' + t + '" style="padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">'
+                + '<button onclick="removeSchedTime(this)" style="padding:6px 10px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">&times;</button>';
+            list.appendChild(div);
+        });
+        document.getElementById('sched-keep').value = s.keep;
+        document.getElementById('sched-password').value = s.password || '';
+        const status = document.getElementById('schedule-status');
+        status.innerHTML = s.enabled
+            ? '<span style="color:#27ae60;">&#9679; Active</span>'
+            : '<span style="color:var(--text-muted);">&#9679; Disabled</span>';
+        const nextEl = document.getElementById('sched-next-run');
+        if (s.enabled && s.next_run) {
+            const dt = new Date(s.next_run);
+            const pad = n => String(n).padStart(2,'0');
+            const fmt = pad(dt.getDate())+'-'+pad(dt.getMonth()+1)+'-'+dt.getFullYear()+' '+pad(dt.getHours())+':'+pad(dt.getMinutes());
+            nextEl.textContent = 'Next run: ' + fmt;
+        } else {
+            nextEl.textContent = '';
+        }
+    } catch (e) {
+        document.getElementById('schedule-status').textContent = 'Failed to load schedule';
+    }
+}
+
+async function saveSchedule() {
+    const btn = document.getElementById('save-sched-btn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    const mode = document.querySelector('input[name="sched-mode"]:checked').value;
+    const body = {
+        enabled: document.getElementById('sched-enabled').checked,
+        mode: mode,
+        keep: parseInt(document.getElementById('sched-keep').value),
+        password: document.getElementById('sched-password').value,
+    };
+    if (mode === 'interval') {
+        body.interval_minutes = parseInt(document.getElementById('sched-days').value) * 1440
+            + parseInt(document.getElementById('sched-hours').value) * 60
+            + parseInt(document.getElementById('sched-mins').value);
+    } else {
+        body.schedule_days = schedDaysArray();
+        body.schedule_times = schedTimesArray();
+    }
+    try {
+        const r = await csrfFetch('/api/backup/schedule', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(body)
+        });
+        const d = await r.json();
+        if (d.success) {
+            showStatus('Schedule saved.', 'success');
+            loadSchedule();
+        } else {
+            showStatus('Failed to save schedule.', 'error');
+        }
+    } catch (e) {
+        showStatus('Error: ' + esc(e.message), 'error');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Save';
+}
+
+async function runScheduledNow() {
+    if (!confirm('Run a scheduled backup now? This will also apply retention.')) return;
+    const btn = document.getElementById('run-sched-btn');
+    btn.disabled = true;
+    btn.textContent = 'Running...';
+    showStatus('Running scheduled backup...', 'info');
+    try {
+        const r = await csrfFetch('/api/backup/run-scheduled', {method:'POST'});
+        const d = await r.json();
+        if (d.success) {
+            showStatus('Scheduled backup completed (' + bytesStr(d.size) + ')', 'success');
+            loadBackups();
+            loadSchedule();
+        } else {
+            showStatus('Scheduled backup failed: ' + esc(d.error), 'error');
+        }
+    } catch (e) {
+        showStatus('Error: ' + esc(e.message), 'error');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Run Now';
+}
+
+// ── Restore Wizard ─────────────────────────────────────────────────
+
+document.getElementById('restore-backup-select').addEventListener('change', async function() {
+    const name = this.value;
+    const preview = document.getElementById('restore-preview');
+    if (!name) { preview.style.display = 'none'; return; }
+    try {
+        const r = await csrfFetch('/api/backup/restore/preview', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({name})
+        });
+        const d = await r.json();
+        if (d.success) {
+            preview.style.display = 'block';
+            let html = '<div style="margin-top:8px;padding:8px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;">';
+            html += '<strong>Backup contents:</strong><br>';
+            html += 'Created: ' + esc(d.created) + '<br>';
+            const comps = d.components || [];
+            if (comps.length > 0) {
+                html += '<ul style="margin:4px 0 0 16px;padding:0;">';
+                for (const c of comps) {
+                    html += '<li>' + esc(c.name) + ' (' + bytesStr(c.size) + ')</li>';
+                }
+                html += '</ul>';
+            }
+            html += '</div>';
+            preview.innerHTML = html;
+        }
+    } catch(e) { preview.innerHTML = '<span style="color:red;">Error loading preview</span>'; }
+});
+
+document.getElementById('opt-ping-fix').addEventListener('change', function() {
+    document.getElementById('new-ip-group').style.display = this.checked ? 'block' : 'none';
+});
+
+async function testConnection() {
+    const resultDiv = document.getElementById('conn-result');
+    const btn = document.getElementById('test-conn-btn');
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+    resultDiv.innerHTML = 'Testing connection...';
+
+    try {
+        const r = await csrfFetch('/api/backup/restore/test-connection', {
+            method:'POST', headers:{'Content-Type':'application/json'}
+        });
+        const d = await r.json();
+        if (d.success) {
+            let html = '<span style="color:#27ae60;">&#10003; Connected to ' + esc(d.hostname) + '</span>';
+            if (d.k8s_ok) html += '<br><span style="color:#27ae60;">&#10003; kubectl accessible</span>';
+            else html += '<br><span style="color:#f39c12;">&#9888; kubectl not detected (is K3s installed?)</span>';
+            resultDiv.innerHTML = html;
+        } else {
+            resultDiv.innerHTML = '<span style="color:red;">&#10005; ' + esc(d.error) + '</span>';
+        }
+    } catch(e) {
+        resultDiv.innerHTML = '<span style="color:red;">Error: ' + esc(e.message) + '</span>';
+    }
+    btn.disabled = false;
+    btn.textContent = 'Test Connection';
+}
+
+async function startRestore() {
+    const name = document.getElementById('restore-backup-select').value;
+
+    if (!name) {
+        showStatus('Please select a backup.', 'error');
+        return;
+    }
+
+    if (!confirm('This will OVERWRITE ALL DATA on the configured server. Are you sure?')) return;
+    if (!confirm('Last chance — are you absolutely sure you want to restore "' + name + '"?')) return;
+
+    const password = document.getElementById('restore-password').value;
+
+    const options = {
+        restore_db: document.getElementById('opt-db').checked,
+        restore_dash_db: document.getElementById('opt-dash-db').checked,
+        restore_k8s: document.getElementById('opt-k8s').checked,
+        restore_battlegroup: document.getElementById('opt-battlegroup').checked,
+        restore_rmq: document.getElementById('opt-rmq').checked,
+        restore_ping_fix: document.getElementById('opt-ping-fix').checked,
+        restore_settings: document.getElementById('opt-settings').checked,
+        new_ip: document.getElementById('restore-new-ip').value.trim() || '',
+        password: password || '',
+    };
+
+    const btn = document.getElementById('restore-btn');
+    btn.disabled = true;
+    btn.textContent = 'Restoring...';
+
+    document.getElementById('restore-progress').style.display = 'block';
+    document.getElementById('progress-bar').style.width = '0%';
+    document.getElementById('progress-steps').innerHTML = '';
+    document.getElementById('restore-complete').style.display = 'none';
+
+    try {
+        const r = await csrfFetch('/api/backup/restore/start', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({name, vm_ip: vmIp, options})
+        });
+        const d = await r.json();
+        if (!d.success) {
+            showStatus('Restore failed to start: ' + esc(d.error), 'error');
+            btn.disabled = false;
+            btn.textContent = 'Start Restore';
+            return;
+        }
+        restorePollInterval = setInterval(() => pollRestore(d.restore_id), 2000);
+    } catch(e) {
+        showStatus('Error: ' + esc(e.message), 'error');
+        btn.disabled = false;
+        btn.textContent = 'Start Restore';
+    }
+}
+
+async function pollRestore(restoreId) {
+    try {
+        const r = await csrfFetch('/api/backup/restore/status', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({restore_id: restoreId})
+        });
+        const d = await r.json();
+        if (!d.success) {
+            clearInterval(restorePollInterval);
+            return;
+        }
+
+        document.getElementById('progress-bar').style.width = d.progress + '%';
+
+        let html = '';
+        for (let i = 0; i < d.steps.length; i++) {
+            const step = d.steps[i];
+            const completed = d.completed_steps.find(s => s.label === step);
+            if (completed) {
+                const icon = completed.success ? '&#10003;' : '&#10005;';
+                const color = completed.success ? '#27ae60' : '#c0392b';
+                html += '<div style="padding:4px 0;"><span style="color:' + color + ';">' + icon + '</span> ' + esc(step) + '</div>';
+            } else if (i < d.current_step) {
+                html += '<div style="padding:4px 0;color:var(--text-muted);">&#9679; ' + esc(step) + '</div>';
+            } else if (i === d.current_step) {
+                html += '<div style="padding:4px 0;color:var(--accent);font-weight:bold;">&#9654; ' + esc(step) + '</div>';
+            } else {
+                html += '<div style="padding:4px 0;color:var(--text-muted);opacity:0.5;">' + esc(step) + '</div>';
+            }
+        }
+        document.getElementById('progress-steps').innerHTML = html;
+
+        if (d.status === 'completed' || d.status === 'completed_with_errors') {
+            clearInterval(restorePollInterval);
+            const completeDiv = document.getElementById('restore-complete');
+            completeDiv.style.display = 'block';
+            if (d.errors && d.errors.length > 0) {
+                completeDiv.innerHTML = '<strong style="color:#f39c12;">Restore completed with warnings:</strong><br>' +
+                    d.errors.map(e => '<div style="color:#c0392b;font-size:12px;">&#9888; ' + esc(e) + '</div>').join('');
+            } else {
+                completeDiv.innerHTML = '<strong style="color:#27ae60;">&#10003; Restore completed successfully!</strong>';
+            }
+            document.getElementById('restore-btn').disabled = false;
+            document.getElementById('restore-btn').textContent = 'Start Restore';
+        }
+    } catch(e) {
+        clearInterval(restorePollInterval);
+    }
+}
+
+loadBackups();
+loadSchedule();
+</script>
+
+{% endblock %}

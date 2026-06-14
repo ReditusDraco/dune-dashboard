@@ -60,6 +60,23 @@ class K8sService:
             return []
         return [d.strip() for d in (out or '').strip().split('\n') if d.strip()]
 
+    def _parse_memory_gib(self, raw):
+        raw = raw.strip().upper()
+        if raw.endswith('KI'):
+            return round(int(raw[:-2]) / (1024 ** 3), 1)
+        if raw.endswith('MI'):
+            return round(int(raw[:-2]) / 1024, 1)
+        if raw.endswith('GI'):
+            return round(int(raw[:-2]), 1)
+        if raw.endswith('TI'):
+            return round(int(raw[:-2]) * 1024, 1)
+        if raw.endswith('PI'):
+            return round(int(raw[:-2]) * 1024 ** 2, 1)
+        try:
+            return round(int(raw) / (1024 ** 3), 1)
+        except ValueError:
+            return 0.0
+
     def get_node_metrics(self):
         out, err, rc = self.run('top nodes')
         if rc == 0 and out.strip():
@@ -67,10 +84,17 @@ class K8sService:
             if len(lines) >= 2:
                 parts = lines[1].split()
                 if len(parts) >= 4:
+                    cpu_pct_str = parts[2]
+                    mem_str = parts[3]
+                    mem_pct_str = parts[4] if len(parts) >= 5 else ''
                     return {
-                        'cpu': parts[2],
-                        'memory': parts[3],
-                        'cpu_pct': parts[1]
+                        'cpu': cpu_pct_str,
+                        'memory': mem_str,
+                        'cpu_pct': parts[1],
+                        'cpu_num': float(cpu_pct_str.rstrip('%')),
+                        'memory_gib': self._parse_memory_gib(mem_str),
+                        'memory_pct': mem_pct_str,
+                        'memory_pct_num': float(mem_pct_str.rstrip('%')) if mem_pct_str else 0.0,
                     }
         return {}
 

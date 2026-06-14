@@ -6,6 +6,7 @@ import time
 import logging
 import logging.handlers
 import threading
+from datetime import datetime
 from flask import Flask, request, g
 from flask_login import current_user
 from flask_socketio import SocketIO
@@ -25,6 +26,7 @@ from app.services.admin import AdminService
 from app.services.updater import UpdateService
 from app.services.director import DirectorService
 from app.services.rmq import RmqService
+from app.services.backup import BackupService
 from app.utils.cache import MultiCache
 from app.routes.main import register_routes
 from app.routes.api import register_api_routes
@@ -262,6 +264,9 @@ def create_app(settings_path=None):
     )
     logging.debug(f"RmqService initialized: admin=localhost:{settings.get('rabbitmq', {}).get('admin_port', 30325)} game=localhost:{settings.get('rabbitmq', {}).get('game_port', 32716)}")
 
+    backup_svc = BackupService(ssh_service, k8s_service, rmq_svc, settings)
+    logging.debug("BackupService initialized")
+
     services = {
         'db': db_service,
         'dash_db': dash_db_service,
@@ -275,6 +280,7 @@ def create_app(settings_path=None):
         'updater': updater_svc,
         'director': director_svc,
         'rmq': rmq_svc,
+        'backup': backup_svc,
     }
     logging.debug(f"All services registered: {list(services.keys())}")
 
@@ -495,6 +501,36 @@ def create_app(settings_path=None):
         logging.info("Connection monitor: Background service health monitor started")
     except Exception as e:
         logging.debug(f"Could not initialize connection monitor: {e}")
+
+    # ── Backup Scheduler ──────────────────────────────────────────────────
+    try:
+        backup_svc = services.get('backup')
+        if backup_svc:
+            def _backup_scheduler():
+                while True:
+                    time.sleep(60)
+                    try:
+                        cfg = backup_svc.load_schedule()
+                        if not cfg.get('enabled'):
+                            continue
+                        next_str = cfg.get('next_run', '')
+                        if not next_str:
+                            continue
+                        try:
+                            next_ts = datetime.fromisoformat(next_str).timestamp()
+                        except Exception:
+                            continue
+                        if time.time() >= next_ts:
+                            logging.info('Backup scheduler: Triggering scheduled backup')
+                            backup_svc.run_scheduled_backup()
+                    except Exception as e:
+                        logging.error(f'Backup scheduler: {e}')
+
+            sched_thread = threading.Thread(target=_backup_scheduler, daemon=True)
+            sched_thread.start()
+            logging.info('Backup scheduler: Background thread started')
+    except Exception as e:
+        logging.debug(f'Could not start backup scheduler: {e}')
 
     app.dune_settings = settings
     app.dune_services = services

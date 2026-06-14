@@ -939,6 +939,32 @@ td a:hover { text-decoration: underline; }
     border-radius: 3px;
 }
 
+/* Resource charts */
+.chart-panel .chart-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 400;
+}
+.chart-panel-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+.chart-box {
+    position: relative;
+    height: 140px;
+}
+.chart-box canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+@media (max-width: 600px) {
+    .chart-panel-body {
+        grid-template-columns: 1fr;
+    }
+    .chart-box { height: 120px; }
+}
+
 /* Empty state */
 .empty {
     text-align: center;

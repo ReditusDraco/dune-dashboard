@@ -41,6 +41,18 @@
     {% endif %}
 </div>
 
+<div class="card chart-panel">
+    <div class="card-header">Node Resources <span class="chart-hint">5-minute history, updated every 5s</span></div>
+    <div class="card-body chart-panel-body">
+        <div class="chart-box">
+            <canvas id="chart-cpu" height="120"></canvas>
+        </div>
+        <div class="chart-box">
+            <canvas id="chart-mem" height="120"></canvas>
+        </div>
+    </div>
+</div>
+
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
     <div class="card">
         <div class="card-header">Players Per Map</div>
@@ -307,17 +319,108 @@
 
 {% block scripts %}
 <script>
-// Auto-refresh node metrics every 5 seconds
-setInterval(async function() {
+// ── Node resource charts ──────────────────────────────────────────────
+const MAX_POINTS = 720;  // 1 hour at 5s intervals
+const SPARKLINE_POINTS = 60;  // 5 min for sparkline
+let metricsHistory = [];  // [{cpu_num, memory_gib, memory_pct_num, memory, cpu, ts}]
+
+function parseCSSVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function drawCharts(history) {
+    const cpuVals = history.map(p => p.cpu_num);
+    const memVals = history.map(p => p.memory_gib);
+    const primaryColor = parseCSSVar('--primary') || '#c9a24e';
+    const successColor = parseCSSVar('--success') || '#27ae60';
+
+    const chartCpu = document.getElementById('chart-cpu');
+    const chartMem = document.getElementById('chart-mem');
+    if (!chartCpu || !window.Chart) return;
+
+    if (!window._cpuChart) {
+        const textColor = parseCSSVar('--text-muted') || '#9a8a7a';
+        const gridColor = parseCSSVar('--border') || '#e0d5c7';
+        const commonOpts = {
+            responsive: true, maintainAspectRatio: false,
+            animation: { duration: 300 },
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { display: true, grid: { color: gridColor }, ticks: { color: textColor, font: { size: 10 }, maxTicksLimit: 8 } },
+                y: { display: true, grid: { color: gridColor }, ticks: { color: textColor, font: { size: 10 } } }
+            }
+        };
+        window._cpuChart = new Chart(chartCpu, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'CPU %', data: [], borderColor: primaryColor, backgroundColor: primaryColor + '20', fill: true, pointRadius: 0, borderWidth: 2, tension: 0.3 }] },
+            options: { ...commonOpts, scales: { ...commonOpts.scales, y: { ...commonOpts.scales.y, min: 0, max: 100, title: { display: true, text: 'CPU %', color: textColor, font: { size: 11 } } } } }
+        });
+        const memMax = window._totalMemGib ? Math.ceil(window._totalMemGib) : undefined;
+        window._memChart = new Chart(chartMem, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Memory GiB', data: [], borderColor: successColor, backgroundColor: successColor + '20', fill: true, pointRadius: 0, borderWidth: 2, tension: 0.3 }] },
+            options: { ...commonOpts, scales: { ...commonOpts.scales, y: { ...commonOpts.scales.y, beginAtZero: true, max: memMax, title: { display: true, text: 'GiB', color: textColor, font: { size: 11 } } } } }
+        });
+    }
+
+    const labels = history.map(p => p.ts);
+    window._cpuChart.data.labels = labels;
+    window._cpuChart.data.datasets[0].data = cpuVals;
+    window._cpuChart.data.datasets[0].borderColor = primaryColor;
+    window._cpuChart.data.datasets[0].backgroundColor = primaryColor + '20';
+    window._cpuChart.update('none');
+
+    window._memChart.data.labels = labels;
+    window._memChart.data.datasets[0].data = memVals;
+    window._memChart.data.datasets[0].borderColor = successColor;
+    window._memChart.data.datasets[0].backgroundColor = successColor + '20';
+    if (window._totalMemGib) {
+        window._memChart.options.scales.y.max = Math.ceil(window._totalMemGib);
+    }
+    window._memChart.update('none');
+}
+
+async function fetchMetrics() {
     try {
         const resp = await fetch('/server/metrics');
         const data = await resp.json();
         if (data.cpu) {
             document.getElementById('node-cpu').textContent = data.cpu;
+
+            const memPctNum = data.memory_pct_num || 0;
+            const memGib = data.memory_gib || 0;
+            if (!window._totalMemGib && memPctNum > 0) {
+                window._totalMemGib = memGib / (memPctNum / 100);
+            }
             document.getElementById('node-mem').textContent = data.memory;
+
+            const now = new Date();
+            const ts = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0') + ':' + now.getSeconds().toString().padStart(2, '0');
+            const point = { cpu_num: data.cpu_num || 0, memory_gib: memGib, memory_pct_num: memPctNum, memory: data.memory, cpu: data.cpu, ts: ts };
+            metricsHistory.push(point);
+            if (metricsHistory.length > MAX_POINTS) metricsHistory.shift();
+
+            drawCharts(metricsHistory);
         }
     } catch (e) {}
-}, 5000);
+}
+
+function loadChartJS(src) {
+    return new Promise((resolve, reject) => {
+        if (window.Chart) { resolve(); return; }
+        const s = document.createElement('script');
+        s.src = src; s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+    });
+}
+
+loadChartJS('https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js').then(() => {
+    fetchMetrics();
+    setInterval(fetchMetrics, 5000);
+}).catch(() => {
+    // Chart.js failed to load, still update text values
+    setInterval(fetchMetrics, 5000);
+});
 
 document.querySelectorAll('.btn-action').forEach(btn => {
     btn.addEventListener('click', async function() {
