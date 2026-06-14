@@ -18,11 +18,34 @@
     {% block head_extra %}{% endblock %}
 </head>
 <body>
+    <button class="nav-toggle" id="navToggle" title="Toggle nav layout" onclick="toggleNavLayout()">☰</button>
     <nav>
         <div class="brand">DUNE DASHBOARD</div>
-        {% for href, label in nav_pages %}
-        <a href="{{ href }}" class="{% if current_path == href %}active{% endif %}">{{ label }}</a>
-        {% endfor %}
+        <!-- Horizontal: use grouped nav -->
+        <div class="nav-links-h">
+            {% for item in nav_groups %}
+            {% if item|length == 2 and item[1] is string %}
+            {# Simple link #}
+            <a href="{{ item[0] }}" class="{% if current_path == item[0] %}active{% endif %}">{{ item[1] }}</a>
+            {% else %}
+            {# Dropdown group: item[0] is label, item[1] is list of (href, label) #}
+            <div class="nav-dropdown">
+                <a class="nav-dropdown-toggle {% for ih, il in item[1] %}{% if current_path == ih %}active{% endif %}{% endfor %}">{{ item[0] }} ▾</a>
+                <div class="nav-dropdown-content">
+                    {% for ih, il in item[1] %}
+                    <a href="{{ ih }}" class="{% if current_path == ih %}active{% endif %}">{{ il }}</a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        <!-- Vertical nav links (flat list) -->
+        <div class="nav-links-v">
+            {% for href, label in nav_pages %}
+            <a href="{{ href }}" class="{% if current_path == href %}active{% endif %}">{{ label }}</a>
+            {% endfor %}
+        </div>
         <div class="spacer"></div>
         <div class="theme-dropdown">
             <button class="theme-btn" title="Theme">🎨</button>
@@ -101,12 +124,12 @@
                 </div>
             </div>
         </div>
-        <span style="font-size:12px;color:var(--nav-text);display:flex;align-items:center;">
+        <span class="nav-conn">
             <span class="conn-dot {% if conn_ok %}online{% else %}offline{% endif %}"></span>
             {{ 'Connected' if conn_ok else 'Disconnected' }}
         </span>
         {% if current_user and current_user.is_authenticated %}
-        <a href="/logout" style="font-size:12px;color:var(--nav-text);">Logout</a>
+        <a href="/logout" class="nav-logout">Logout</a>
         {% endif %}
     </nav>
     <main class="container">
@@ -135,7 +158,41 @@
         updateThemeUI(savedTheme);
     }
 
+    // Nav Layout System (experimental vertical toggle)
+    function toggleNavLayout() {
+        const body = document.body;
+        const isMobile = window.innerWidth <= 768;
+        if (isMobile) {
+            document.querySelector('nav').classList.toggle('nav-open');
+            return;
+        }
+        const current = body.getAttribute('data-nav-layout') || 'horizontal';
+        const next = current === 'horizontal' ? 'vertical' : 'horizontal';
+        body.setAttribute('data-nav-layout', next);
+        localStorage.setItem('dune-nav-layout', next);
+    }
+
+    function initNavLayout() {
+        const isMobile = window.innerWidth <= 768;
+        if (isMobile) {
+            document.body.setAttribute('data-nav-layout', 'vertical');
+            localStorage.removeItem('dune-nav-layout');
+        } else {
+            const saved = localStorage.getItem('dune-nav-layout') || 'horizontal';
+            document.body.setAttribute('data-nav-layout', saved);
+        }
+    }
+
+    window.addEventListener('resize', function() {
+        const isMobile = window.innerWidth <= 768;
+        const current = document.body.getAttribute('data-nav-layout');
+        if (isMobile && current !== 'vertical') {
+            document.body.setAttribute('data-nav-layout', 'vertical');
+        }
+    });
+
     initTheme();
+    initNavLayout();
     </script>
     {% block scripts %}{% endblock %}
     <style>

@@ -84,3 +84,28 @@ NAV_PAGES = [
     ('/admin-experimental', 'Experimental'),
     ('/backup', 'Backup'),
 ]
+
+NAV_GROUPS = [
+    ('/', 'Overview'),
+    ('Server', [
+        ('/server', 'Server'),
+        ('/director', 'Director'),
+        ('/shell', 'Shell'),
+        ('/files', 'Files'),
+    ]),
+    ('Players', [
+        ('/players', 'Players'),
+        ('/vehicles', 'Vehicles'),
+        ('/guilds', 'Guilds'),
+        ('/buildings', 'Buildings'),
+    ]),
+    ('World', [
+        ('/events', 'Events'),
+        ('/chat', 'Chat'),
+        ('/map', 'Map'),
+    ]),
+    ('System', [
+        ('/admin-experimental', 'Experimental'),
+        ('/backup', 'Backup'),
+    ]),
+]

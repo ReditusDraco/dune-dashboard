@@ -4,7 +4,7 @@ import json
 import logging
 from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
-from app.utils.constants import NAV_PAGES, GUILD_ROLES
+from app.utils.constants import NAV_PAGES, NAV_GROUPS, GUILD_ROLES
 from app.utils.debug_logging import sanitize_for_log
 from app.services.player import LIKE_PC
 
@@ -49,6 +49,7 @@ def register_routes(app, services, settings):
         )
         return dict(
             nav_pages=NAV_PAGES,
+            nav_groups=NAV_GROUPS,
             current_path=request.path if request else '/',
             fmt_role=fmt_role,
             conn_ok=conn_ok,

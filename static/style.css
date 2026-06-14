@@ -71,6 +71,50 @@ nav a.active {
 
 nav .spacer { flex: 1; }
 
+/* Horizontal vs vertical nav link visibility */
+.nav-links-h { display: flex; align-items: center; gap: 2px; }
+.nav-links-v { display: none; }
+
+body[data-nav-layout="vertical"] .nav-links-h { display: none; }
+body[data-nav-layout="vertical"] .nav-links-v { display: flex; flex-direction: column; width: 100%; flex: 1; overflow-y: auto; }
+
+/* Horizontal nav dropdowns */
+.nav-dropdown {
+    position: relative;
+    display: inline-block;
+}
+.nav-dropdown-toggle {
+    cursor: default;
+    padding: 0 10px;
+}
+.nav-dropdown-content {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: var(--nav-bg);
+    min-width: 140px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    border-radius: 6px;
+    z-index: 1000;
+    padding: 4px 0;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.nav-dropdown-content a {
+    color: var(--nav-text);
+    padding: 8px 16px;
+    height: auto;
+    border-bottom: none;
+    font-size: 12px;
+    display: block;
+}
+.nav-dropdown-content a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.nav-dropdown-content a.active {
+    color: var(--nav-active);
+    border-left: 3px solid var(--nav-active);
+}
+.nav-dropdown:hover .nav-dropdown-content { display: block; }
+
 .conn-dot {
     width: 8px;
     height: 8px;
@@ -1169,4 +1213,131 @@ td a:hover { text-decoration: underline; }
     color: var(--text-muted);
     font-family: monospace;
     white-space: nowrap;
+}
+
+/* Nav Layout Toggle */
+.nav-toggle {
+    position: fixed;
+    top: 56px;
+    left: 6px;
+    z-index: 101;
+    background: var(--nav-bg);
+    color: var(--nav-text);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    padding: 3px 7px;
+    font-size: 15px;
+    cursor: pointer;
+    line-height: 1;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+}
+.nav-toggle:hover { opacity: 1; color: #fff; }
+
+/* Vertical sidebar layout */
+body[data-nav-layout="vertical"] {
+    padding-left: 216px;
+}
+
+body[data-nav-layout="vertical"] .nav-toggle {
+    left: 204px;
+    top: 6px;
+}
+
+body[data-nav-layout="vertical"] nav {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 200px;
+    flex-direction: column;
+    height: 100vh;
+    padding: 0;
+    align-items: stretch;
+    box-shadow: 1px 0 4px rgba(0,0,0,0.2);
+}
+
+body[data-nav-layout="vertical"] nav .brand {
+    padding: 20px 16px 12px;
+    margin-right: 0;
+    font-size: 13px;
+    text-align: center;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+body[data-nav-layout="vertical"] nav a {
+    padding: 10px 16px;
+    height: auto;
+    border-bottom: none;
+    border-left: 3px solid transparent;
+    font-size: 12px;
+}
+
+body[data-nav-layout="vertical"] nav a:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+body[data-nav-layout="vertical"] nav a.active {
+    border-bottom-color: transparent;
+    border-left-color: var(--nav-active);
+}
+
+body[data-nav-layout="vertical"] nav .spacer {
+    display: none;
+}
+
+body[data-nav-layout="vertical"] nav .theme-dropdown {
+    padding: 8px 16px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+body[data-nav-layout="vertical"] nav .theme-dropdown .theme-dropdown-content {
+    bottom: 100%;
+    top: auto;
+    left: 0;
+    right: auto;
+    margin-bottom: 4px;
+}
+
+body[data-nav-layout="vertical"] nav .theme-dropdown .theme-btn {
+    width: 100%;
+    justify-content: center;
+}
+
+body[data-nav-layout="vertical"] nav .nav-conn,
+body[data-nav-layout="vertical"] nav .nav-logout {
+    padding: 10px 16px;
+    justify-content: center;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+body[data-nav-layout="vertical"] .container {
+    max-width: none;
+    padding: 24px;
+}
+
+body[data-nav-layout="vertical"] .site-footer {
+    margin-left: 216px;
+}
+
+@media (max-width: 768px) {
+    body[data-nav-layout="vertical"] {
+        padding-left: 0;
+    }
+    body[data-nav-layout="vertical"] .nav-toggle {
+        top: 8px;
+        left: 8px;
+    }
+    body[data-nav-layout="vertical"] nav {
+        display: none;
+    }
+    body[data-nav-layout="vertical"] nav.nav-open {
+        display: flex;
+    }
+    body[data-nav-layout="vertical"] .container {
+        padding: 24px;
+    }
+    body[data-nav-layout="vertical"] .site-footer {
+        margin-left: 0;
+    }
 }

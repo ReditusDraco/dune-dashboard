@@ -367,7 +367,7 @@
     display: none;
     position: absolute;
     right: 0;
-    background: #252530;
+    background: var(--nav-bg);
     min-width: 290px;
     max-height: 80vh;
     overflow-y: auto;
@@ -375,7 +375,7 @@
     border-radius: 8px;
     z-index: 1000;
     padding: 12px;
-    border: 1px solid #404050;
+    border: 1px solid rgba(255,255,255,0.1);
 }
 
 .theme-grid {

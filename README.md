@@ -30,6 +30,7 @@ chmod +x start.sh
 - **Director Tools** (battlegroups, world state, transfers)  
 - **SSH File Browser** + **in-browser shell**  
 - **Pod Management** (list, logs, describe, delete with safe-mode for DB backup pods)  
+- **Nav Layout** — switch between horizontal and vertical sidebar; persists preference; auto-enables sidebar on mobile  
 - **Firewall Hardening** via iptables  
 - **Auto‑Update** with safe file replacement  
 - **HTTPS + Remote Access** (self‑signed or Let’s Encrypt)  
