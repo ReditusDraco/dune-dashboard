@@ -2146,7 +2146,9 @@ def register_api_routes(app, services, settings):
         @app.route('/api/backup/schedule', methods=['GET'])
         @auth_req
         def api_backup_schedule_get():
-            return jsonify({'success': True, 'schedule': backup_svc.get_schedule()})
+            sched = backup_svc.get_schedule()
+            sched.pop('password', None)  # never send password to client
+            return jsonify({'success': True, 'schedule': sched})
 
         @app.route('/api/backup/schedule', methods=['POST'])
         @auth_req

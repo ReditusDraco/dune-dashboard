@@ -12,7 +12,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
@@ -311,7 +311,9 @@ class BackupService:
             cfg['schedule_times'] = data['schedule_times']
         cfg['keep'] = int(data.get('keep', cfg['keep']))
         if 'password' in data:
-            cfg['password'] = data['password']
+            if data['password']:
+                cfg['password'] = data['password']
+            # empty string = keep existing password (don't overwrite)
         if cfg.get('mode') == 'schedule':
             cfg['next_run'] = self._next_run_from_schedule(cfg)
         else:
@@ -434,8 +436,10 @@ class BackupService:
                 'size': os.path.getsize(path),
                 'components': meta.get('components', []),
             }
+        except InvalidToken:
+            return {'success': False, 'valid': False, 'error': 'Wrong password'}
         except Exception as e:
-            return {'success': False, 'valid': False, 'error': str(e)}
+            return {'success': False, 'valid': False, 'error': f'Backup corrupted: {e}'}
 
     # ── Restore Orchestration ─────────────────────────────────────────
 
