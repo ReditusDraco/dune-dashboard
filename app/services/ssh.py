@@ -95,6 +95,7 @@ class SSHService:
         try:
             client = self._get_client()
             stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+            stdout.channel.settimeout(timeout)
             out = stdout.read().decode('utf-8', errors='replace')
             err = stderr.read().decode('utf-8', errors='replace')
             rc = stdout.channel.recv_exit_status()
@@ -118,6 +119,40 @@ class SSHService:
         except Exception as ex:
             logger.error(f"Unexpected SSH command error ({self.host}): {ex}")
             logger.debug(f"SSH exception details: type={type(ex).__name__}, args={ex.args}")
+            self._client = None
+            return '', str(ex), -1
+
+    def write_file(self, remote_path, data, timeout=30):
+        """Write text data to a remote file via base64 over stdin.
+
+        Args:
+            remote_path: Absolute path on the remote machine.
+            data: String content to write.
+            timeout: Max seconds to wait for command completion.
+
+        Returns:
+            Tuple of (stdout, stderr, return_code).
+        """
+        import base64
+        encoded = base64.b64encode(data.encode('utf-8'))
+        try:
+            client = self._get_client()
+            stdin, stdout, stderr = client.exec_command(
+                f'base64 -d > {remote_path}',
+                timeout=timeout
+            )
+            stdout.channel.settimeout(timeout)
+            stdin.write(encoded)
+            stdin.flush()
+            stdin.channel.shutdown_write()
+            out = stdout.read().decode('utf-8', errors='replace')
+            err = stderr.read().decode('utf-8', errors='replace')
+            rc = stdout.channel.recv_exit_status()
+            if rc != 0:
+                logger.warning(f"SSH write_file failed (rc={rc}, path={remote_path}): {err[:200]}")
+            return out, err, rc
+        except Exception as ex:
+            logger.error(f"SSH write_file error ({remote_path}): {ex}")
             self._client = None
             return '', str(ex), -1
 

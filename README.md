@@ -40,6 +40,7 @@ chmod +x start.sh
 - **SSH Key Rotation** — scan all key locations and sync the newest key
 - **Backup & Restore** — full server snapshots (game DB, K8s resources, RMQ config, dashboard schema) with optional AES-256 encryption and password protection
 - **Scheduled Backups** — configurable interval or day/time-based scheduling with automatic retention cleanup
+- **Funcom Service Auth Token Management** — update the `ServiceAuthToken` JWT across files and live K8s resources (secret, YAML, BattleGroup CR) with verification
 
 ---
 

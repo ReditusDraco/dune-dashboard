@@ -2162,3 +2162,172 @@ def register_api_routes(app, services, settings):
         def api_backup_run_scheduled():
             result = backup_svc.run_scheduled_backup()
             return jsonify(result)
+
+        # ── Funcom ServiceAuthToken ────────────────────────────────────────
+
+        @app.route('/api/server/service-auth-token', methods=['POST'])
+        @auth_req
+        def api_set_service_auth_token():
+            data = request.get_json() or {}
+            token = (data.get('token') or '').strip()
+            if not token:
+                return jsonify({'success': False, 'error': 'Token cannot be empty'})
+            if not token.startswith('eyJ'):
+                return jsonify({'success': False, 'error': 'Token does not look like a valid JWT'})
+
+            ns = settings.get('kubernetes', {}).get('namespace', '')
+            if not ns:
+                return jsonify({'success': False, 'error': 'Kubernetes namespace not configured'})
+
+            resource_prefix = ns
+            for prefix in ['funcom-seabass-']:
+                if resource_prefix.startswith(prefix):
+                    resource_prefix = resource_prefix[len(prefix):]
+                    break
+
+            secret_yaml = f'/home/dune/.dune/{resource_prefix}-fls-secret.yaml'
+            main_yaml = f'/home/dune/.dune/{resource_prefix}.yaml'
+
+            try:
+                import base64
+
+                # Force fresh SSH connection to avoid stale client reuse
+                ssh.close()
+
+                # ── Step 1: Read & update secret YAML (small file, keep current approach) ──
+                t0 = time.time()
+                out, err, rc = ssh.run(f'cat {secret_yaml}', timeout=10)
+                t1 = time.time()
+                logger.info(f'[token] read secret YAML: {t1-t0:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to read secret file: {err}'})
+
+                fls_prefix = 'FuncomLiveServices__ServiceAuthToken: "'
+                idx = out.find(fls_prefix)
+                if idx == -1:
+                    logger.error(f'Secret YAML lines: {[l for l in out.splitlines() if "ServiceAuthToken" in l]}')
+                    return jsonify({'success': False, 'error': 'Could not find FuncomLiveServices__ServiceAuthToken line in secret file'})
+                start = idx + len(fls_prefix)
+                end = out.find('"', start)
+                if end == -1:
+                    return jsonify({'success': False, 'error': 'Could not find closing quote for ServiceAuthToken'})
+                old_token = out[start:end]
+                new_secret = out[:start] + token + out[end:]
+
+                t2 = time.time()
+                out, err, rc = ssh.write_file(secret_yaml, new_secret, timeout=10)
+                t3 = time.time()
+                logger.info(f'[token] write secret YAML: {t3-t2:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to write secret file: {err}'})
+
+                # ── Step 2: Update main battlegroup YAML via read-modify-write ──
+                # Extract old token from the main YAML (may differ from secret YAML)
+                t4 = time.time()
+                out, err, rc = ssh.run(f'cat {main_yaml}', timeout=10)
+                t5 = time.time()
+                logger.info(f'[token] read main YAML: {t5-t4:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to read battlegroup file: {err}'})
+
+                ini_prefix = '-ini:engine:[FuncomLiveServices]:ServiceAuthToken='
+                idx = out.find(ini_prefix)
+                if idx == -1:
+                    logger.error(f'Main YAML lines: {[l for l in out.splitlines() if "ServiceAuthToken" in l]}')
+                    return jsonify({'success': False, 'error': 'Could not find ServiceAuthToken in battlegroup file'})
+                old_start = idx + len(ini_prefix)
+                old_end = out.find('\n', old_start)
+                old_token_main = out[old_start:old_end].strip() if old_end != -1 else out[old_start:].strip()
+
+                count = out.count(old_token_main)
+                new_main = out.replace(old_token_main, token)
+                logger.info(f'[token] replaced {count} occurrences in main YAML')
+
+                t6 = time.time()
+                out, err, rc = ssh.write_file(main_yaml, new_main, timeout=15)
+                t7 = time.time()
+                logger.info(f'[token] write main YAML: {t7-t6:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to write battlegroup file: {err}'})
+
+                # Verify: count total ServiceAuthToken lines vs new-token lines
+                out, err, rc = ssh.run(f"grep -c 'ServiceAuthToken' {main_yaml} || true", timeout=5)
+                total_lines = int(out.strip() or 0)
+                out, err, rc = ssh.run(f"grep -cF '{token}' {main_yaml} || true", timeout=5)
+                new_count = int(out.strip() or 0)
+                logger.info(f'[token] main YAML verify: {new_count}/{total_lines} tokens replaced')
+
+                # ── Step 3: Update live K8s BattleGroup CR (may differ from disk YAML) ──
+                bg_name = resource_prefix
+                t8 = time.time()
+                out, err, rc = ssh.run(
+                    f'sudo kubectl get battlegroup {bg_name} -n {ns} -o yaml', timeout=10
+                )
+                t9 = time.time()
+                logger.info(f'[token] read BG CR: {t9-t8:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to read BattleGroup CR: {err}'})
+
+                old_start = out.find(ini_prefix)
+                if old_start == -1:
+                    logger.error(f'BG CR lines: {[l for l in out.splitlines() if "ServiceAuthToken" in l]}')
+                    return jsonify({'success': False, 'error': 'Could not find ServiceAuthToken in BattleGroup CR'})
+                old_start += len(ini_prefix)
+                old_end = out.find('\n', old_start)
+                old_token_cr = out[old_start:old_end].strip() if old_end != -1 else out[old_start:].strip()
+
+                cr_count = out.count(old_token_cr)
+                new_cr = out.replace(old_token_cr, token)
+                logger.info(f'[token] replaced {cr_count} occurrences in BG CR')
+
+                cr_temp = '/tmp/bg-cr-update.yaml'
+                t10 = time.time()
+                out, err, rc = ssh.write_file(cr_temp, new_cr, timeout=15)
+                t11 = time.time()
+                logger.info(f'[token] write BG CR temp: {t11-t10:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to write BG CR temp file: {err}'})
+
+                out, err, rc = ssh.run(
+                    f'sudo kubectl apply -f {cr_temp}', timeout=15
+                )
+                t12 = time.time()
+                logger.info(f'[token] apply BG CR: {t12-t11:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to apply BattleGroup CR: {err}'})
+
+                # Verify new token count in live CR
+                out, err, rc = ssh.run(
+                    f"sudo kubectl get battlegroup {bg_name} -n {ns} -o yaml | grep -cF '{token}' || true",
+                    timeout=5
+                )
+                live_count = int(out.strip() or 0)
+                logger.info(f'[token] BG CR verify: {live_count}/{cr_count} tokens replaced')
+
+                # Clean up temp file
+                ssh.run(f'rm -f {cr_temp}', timeout=3)
+
+                # ── Step 4: Update K8s secret via kubectl patch ──
+                patch = json.dumps({'stringData': {'FuncomLiveServices__ServiceAuthToken': token}})
+                patch_encoded = base64.b64encode(patch.encode()).decode()
+                t13 = time.time()
+                out, err, rc = ssh.run(
+                    f"printf '%s' '{patch_encoded}' | base64 -d > /tmp/service-auth-token-patch.json; "
+                    f"sudo kubectl patch secret server-gateway-secret -n {ns} --patch-file /tmp/service-auth-token-patch.json",
+                    timeout=15
+                )
+                t14 = time.time()
+                logger.info(f'[token] kubectl patch: {t14-t13:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to update K8s secret: {err}'})
+
+                total = t14 - t0
+                logger.info(f'[token] completed successfully in {total:.2f}s (disk={new_count}, live={live_count})')
+                return jsonify({
+                    'success': True,
+                    'message': f'Token updated in secret YAML, battlegroup YAML ({new_count} replacements), live BattleGroup CR ({live_count} replacements), and K8s secret. Consuming pods must be restarted for the change to take effect.'
+                })
+
+            except Exception as e:
+                logger.error(f'[token] exception: {e}')
+                return jsonify({'success': False, 'error': str(e)})
