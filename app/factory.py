@@ -27,6 +27,8 @@ from app.services.updater import UpdateService
 from app.services.director import DirectorService
 from app.services.rmq import RmqService
 from app.services.backup import BackupService
+from app.services.lifecycle import LifecycleService
+from app.services.scheduled_broadcast import ScheduledBroadcastService
 from app.utils.cache import MultiCache
 from app.routes.main import register_routes
 from app.routes.api import register_api_routes
@@ -277,6 +279,12 @@ def create_app(settings_path=None):
     backup_svc = BackupService(ssh_service, k8s_service, rmq_svc, settings)
     logging.debug("BackupService initialized")
 
+    lifecycle_svc = LifecycleService(ssh_service, admin_svc, settings)
+    logging.debug("LifecycleService initialized")
+
+    sched_broadcast_svc = ScheduledBroadcastService(admin_svc)
+    logging.debug("ScheduledBroadcastService initialized")
+
     services = {
         'db': db_service,
         'dash_db': dash_db_service,
@@ -291,6 +299,8 @@ def create_app(settings_path=None):
         'director': director_svc,
         'rmq': rmq_svc,
         'backup': backup_svc,
+        'lifecycle': lifecycle_svc,
+        'broadcasts': sched_broadcast_svc,
     }
     logging.debug(f"All services registered: {list(services.keys())}")
 
@@ -537,6 +547,31 @@ def create_app(settings_path=None):
             logging.info('Backup scheduler: Background thread started')
     except Exception as e:
         logging.debug(f'Could not start backup scheduler: {e}')
+
+    # ── Lifecycle Scheduler (scheduled restarts + notifications) ────────
+    try:
+        lifecycle_svc = services.get('lifecycle')
+        broadcasts_svc = services.get('broadcasts')
+        if lifecycle_svc or broadcasts_svc:
+            def _lifecycle_scheduler():
+                while True:
+                    time.sleep(30)
+                    try:
+                        if lifecycle_svc:
+                            lifecycle_svc.check_and_fire()
+                    except Exception as e:
+                        logging.error(f'Lifecycle scheduler: {e}')
+                    try:
+                        if broadcasts_svc:
+                            broadcasts_svc.check_and_fire()
+                    except Exception as e:
+                        logging.error(f'Broadcast scheduler: {e}')
+
+            lifecycle_thread = threading.Thread(target=_lifecycle_scheduler, daemon=True)
+            lifecycle_thread.start()
+            logging.info('Lifecycle scheduler: Background thread started')
+    except Exception as e:
+        logging.debug(f'Could not start lifecycle scheduler: {e}')
 
     app.dune_settings = settings
     app.dune_services = services

@@ -125,15 +125,37 @@ function formatSize(s) {
     return sz.toFixed(i===0?0:1) + ' ' + u[i];
 }
 
+function escHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function escAttr(s) {
+    // For values inside double-quoted onclick="..." JS single-quoted strings.
+    // The existing backslash/quote escaping is kept for JS; HTML-significant
+    // chars are entity-encoded (the browser decodes them before JS runs,
+    // so the actual values are unchanged).
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
 function renderBreadcrumb(path) {
     const p = path.split('/').filter(Boolean);
     let h = '<span onclick="loadFiles(\'/\')">&#128193; /</span>';
     let b = '';
     for (let i=0;i<p.length;i++) {
         b += '/'+p[i];
+        const seg = escHtml(p[i]);
         h += i===p.length-1
-            ? '<span class="sep">/</span><span class="current">'+p[i]+'</span>'
-            : '<span class="sep">/</span><span onclick="loadFiles(\''+b.replace(/'/g,"\\'")+'\')">'+p[i]+'</span>';
+            ? '<span class="sep">/</span><span class="current">'+seg+'</span>'
+            : '<span class="sep">/</span><span onclick="loadFiles(\''+escAttr(b.replace(/'/g,"\\'"))+'\')">'+seg+'</span>';
     }
     return h;
 }
@@ -156,14 +178,14 @@ async function loadFiles(path) {
         let h = '';
         for (const x of files) {
             const fp = (path==='/'?'':path)+'/'+x.name;
-            const sp = fp.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-            const sn = x.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            const sp = escAttr(fp.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+            const sn = escAttr(x.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
             const icon = x.is_dir ? '&#128193;' : getIcon(x.name);
             const action = x.is_dir ? `loadFiles('${sp}')` : `openFile('${sp}','${sn}')`;
             h += `<div class="fm-item" onclick="${action}">
                 <span class="fm-icon ${x.is_dir?'dir':''}">${icon}</span>
-                <span class="fm-fname ${x.is_dir?'dir':''}">${x.name}</span>
-                <span class="fm-fsize">${formatSize(x.size)}</span>
+                <span class="fm-fname ${x.is_dir?'dir':''}">${escHtml(x.name)}</span>
+                <span class="fm-fsize">${escHtml(formatSize(x.size))}</span>
                 <button class="fm-delete-btn" onclick="event.stopPropagation();deleteFile('${sp}','${sn}')" title="Delete">&#128465;</button>
             </div>`;
         }

@@ -33,8 +33,8 @@
                 {% for a in accounts %}
                 <tr>
                     <td><a href="/accounts/{{ a.id }}">{{ a.funcom_id or a.platform_name or 'Unknown' }}</a></td>
-                    <td>{{ a.character_name or '&mdash;'|safe }}</td>
-                    <td>{% if a.online_status %}<span class="badge badge-{{ a.online_status.lower() }}">{{ a.online_status }}</span>{% else %}&mdash;{% endif %}</td>
+                    <td>{{ a.character_name or '-' }}</td>
+                    <td>{% if a.online_status %}<span class="badge badge-{{ a.online_status.lower() }}">{{ a.online_status }}</span>{% else %}-{% endif %}</td>
                     <td style="font-size:11px;font-family:monospace;">{{ a.user }}</td>
                     <td style="font-size:11px;">{{ a.platform_id or 'N/A' }}</td>
                     <td>{{ a.player_count }}</td>

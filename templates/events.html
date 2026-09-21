@@ -29,7 +29,7 @@
                         <td>{{ e.actor_id }}</td>
                         <td>{{ e.map or '' }}</td>
                         <td>{{ e.event_type }}</td>
-                        <td>{% if e.actor_name %}{{ e.actor_name }}{% else %}&mdash;{% endif %}</td>
+                        <td>{% if e.actor_name %}{{ e.actor_name }}{% else %}-{% endif %}</td>
                         <td style="font-size:11px;font-family:monospace;">{% if e.x %}{{ e.x|round(0)|int }}, {{ e.y|round(0)|int }}, {{ e.z|round(0)|int }}{% endif %}</td>
                     </tr>
                     {% else %}

@@ -10,7 +10,7 @@
 <div id="backup-status" class="error-banner" style="display:none;"></div>
 
 <div style="background:rgba(255,193,7,0.12);border:2px solid rgba(255,193,7,0.6);border-left:6px solid #ffc107;border-radius:8px;padding:14px 20px;margin-bottom:16px;">
-    <div style="font-size:14px;font-weight:700;color:#e8a317;margin-bottom:6px;">&#9888; WIP — Use with caution</div>
+    <div style="font-size:14px;font-weight:700;color:#e8a317;margin-bottom:6px;">&#9888; WIP - Use with caution</div>
     <div style="font-size:13px;color:var(--text);line-height:1.5;">
         This feature is still experimental. Test on a non-production environment first.
         Keep offline backups of anything critical before using restore.
@@ -23,7 +23,7 @@
         Backups contain <strong>sensitive information</strong> including database contents, K8s secrets, and server configuration.
         Store backup files in a <strong>secure, offline location</strong>. Use a password to encrypt backups containing private data.
         Do not share backup files or expose them in insecure storage.
-        <strong style="color:#ef4444;display:block;margin-top:8px;">&#9888; If you set a password, never forget it — lost passwords cannot be recovered and the backup will be permanently unrecoverable.</strong>
+        <strong style="color:#ef4444;display:block;margin-top:8px;">&#9888; If you set a password, don't forget it - there's no way to recover it, and the backup will be locked for good.</strong>
     </div>
 </div>
 
@@ -299,7 +299,7 @@
 <!-- Verify Backup Password Modal -->
 <div id="verify-pw-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeModal('verify-pw-modal')">
     <div class="modal" style="max-width:380px;">
-        <div class="modal-header"><h3>Verify Backup — <span id="verify-pw-label"></span></h3></div>
+        <div class="modal-header"><h3>Verify Backup - <span id="verify-pw-label"></span></h3></div>
         <div class="modal-body" style="padding:20px;">
             <label style="display:block;font-size:13px;color:var(--text-light);">
                 Password
@@ -706,7 +706,7 @@ async function startRestore() {
     }
 
     if (!confirm('This will OVERWRITE ALL DATA on the configured server. Are you sure?')) return;
-    if (!confirm('Last chance — are you absolutely sure you want to restore "' + name + '"?')) return;
+    if (!confirm('Last chance - are you absolutely sure you want to restore "' + name + '"?')) return;
 
     const password = document.getElementById('restore-password').value;
 

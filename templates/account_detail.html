@@ -57,10 +57,10 @@
                     {% for c in characters %}
                     <tr>
                         <td><a href="/players/{{ c.id }}">{{ c.player_name or 'Unknown' }}</a></td>
-                        <td>{% if c.online_status %}<span class="badge badge-{{ c.online_status.lower() }}">{{ c.online_status }}</span>{% else %}&mdash;{% endif %}</td>
+                        <td>{% if c.online_status %}<span class="badge badge-{{ c.online_status.lower() }}">{{ c.online_status }}</span>{% else %}-{% endif %}</td>
                         <td>{{ c.id }}</td>
                         <td>{{ c.map or 'N/A' }}</td>
-                        <td>{% if c.faction_name %}<span class="badge badge-{{ c.faction_name.lower() }}">{{ c.faction_name }}</span>{% else %}&mdash;{% endif %}</td>
+                        <td>{% if c.faction_name %}<span class="badge badge-{{ c.faction_name.lower() }}">{{ c.faction_name }}</span>{% else %}-{% endif %}</td>
                         <td style="font-size:11px;">{{ c.last_login_time.strftime('%Y-%m-%d %H:%M') if c.last_login_time else 'N/A' }}</td>
                         <td style="font-size:10px;font-family:monospace;max-width:180px;word-break:break-all;">{{ c.transform_text or '' }}</td>
                     </tr>

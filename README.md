@@ -88,7 +88,6 @@ Run `launcher.bat` or `.\launcher.ps1` — the launcher handles dependencies, SS
 ## Branching Strategy
 
 - **main** — stable-ish beta  
-- **nightly** — latest features  
 - **experimental** — where chaos becomes innovation  
 
 > “This seemed like a great idea at 3am.” — every experimental commit ever

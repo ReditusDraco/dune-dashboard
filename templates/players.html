@@ -70,10 +70,10 @@
                 <tr>
                     <td><a href="/players/{{ p.id }}">{{ p.player_name or 'Unknown' }}</a></td>
                     <td>{% if p.online_status %}<span class="badge badge-{{ p.online_status.lower() }}">{{ p.online_status }}</span>{% else %}<span class="badge badge-offline">Unknown</span>{% endif %}</td>
-                    <td>{% if p.faction_name %}<span class="badge badge-{{ p.faction_name.lower() }}">{{ p.faction_name }}</span>{% else %}&mdash;{% endif %}</td>
-                    <td>{% if p.guild_name %}{{ p.guild_name }}{% else %}&mdash;{% endif %}</td>
-                    <td>{{ p.map or '&mdash;'|safe }}</td>
-                    <td style="font-size:12px;">{% if p.player_controller_id %}<span class="ip-cell" data-id="{{ p.player_controller_id }}" data-ip="{{ p.ip_address or '' }}">{{ p.ip_address or '—' }}</span>{% else %}&mdash;{% endif %}</td>
+                    <td>{% if p.faction_name %}<span class="badge badge-{{ p.faction_name.lower() }}">{{ p.faction_name }}</span>{% else %}-{% endif %}</td>
+                    <td>{% if p.guild_name %}{{ p.guild_name }}{% else %}-{% endif %}</td>
+                    <td>{{ p.map or '-' }}</td>
+                    <td style="font-size:12px;">{% if p.player_controller_id %}<span class="ip-cell" data-id="{{ p.player_controller_id }}" data-ip="{{ p.ip_address or '' }}">{{ p.ip_address or '-' }}</span>{% else %}-{% endif %}</td>
                     <td style="font-size:12px;">{{ p.funcom_id or p.account_email }}</td>
                     <td>{{ p.vehicle_count }}</td>
                     <td>{{ p.building_count }}</td>
@@ -228,7 +228,7 @@ document.querySelectorAll('.ip-cell').forEach(cell => {
                 const resp = await csrfFetch('/api/set_player_ip', { method: 'POST', body: form });
                 const data = await resp.json();
                 if (data.success) {
-                    this.textContent = newIp || '—';
+                    this.textContent = newIp || '-';
                     this.dataset.ip = newIp;
                     alert('IP updated!');
                 } else {

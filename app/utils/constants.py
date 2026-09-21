@@ -82,7 +82,6 @@ NAV_PAGES = [
     ('/guilds', 'Guilds'),
     ('/buildings', 'Buildings'),
     ('/map', 'Map'),
-    ('/admin-experimental', 'Experimental'),
 ]
 
 NAV_GROUPS = [
@@ -104,8 +103,5 @@ NAV_GROUPS = [
         ('/events', 'Events'),
         ('/chat', 'Chat'),
         ('/map', 'Map'),
-    ]),
-    ('System', [
-        ('/admin-experimental', 'Experimental'),
     ]),
 ]
