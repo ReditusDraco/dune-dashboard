@@ -41,6 +41,11 @@ chmod +x start.sh
 - **Backup & Restore** — full server snapshots (game DB, K8s resources, RMQ config, dashboard schema) with optional AES-256 encryption and password protection
 - **Scheduled Backups** — configurable interval or day/time-based scheduling with automatic retention cleanup
 - **Funcom Service Auth Token Management** — update the `ServiceAuthToken` JWT across files and live K8s resources (secret, YAML, BattleGroup CR) with verification
+- **Graceful Shutdown / Restart** — in-game countdown warnings, then `battlegroup stop` / `restart`, with cancel notices
+- **Custom Notifications** — instant in-game broadcasts, plus scheduled one-shot/daily/weekly/monthly messages
+- **Scheduled Restarts** — daily/weekly/monthly/one-shot with the same countdown, enable/disable/clear without losing settings
+- **Battlegroup Update Guard** — update refuses while game servers are online
+- **Jailed File Browser** — restricted to configured directories with symlink-aware checks
 
 ---
 
@@ -70,12 +75,13 @@ DuneDashboard/
 - `settings.yaml` is never committed  
 - SSH keys stored with restricted permissions  
 - All DB queries parameterized  
-- Raw SQL endpoint is **read‑only SELECT**  
+- No raw SQL console — the old experimental query/execute endpoints were removed entirely  
+- Shell parameters validated and quoted throughout  
+- File browser jailed to allowed directories  
 - All mutations audited  
 - CSP, HSTS, X‑Frame‑Options enforced in production  
 
-> “Raw SQL query endpoint is read‑only SELECT — INSERT/UPDATE/DELETE… are blocked.”  
-> Because letting users run `DROP TABLE` from a web UI is how horror stories begin.
+> Because letting users run `DROP TABLE` from a web UI is how horror stories begin — so that UI no longer exists.
 
 ---
 
