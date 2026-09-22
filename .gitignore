@@ -103,8 +103,8 @@ find_*.py
 AI_DOCS/
 AI_FULL_PROJECT_ANALYSIS_MODE/
 
-# Version file (generated dynamically)
-VERSION
+# VERSION is committed: it is the dashboard's version source of truth
+# (e.g. 0.7.5-experimental). The updater reads it, never ignores it.
 
 # Security scripts (contain VM-specific configs)
 scripts/

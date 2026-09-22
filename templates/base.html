@@ -47,6 +47,7 @@
             {% endfor %}
         </div>
         <div class="spacer"></div>
+        <div class="nav-tools">
         <div class="theme-dropdown">
             <button class="theme-btn" title="Theme">🎨</button>
             <div class="theme-dropdown-content">
@@ -124,6 +125,8 @@
                 </div>
             </div>
         </div>
+        <div class="update-banner" id="update-banner" style="display:none;"></div>
+        </div>
         <span class="nav-conn">
             <span class="conn-dot {% if conn_ok %}online{% else %}offline{% endif %}"></span>
             {{ 'Connected' if conn_ok else 'Disconnected' }}
@@ -193,6 +196,221 @@
 
     initTheme();
     initNavLayout();
+
+    // Update banner (channel-aware self updates)
+    function escHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    // Update widget: always-visible bell. Expands into a panel with a
+    // channel dropdown, manual check, patch notes overlay, update and
+    // silence controls. Auto-expands only for a new, non-silenced update.
+    let ubData = null;
+    let ubViewChannel = null; // channel shown in the panel; null = own channel
+    let ubExpanded = false;
+
+    function ubChannelLatest(channel) {
+        if (!ubData) return null;
+        if (channel === ubData.channel) {
+            return ubData.latest ? { ...ubData.latest, available: ubData.available } : null;
+        }
+        const other = ubData.other_channel;
+        if (other && other.channel === channel) {
+            return other.latest ? { ...other.latest, available: other.available } : null;
+        }
+        return null;
+    }
+
+    function ubHasNews() {
+        if (!ubData || ubData.silence_all) return false;
+        if (ubData.preview) return true;
+        const silenced = ubData.silenced_versions || [];
+        const cur = ubChannelLatest(ubData.channel);
+        if (cur && cur.available && !silenced.includes(cur.version)) return true;
+        const other = ubData.other_channel;
+        if (other && other.available && other.latest && !silenced.includes(other.latest.version)) return true;
+        return false;
+    }
+
+    async function refreshUpdateBanner(keepOpen) {
+        const el = document.getElementById('update-banner');
+        if (!el) return;
+        try {
+            const resp = await fetch('/api/update/status');
+            ubData = await resp.json();
+        } catch (e) { return; } // leave whatever is shown
+        if (!ubData || !ubData.success) return;
+        if (!ubViewChannel) ubViewChannel = ubData.channel;
+        // Auto-expand for fresh news unless permanently muted.
+        if (!keepOpen && !ubExpanded && ubHasNews()) ubExpanded = true;
+        renderUpdateBanner();
+    }
+
+    // Notes cache keyed by version (versions are server-validated to
+    // digits/dots/dashes only, so they are safe inside onclick quotes).
+    let ubNotesCache = {};
+    function ubSafeVer(v) {
+        return /^[0-9A-Za-z.\-]+$/.test(v || '') ? v : '';
+    }
+
+    function renderUpdateBanner() {
+        const el = document.getElementById('update-banner');
+        if (!el || !ubData) return;
+        if (!ubExpanded) {
+            const dot = ubHasNews() ? '<span class="ub-dot"></span>' : '';
+            const bell = ubData.silence_all ? '🔕' : '🔔';
+            el.style.display = 'block';
+            el.innerHTML = `<span class="ub-bellwrap" title="Updates"><button class="theme-btn" onclick="toggleUpdatePanel(true)">${bell}${dot}</button></span>`;
+            return;
+        }
+        const data = ubData;
+        const channels = [data.channel];
+        if (data.other_channel && data.other_channel.channel &&
+            !channels.includes(data.other_channel.channel)) {
+            channels.push(data.other_channel.channel);
+        }
+        const viewing = ubViewChannel || data.channel;
+        const entry = ubChannelLatest(viewing);
+        const silenced = data.silenced_versions || [];
+        const isSilenced = !!(entry && silenced.includes(entry.version));
+        const canUpdate = !!(entry && entry.available && !isSilenced);
+
+        let opts = '';
+        channels.forEach(ch => {
+            const label = ch === data.channel ? `${ch} (yours)` : ch;
+            opts += `<option value="${escHtml(ch)}"${ch === viewing ? ' selected' : ''}>${escHtml(label)}</option>`;
+        });
+
+        let body = `<div class="ub-sub">You are on ${escHtml(data.current_version)} (${escHtml(data.channel)})</div>`;
+        body += `<div class="ub-row"><label>Channel: <select id="ub-channel" onchange="ubViewChannel=this.value;renderUpdateBanner();">${opts}</select></label>` +
+            `<button onclick="checkUpdatesNow()">Check now</button></div>`;
+
+        if (data.preview && ubSafeVer(data.preview.version)) {
+            ubNotesCache[data.preview.version] = data.preview.notes || '';
+            body += `<div class="ub-title">${escHtml(data.preview.version)} <span class="ub-preview-tag">preview</span></div>` +
+                `<div class="ub-actions"><button class="ub-ghost" onclick="openNotesOverlay('${data.preview.version}')">Patch notes</button>` +
+                `<button class="ub-ghost" onclick="clearPreview()">Clear preview</button></div>`;
+        }
+
+        if (entry && ubSafeVer(entry.version)) {
+            ubNotesCache[entry.version] = entry.notes || '';
+            const stateLine = !entry.available
+                ? `<div class="ub-sub">${escHtml(viewing)} is up to date at ${escHtml(entry.version)}.</div>`
+                : isSilenced
+                    ? `<div class="ub-sub">${escHtml(entry.version)} silenced - a newer version will show again.</div>`
+                    : `<div class="ub-title">Update available: ${escHtml(entry.version)}</div>`;
+            body += stateLine;
+            body += '<div class="ub-actions">' +
+                (entry.notes ? `<button class="ub-ghost" onclick="openNotesOverlay('${entry.version}')">Patch notes</button>` : '') +
+                (canUpdate ? `<button onclick="applyUpdate('${entry.version}')">Update to ${escHtml(entry.version)}</button>` : '') +
+                (entry.available && !isSilenced ? `<button class="ub-ghost" onclick="silenceUpdateVersion('${entry.version}')">Silence this version</button>` : '') +
+                '</div>';
+        } else if (!data.preview) {
+            body += `<div class="ub-sub">No ${escHtml(viewing)} releases found yet.</div>`;
+        }
+
+        body += `<label class="ub-mute"><input type="checkbox"${data.silence_all ? ' checked' : ''} onchange="setUpdateMute(this.checked)"> Don't remind me again</label>` +
+            '<div class="ub-status" id="ub-status"></div>';
+        el.style.display = 'block';
+        const bellIcon = data.silence_all ? '🔕' : '🔔';
+        el.innerHTML = `<span class="ub-bellwrap" title="Updates"><button class="theme-btn" onclick="toggleUpdatePanel(false)">${bellIcon}</button></span>` +
+            `<div class="ub-panel"><div class="ub-panel-head">Updates</div>` + body + `</div>`;
+    }
+
+    function toggleUpdatePanel(open) {
+        ubExpanded = open;
+        renderUpdateBanner();
+    }
+
+    async function checkUpdatesNow() {
+        const st = document.getElementById('ub-status');
+        if (st) st.textContent = 'Checking...';
+        try {
+            await csrfFetch('/api/update/check', { method: 'POST' });
+        } catch (e) { /* status refresh below reports */ }
+        refreshUpdateBanner(true);
+    }
+
+    function openNotesOverlay(version) {
+        closeNotesOverlay();
+        const notes = ubNotesCache[version] || '';
+        const ov = document.createElement('div');
+        ov.id = 'ub-overlay';
+        const box = document.createElement('div');
+        box.className = 'ub-overlay-box';
+        const head = document.createElement('div');
+        head.className = 'ub-overlay-head';
+        const title = document.createElement('strong');
+        title.textContent = 'Patch notes - ' + version;
+        const close = document.createElement('button');
+        close.textContent = 'Close';
+        close.onclick = closeNotesOverlay;
+        head.appendChild(title);
+        head.appendChild(close);
+        const pre = document.createElement('pre');
+        pre.textContent = notes || 'No notes for this version.';
+        box.appendChild(head);
+        box.appendChild(pre);
+        ov.appendChild(box);
+        ov.onclick = function(e) { if (e.target === ov) closeNotesOverlay(); };
+        document.body.appendChild(ov);
+    }
+
+    function closeNotesOverlay() {
+        const ov = document.getElementById('ub-overlay');
+        if (ov) ov.remove();
+    }
+
+    async function clearPreview() {
+        await csrfFetch('/api/update/preview', { method: 'DELETE' });
+        refreshUpdateBanner(true);
+    }
+
+    async function applyUpdate(version) {
+        if (!confirm(`Update to ${version}? The dashboard backs itself up, installs, then restarts. Players will be briefly disconnected from the panel (not the game).`)) return;
+        const st = document.getElementById('ub-status');
+        if (st) st.textContent = 'Updating - the panel will restart...';
+        try {
+            const resp = await csrfFetch('/api/update/apply', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ version })
+            });
+            const data = await resp.json();
+            if (st) st.textContent = data.success ? (data.message || 'Updating...') : ('Error: ' + (data.message || data.error || 'unknown'));
+        } catch (e) {
+            if (st) st.textContent = 'Error: ' + e.message;
+        }
+    }
+
+    async function silenceUpdateVersion(version) {
+        await csrfFetch('/api/update/silence', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'silence', version })
+        });
+        refreshUpdateBanner();
+    }
+
+    async function setUpdateMute(on) {
+        await csrfFetch('/api/update/silence', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: on ? 'mute' : 'unmute' })
+        });
+        refreshUpdateBanner();
+    }
+
+    async function unmuteUpdates() {
+        await csrfFetch('/api/update/silence', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'unmute' })
+        });
+        refreshUpdateBanner();
+    }
+
+    refreshUpdateBanner();
+    setInterval(refreshUpdateBanner, 10 * 60 * 1000);
     </script>
     {% block scripts %}{% endblock %}
     <style>
