@@ -19,22 +19,26 @@ class DatabaseService:
     def init_pool(self):
         if self.pool is None:
             # Retry up to 10 times with 2s delays (20s total) to handle startup race conditions
-            for attempt in range(10):
-                try:
-                    self.pool = psycopg2.pool.ThreadedConnectionPool(
-                        minconn=self.min_conn,
-                        maxconn=self.max_conn,
-                        **self.db_config
-                    )
-                    logger.info("Database connection pool initialized")
-                    return self.pool
-                except Exception as e:
-                    if attempt < 9:
-                        logger.warning(f"DB pool attempt {attempt + 1}/10 failed, retrying in 2s: {e}")
-                        time.sleep(2)
-                    else:
-                        logger.error(f"Failed to initialize database pool after 10 attempts: {e}")
-                        self.pool = None
+            try:
+                for attempt in range(10):
+                    try:
+                        self.pool = psycopg2.pool.ThreadedConnectionPool(
+                            minconn=self.min_conn,
+                            maxconn=self.max_conn,
+                            **self.db_config
+                        )
+                        logger.info("Database connection pool initialized")
+                        return self.pool
+                    except Exception as e:
+                        if attempt < 9:
+                            logger.warning(f"DB pool attempt {attempt + 1}/10 failed, retrying in 2s: {e}")
+                            time.sleep(2)
+                        else:
+                            logger.error(f"Failed to initialize database pool after 10 attempts: {e}")
+                            self.pool = None
+            except KeyboardInterrupt:
+                print("\n  Stopped during database startup.")
+                raise SystemExit(0)
         return self.pool
 
     def get_connection(self):
@@ -155,33 +159,37 @@ class DashboardDatabaseService:
     def init_pool(self):
         if self.pool is not None:
             return self.pool
-        for attempt in range(10):
-            try:
-                self.pool = psycopg2.pool.ThreadedConnectionPool(
-                    minconn=self.min_conn,
-                    maxconn=self.max_conn,
-                    **self.db_config
-                )
-                logger.info("Dashboard database pool initialized")
-                return self.pool
-            except psycopg2.OperationalError as e:
-                if 'does not exist' in str(e) and attempt == 0:
-                    logger.info("Dashboard database does not exist, creating...")
-                    self._ensure_database()
-                    continue
-                if attempt < 9:
-                    logger.warning(f"Dashboard DB pool attempt {attempt + 1}/10 failed, retrying in 2s: {e}")
-                    time.sleep(2)
-                else:
-                    logger.error(f"Failed to initialize dashboard pool after 10 attempts: {e}")
-                    self.pool = None
-            except Exception as e:
-                if attempt < 9:
-                    logger.warning(f"Dashboard DB pool attempt {attempt + 1}/10 failed, retrying in 2s: {e}")
-                    time.sleep(2)
-                else:
-                    logger.error(f"Failed to initialize dashboard pool after 10 attempts: {e}")
-                    self.pool = None
+        try:
+            for attempt in range(10):
+                try:
+                    self.pool = psycopg2.pool.ThreadedConnectionPool(
+                        minconn=self.min_conn,
+                        maxconn=self.max_conn,
+                        **self.db_config
+                    )
+                    logger.info("Dashboard database pool initialized")
+                    return self.pool
+                except psycopg2.OperationalError as e:
+                    if 'does not exist' in str(e) and attempt == 0:
+                        logger.info("Dashboard database does not exist, creating...")
+                        self._ensure_database()
+                        continue
+                    if attempt < 9:
+                        logger.warning(f"Dashboard DB pool attempt {attempt + 1}/10 failed, retrying in 2s: {e}")
+                        time.sleep(2)
+                    else:
+                        logger.error(f"Failed to initialize dashboard pool after 10 attempts: {e}")
+                        self.pool = None
+                except Exception as e:
+                    if attempt < 9:
+                        logger.warning(f"Dashboard DB pool attempt {attempt + 1}/10 failed, retrying in 2s: {e}")
+                        time.sleep(2)
+                    else:
+                        logger.error(f"Failed to initialize dashboard pool after 10 attempts: {e}")
+                        self.pool = None
+        except KeyboardInterrupt:
+            print("\n  Stopped during database startup.")
+            raise SystemExit(0)
         return self.pool
 
     def _ensure_database(self):

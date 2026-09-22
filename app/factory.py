@@ -335,8 +335,8 @@ def create_app(settings_path=None):
     register_api_routes(app, services, settings)
     register_websocket_handlers(socketio, settings)
 
-    # Start update checker (disabled — being reworked)
-    # updater_svc.start_checker()
+    # Background update check (channel-aware releases; installing is manual only)
+    updater_svc.start_checker()
 
     @app.teardown_appcontext
     def cleanup_db(exc):
