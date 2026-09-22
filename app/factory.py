@@ -174,9 +174,12 @@ def create_app(settings_path=None):
             log_response_details(logging.getLogger(), response, duration * 1000)
             logging.getLogger().debug("=" * 60)
         else:
-            # Only log API requests to avoid noise
-            if request.path.startswith('/api') or request.path.startswith('/server'):
-                logging.info(f"{request.method} {request.path} {response.status_code} {duration:.3f}s user={user}")
+            # Quiet console in normal mode: routine requests (including
+            # scanner 404s) are not logged. Turn on debug logging
+            # (launcher option 4) to see every request. Server errors
+            # still surface so real problems are never silent.
+            if response.status_code >= 500:
+                logging.error(f"{request.method} {request.path} {response.status_code} {duration:.3f}s user={user}")
         
         # Add timing header
         response.headers['X-Response-Time'] = f"{duration:.3f}s"

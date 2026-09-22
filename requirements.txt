@@ -9,3 +9,4 @@ Flask-WTF==1.2.2
 Flask-Limiter==3.5.0
 cryptography>=42.0.0
 argon2-cffi==23.1.0
+cheroot==10.0.1

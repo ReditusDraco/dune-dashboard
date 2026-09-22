@@ -149,17 +149,6 @@ function Write-LogNoConsole {
     Add-Content -Path $logFile -Value $sanitizedEntry -Encoding UTF8
 }
 
-function Start-LogSession {
-    param([string]$SessionName = "Launcher Session")
-    $sessionFile = Join-Path $LauncherLogDir "$LogDate-$LogTime-session.log"
-    $header = "=" * 60
-    $sanitizedName = Sanitize-LogMessage -Message $SessionName
-    Add-Content -Path $sessionFile -Value (Sanitize-LogMessage -Message $header) -Encoding UTF8
-    Add-Content -Path $sessionFile -Value "$sanitizedName - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Encoding UTF8
-    Add-Content -Path $sessionFile -Value (Sanitize-LogMessage -Message $header) -Encoding UTF8
-    return $sessionFile
-}
-
 function Write-Step {
     param([string]$Name, [string]$Category = "general")
     if (-not $global:StepCounter) { $global:StepCounter = @{} }
@@ -167,16 +156,6 @@ function Write-Step {
     $global:StepCounter[$Category]++
     $num = $global:StepCounter[$Category]
     Write-Log -Message "[$num] $Name" -Level "INFO" -Category $Category
-}
-
-function Write-Success {
-    param([string]$Message, [string]$Category = "general")
-    Write-Log -Message $Message -Level "INFO" -Category $Category
-}
-
-function Write-DebugLog {
-    param([string]$Message, [string]$Category = "general")
-    Write-Log -Message $Message -Level "DEBUG" -Category $Category
 }
 
 function Write-Sep {
@@ -189,26 +168,6 @@ function Write-Sep {
     }
     Add-Content -Path $logFile -Value $msg -Encoding UTF8
     Write-Host $msg -ForegroundColor DarkGray
-}
-
-$Script:LogIndent = 0
-
-function Push-Indent {
-    $Script:LogIndent++
-}
-
-function Pop-Indent {
-    $Script:LogIndent = [Math]::Max(0, $Script:LogIndent - 1)
-}
-
-function Write-LogStyled {
-    param(
-        [string]$Message,
-        [string]$Level = "INFO",
-        [string]$Category = "general"
-    )
-    $prefix = if ($Script:LogIndent -gt 0) { "  " * $Script:LogIndent } else { "" }
-    Write-Log -Message "$prefix$Message" -Level $Level -Category $Category
 }
 
 # ── Log Rotation & Cleanup ────────────────────────────────────────────
@@ -790,22 +749,6 @@ function Run-Diagnostics {
     }
     Write-Host ""
 
-    # Backend dependencies check
-    Write-Host "[CHECK] New Dashboard Backend Dependencies..." -ForegroundColor Yellow
-    $backendReqs = Join-Path $ProjectRoot "backend\requirements.txt"
-    if (Test-Path $backendReqs) {
-        python -c "import pydantic, httpx, uvicorn" 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "  Backend deps: INSTALLED" -ForegroundColor Green
-        } else {
-            Write-Host "  Backend deps: MISSING (run: pip install -r backend\requirements.txt)" -ForegroundColor Yellow
-            $issues++
-        }
-    } else {
-        Write-Host "  Backend deps: SKIPPED (no backend/requirements.txt)" -ForegroundColor DarkGray
-    }
-    Write-Host ""
-
     # Offer port forward guide
     Write-Host "  Would you like to see the Port Forwarding & Firewall guide? (y/N)" -ForegroundColor Cyan
     $showGuide = Read-Host "  "
@@ -939,11 +882,10 @@ function Reset-ToFactoryDefaults {
     Write-Host ""
     Write-Host "  [WARNING] This will permanently delete the following:" -ForegroundColor Red
     Write-Host "    - settings.yaml (all configuration)" -ForegroundColor Yellow
-    Write-Host "    - logs/, app/logs/, backend/logs/ (log files)" -ForegroundColor Yellow
+    Write-Host "    - logs/, app/logs/ (log files)" -ForegroundColor Yellow
     Write-Host "    - instance/ (SQLite database)" -ForegroundColor Yellow
     Write-Host "    - ssl/ (SSL certificates and CA)" -ForegroundColor Yellow
-    Write-Host "    - __pycache__/ (Python cache in app/, backend/)" -ForegroundColor Yellow
-    Write-Host "    - frontend/node_modules/ (npm dependencies)" -ForegroundColor Yellow
+    Write-Host "    - __pycache__/ (Python cache in app/)" -ForegroundColor Yellow
     Write-Host "    - internal-scripts/ssh/ (copied SSH key)" -ForegroundColor Yellow
     Write-Host "    - Temp scripts (read_settings*, hash_pw*, ssh_*, etc.)" -ForegroundColor Yellow
     Write-Host "    - Test & build artifacts" -ForegroundColor Yellow
@@ -985,7 +927,7 @@ function Reset-ToFactoryDefaults {
     if (Test-Path $sshKeyDir) { Remove-Item $sshKeyDir -Recurse -Force; Write-Host "    Deleted internal-scripts/ssh/" -ForegroundColor Green; $count++ }
 
     # -- Python __pycache__ directories --
-    $cacheSearchPaths = @("app", "backend")
+    $cacheSearchPaths = @("app")
     $totalCacheDirs = 0
     foreach ($csp in $cacheSearchPaths) {
         $cspPath = Join-Path $ProjectRoot $csp
@@ -997,10 +939,6 @@ function Reset-ToFactoryDefaults {
     if (Test-Path (Join-Path $ProjectRoot "__pycache__")) { Remove-Item (Join-Path $ProjectRoot "__pycache__") -Recurse -Force; $totalCacheDirs++ }
     if ($totalCacheDirs -gt 0) { Write-Host "    Deleted $totalCacheDirs __pycache__ folder(s)" -ForegroundColor Green; $count++ }
 
-    # -- frontend/node_modules --
-    if (Test-Path (Join-Path $ProjectRoot "frontend\node_modules")) { Remove-Item (Join-Path $ProjectRoot "frontend\node_modules") -Recurse -Force; Write-Host "    Deleted frontend/node_modules/" -ForegroundColor Green; $count++ }
-    if (Test-Path (Join-Path $ProjectRoot "frontend\package-lock.json")) { Remove-Item (Join-Path $ProjectRoot "frontend\package-lock.json") -Force; Write-Host "    Deleted frontend/package-lock.json" -ForegroundColor Green; $count++ }
-
     # -- Temp scripts generated during setup --
     $tempPatterns = @("read_settings*.py", "hash_pw*.py", "ssh_cmd.bat", "ssh_pf_*.bat", "certbot-out.txt", "temp_*.py", "temp_*.ps1", "temp_*.sh", "check_*.py", "fix_*.py", "parse_*.ps1", "find_*.py")
     $tempDeleted = 0
@@ -1011,7 +949,7 @@ function Reset-ToFactoryDefaults {
     if ($tempDeleted -gt 0) { Write-Host "    Deleted $tempDeleted temp script(s)" -ForegroundColor Green; $count++ }
 
     # -- Test & build artifacts --
-    $artifactDirs = @(".pytest_cache", "htmlcov", "build", "backups", "frontend\.vite")
+    $artifactDirs = @(".pytest_cache", "htmlcov", "build", "backups")
     foreach ($ad in $artifactDirs) {
         $ap = Join-Path $ProjectRoot $ad
         if (Test-Path $ap) { Remove-Item $ap -Recurse -Force; Write-Host "    Deleted $ad/" -ForegroundColor Green; $count++ }
@@ -2461,7 +2399,32 @@ function Start-Dashboard {
     Write-Host ""
 
     Set-Location -LiteralPath $ProjectRoot
-    python run.py
+    # Exit code 42 = watchdog tripped (dashboard wedged) - restart it
+    # automatically, tunnels stay up. Anything else shuts down normally.
+    # The python check pins down $LASTEXITCODE so a failed launch can never
+    # inherit a stale 42 from an earlier command.
+    if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+        Write-Host ""
+        Write-Host "  [ERROR] Python not found on PATH. Cannot start dashboard." -ForegroundColor Red
+        return
+    }
+    $watchdogRestarts = 0
+    while ($true) {
+        python run.py
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 42 -and $watchdogRestarts -lt 5) {
+            $watchdogRestarts++
+            Write-Host ""
+            Write-Host "  [WARN] Dashboard stopped responding (watchdog) - restarting ($watchdogRestarts/5)..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 5
+            continue
+        }
+        if ($exitCode -eq 42) {
+            Write-Host ""
+            Write-Host "  [ERROR] Dashboard keeps freezing - giving up auto-restart. Check the setup and start manually." -ForegroundColor Red
+        }
+        break
+    }
 
     Write-Host ""
     Write-Host "Stopping tunnels..." -ForegroundColor Cyan

@@ -136,4 +136,37 @@ if __name__ == '__main__':
     elif ssl_context:
         print("  HTTP redirect: Disabled (visit the HTTPS URL directly)\n")
 
-    socketio.run(app, host=host, port=port, debug=debug, log_output=False, ssl_context=ssl_context)
+    # Self-watchdog: exits with code 42 if the server stops answering,
+    # so the launcher can restart it (tunnels stay up).
+    from app.utils.watchdog import start_watchdog
+    start_watchdog(host, port, use_ssl=bool(ssl_context))
+
+    # Serve with cheroot (production WSGI) instead of the Flask dev server:
+    # per-connection socket timeouts plus bounded queues mean half-open
+    # scanner connections are reaped instead of wedging the dashboard.
+    # Socket.IO keeps working (threading mode = HTTP long-polling, which
+    # runs on any WSGI server).
+    try:
+        from cheroot import wsgi as cheroot_wsgi
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "cheroot not installed - falling back to dev server "
+            "(no connection timeouts)")
+        socketio.run(app, host=host, port=port, debug=debug, log_output=False, ssl_context=ssl_context)
+    else:
+        server = cheroot_wsgi.Server(
+            (host, port), app,
+            numthreads=16,
+            request_queue_size=128,
+            timeout=60,
+            accepted_queue_size=128,
+            accepted_queue_timeout=10,
+        )
+        if ssl_context:
+            from cheroot.ssl.builtin import BuiltinSSLAdapter
+            server.ssl_adapter = BuiltinSSLAdapter(cert_path, key_path)
+            print(f"  Server: cheroot (16 threads, 60s socket timeout, TLS on)")
+        else:
+            print(f"  Server: cheroot (16 threads, 60s socket timeout)")
+        print(f"  Watchdog: enabled (exit code 42 triggers launcher restart)\n")
+        server.start()
