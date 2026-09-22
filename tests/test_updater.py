@@ -75,6 +75,46 @@ class TestPickLatest:
         assert UpdateService._pick_latest([], 'stable') is None
 
 
+class TestReleaseLists:
+    def test_collect_channel_newest_first(self):
+        releases = UpdateService._collect_channel(make_releases(), 'experimental')
+        assert [e['version'] for e in releases] == [
+            '0.7.5-experimental', '0.7.3-Experimental']
+
+    def test_collect_skips_drafts_and_garbage(self):
+        releases = UpdateService._collect_channel(make_releases(), 'stable')
+        assert [e['version'] for e in releases] == ['0.7.4']
+
+    def test_status_includes_lists_and_find_searches_them(self, tmp_path, monkeypatch):
+        svc = make_service(tmp_path, '0.7.4-experimental')
+        monkeypatch.setattr(svc, '_fetch_releases', make_releases)
+        svc.check_for_updates()
+        status = svc.status()
+        assert [e['version'] for e in status['releases']['experimental']] == [
+            '0.7.5-experimental', '0.7.3-Experimental']
+        assert [e['version'] for e in status['releases']['stable']] == ['0.7.4']
+        # list payload stays lean (no download URLs for the panel)
+        assert 'zipball_url' not in status['releases']['experimental'][0]
+        # an older (non-latest) version is known but refused as a downgrade
+        assert svc._find_release('0.7.3-Experimental')['tag'] == 'v0.7.3-Experimental'
+        ok, msg = svc.apply_update('0.7.3-Experimental')
+        assert ok is False
+        assert 'owngrade' in msg or 'older' in msg
+
+    def test_cross_channel_same_number_is_reinstall(self, tmp_path, monkeypatch):
+        # Stable 0.7.4 installing experimental 0.7.4 is numeric-equal:
+        # allowed past validation (fails later only on download).
+        svc = make_service(tmp_path, '0.7.4')
+        monkeypatch.setattr(svc, '_fetch_releases', lambda: [
+            {'tag_name': 'v0.7.4-experimental', 'body': 'x',
+             'zipball_url': 'https://example.com/x.zip'},
+        ])
+        svc.check_for_updates()
+        ok, msg = svc.apply_update('0.7.4-experimental')
+        assert ok is False
+        assert 'owngrade' not in msg and 'Unknown version' not in msg
+
+
 class TestApplyRules:
     def test_refuses_downgrade_without_network(self, tmp_path):
         svc = make_service(tmp_path, '0.7.5-experimental')

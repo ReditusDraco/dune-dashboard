@@ -99,6 +99,7 @@ class UpdateService:
         self._channel = channel_of(self._current_version)
         self._latest = None  # {'version', 'tag', 'notes', 'zipball_url'}
         self._other_latest = None
+        self._releases = {'experimental': [], 'stable': []}  # per-channel lists, newest first
         self._last_check = 0
         self._check_interval = 1800  # 30 minutes
         self._update_in_progress = False
@@ -226,9 +227,13 @@ class UpdateService:
         return ''
 
     @staticmethod
-    def _pick_latest(releases, channel):
-        """Newest release for a channel. Returns entry dict or None."""
-        best = None
+    def _collect_channel(releases, channel):
+        """All releases for a channel, newest first.
+
+        Each entry is {'version', 'tag', 'notes', 'zipball_url'}.
+        Drafts, non-matching tags and unparsable versions are skipped.
+        """
+        found = []
         for release in releases:
             if not isinstance(release, dict) or release.get('draft'):
                 continue
@@ -239,23 +244,34 @@ class UpdateService:
             if parsed is None:
                 continue
             version = tag[1:] if tag.lower().startswith('v') else tag
-            entry = {
+            found.append({
                 'version': version,
                 'tag': tag,
                 'notes': str(release.get('body') or ''),
                 'zipball_url': str(release.get('zipball_url') or ''),
-            }
-            if best is None or compare_versions(entry['version'], best['version']) > 0:
-                best = entry
-        return best
+            })
+        found.sort(key=lambda e: parse_version(e['version'])[0], reverse=True)
+        return found
+
+    @staticmethod
+    def _pick_latest(releases, channel):
+        """Newest release for a channel. Returns entry dict or None."""
+        collected = UpdateService._collect_channel(releases, channel)
+        return collected[0] if collected else None
 
     def check_for_updates(self):
         """Refresh latest-version info for our channel (and the other one)."""
         try:
             releases = self._fetch_releases()
             other = 'stable' if self._channel == 'experimental' else 'experimental'
-            self._latest = self._pick_latest(releases, self._channel)
-            self._other_latest = self._pick_latest(releases, other)
+            self._releases = {
+                'experimental': self._collect_channel(releases, 'experimental'),
+                'stable': self._collect_channel(releases, 'stable'),
+            }
+            self._latest = (self._releases[self._channel][0]
+                            if self._releases[self._channel] else None)
+            self._other_latest = (self._releases[other][0]
+                                  if self._releases[other] else None)
             self._last_check = time.time()
             if self._latest:
                 logger.info(
@@ -280,11 +296,21 @@ class UpdateService:
         show_other = bool(
             other and other['version'] != (latest['version'] if latest else None)
             and self._is_newer_or_same(other['version']))
+        # Per-channel release lists for the version picker (newest first).
+        # zipball URLs stay server-side; the panel only needs version/notes.
+        lists = {}
+        for channel, entries in (self._releases or {}).items():
+            lists[channel] = [
+                {'version': e['version'], 'tag': e['tag'],
+                 'notes': e['notes']}
+                for e in entries
+            ]
         return {
             'current_version': self._current_version,
             'channel': self._channel,
             'available': available,
             'latest': latest,
+            'releases': lists,
             'other_channel': {
                 'channel': 'stable' if self._channel == 'experimental' else 'experimental',
                 'latest': other,
@@ -314,6 +340,10 @@ class UpdateService:
         for entry in (self._latest, self._other_latest):
             if entry and entry['version'] == version:
                 return entry
+        for entries in (self._releases or {}).values():
+            for entry in entries:
+                if entry['version'] == version:
+                    return entry
         return None
 
     def apply_update(self, version=None):
