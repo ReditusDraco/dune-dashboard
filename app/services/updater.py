@@ -430,13 +430,20 @@ class UpdateService:
             return False, str(e)
 
     def _restart_app(self):
-        """Restart the dashboard via the launcher script to preserve SSH/DB tunnels."""
+        """Restart the dashboard through the launcher in auto-start mode.
+
+        The launcher re-establishes SSH tunnels and port-forwards, then goes
+        straight into the dashboard without stopping at the selection menu.
+        The old process exits below, so the port is free when the new one
+        binds.
+        """
         try:
             if os.name == 'nt':
                 launcher = os.path.join(self.project_root, 'launcher.ps1')
                 if os.path.exists(launcher):
                     subprocess.Popen(
-                        ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', launcher],
+                        ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                         '-File', launcher, '-AutoStart'],
                         creationflags=subprocess.CREATE_NEW_CONSOLE
                     )
                 else:
@@ -444,7 +451,7 @@ class UpdateService:
             else:
                 launcher = os.path.join(self.project_root, 'start.sh')
                 if os.path.exists(launcher):
-                    subprocess.Popen(['bash', launcher], start_new_session=True)
+                    subprocess.Popen(['bash', launcher, '--auto-start'], start_new_session=True)
                 else:
                     subprocess.Popen([sys.executable, os.path.join(self.project_root, 'run.py')], start_new_session=True)
             os._exit(0)

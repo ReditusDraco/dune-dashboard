@@ -1040,6 +1040,13 @@ rotate_ssh_key() {
 
 # ── Main Loop ───────────────────────────────────────────────────────────
 
+# --auto-start skips the menu and starts the dashboard straight away
+# (used after self-updates so the panel comes back up unattended).
+if [ "$1" = "--auto-start" ] || [ "$1" = "--autostart" ]; then
+    start_dashboard
+    exit $?
+fi
+
 show_banner
 
 while true; do

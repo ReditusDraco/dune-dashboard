@@ -2,6 +2,10 @@
 # This script handles both setup and starting the dashboard.
 # Run this script and choose what you want to do.
 
+# -AutoStart skips the menu and starts the dashboard straight away
+# (used after self-updates so the panel comes back up unattended).
+param([switch]$AutoStart)
+
 $ErrorActionPreference = "Continue"
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -2818,6 +2822,11 @@ function Rotate-SSHKey {
 # ── Main Loop ───────────────────────────────────────────────────────────
 
 Show-Banner
+
+if ($AutoStart) {
+    Start-Dashboard
+    exit $LASTEXITCODE
+}
 
 while ($true) {
     Show-Menu
