@@ -74,6 +74,7 @@ NAV_PAGES = [
     ('/director', 'Director'),
     ('/shell', 'Shell'),
     ('/files', 'Files'),
+    ('/backup', 'Backup'),
     ('/events', 'Events'),
     ('/chat', 'Chat'),
     ('/players', 'Players'),
@@ -81,8 +82,6 @@ NAV_PAGES = [
     ('/guilds', 'Guilds'),
     ('/buildings', 'Buildings'),
     ('/map', 'Map'),
-    ('/admin-experimental', 'Experimental'),
-    ('/backup', 'Backup'),
 ]
 
 NAV_GROUPS = [
@@ -92,6 +91,7 @@ NAV_GROUPS = [
         ('/director', 'Director'),
         ('/shell', 'Shell'),
         ('/files', 'Files'),
+        ('/backup', 'Backup'),
     ]),
     ('Players', [
         ('/players', 'Players'),
@@ -103,9 +103,5 @@ NAV_GROUPS = [
         ('/events', 'Events'),
         ('/chat', 'Chat'),
         ('/map', 'Map'),
-    ]),
-    ('System', [
-        ('/admin-experimental', 'Experimental'),
-        ('/backup', 'Backup'),
     ]),
 ]

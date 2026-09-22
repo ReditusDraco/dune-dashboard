@@ -36,7 +36,7 @@
                     <td>{% if g.faction_name %}<span class="badge badge-{{ g.faction_name.lower() }}">{{ g.faction_name }}</span>{% else %}<span class="badge badge-neutral">Neutral</span>{% endif %}</td>
                     <td>{{ g.member_count }}</td>
                     <td>{% if g.online_count %}{{ g.online_count }}{% else %}0{% endif %}</td>
-                    <td style="font-size:12px;color:var(--text-light);">{% if g.guild_description %}{{ g.guild_description[:80] }}{% if g.guild_description|length > 80 %}...{% endif %}{% else %}&mdash;{% endif %}</td>
+                    <td style="font-size:12px;color:var(--text-light);">{% if g.guild_description %}{{ g.guild_description[:80] }}{% if g.guild_description|length > 80 %}...{% endif %}{% else %}-{% endif %}</td>
                 </tr>
                 {% else %}
                 <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-light);">No guilds found</td></tr>

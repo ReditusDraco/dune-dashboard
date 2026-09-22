@@ -60,7 +60,7 @@
     </div>
     {% endif %}
     {% if is_online %}
-    <div style="width:100%;font-size:11px;color:#e67e22;margin-top:4px;">Player is online &mdash; edit vitals only when offline. Health data is currently WIP.</div>
+    <div style="width:100%;font-size:11px;color:#e67e22;margin-top:4px;">Player is online - edit vitals only when offline. Health data is currently WIP.</div>
     {% endif %}
 </div>
 {% endif %}
@@ -162,11 +162,11 @@
             <div style="font-size:10px;color:var(--text-muted);padding:4px 8px;">Note: Currency values may be stale due to game server behavior</div>
         </div>
         {% if is_online %}
-        <div style="font-size:12px;color:#e67e22;padding:8px 16px;">Player is online &mdash; editing disabled. Log out first.</div>
+        <div style="font-size:12px;color:#e67e22;padding:8px 16px;">Player is online - editing is disabled. Log out first.</div>
         {% else %}
         <button onclick="openCurrenciesModal()" class="btn-edit" style="margin:8px 16px;">Edit</button>
         {% endif %}
-        <div style="font-size:11px;color:var(--text-muted);padding:4px 16px 8px;">Read-only. Balances reflect last game save — game server writes deltas on top of DB value.</div>
+        <div style="font-size:11px;color:var(--text-muted);padding:4px 16px 8px;">Read-only. Balances are from the last game save - the game server applies its own changes on top of these values.</div>
     </div>
 </div>
 
@@ -186,7 +186,7 @@
                     <tr><td>{{ s.track_type }}</td><td>{{ s.xp_amount | format_number }}</td><td>{{ s.level }}</td></tr>
                     {% endfor %}
                     {% if tech_knowledge is not none %}
-                    <tr><td>Tech Knowledge Points</td><td>{{ tech_knowledge | format_number }}</td><td>&mdash;</td></tr>
+                    <tr><td>Tech Knowledge Points</td><td>{{ tech_knowledge | format_number }}</td><td>-</td></tr>
                     {% endif %}
                 </tbody>
             </table>
@@ -289,11 +289,11 @@
 <div class="detail-section">
     <h2>Inventory</h2>
     {% if is_online %}
-    <div style="font-size:12px;color:#e67e22;padding:0 16px 8px;">Player is online &mdash; editing disabled. Log out first.</div>
+    <div style="font-size:12px;color:#e67e22;padding:0 16px 8px;">Player is online - editing is disabled. Log out first.</div>
     {% endif %}
     <div class="experimental-banner">
         <span class="banner-icon">&#9888;</span>
-        <span class="banner-text">Inventory editing is still being forged in the deep desert. Items may not persist, or the sandworm may eat your edits. <strong>Use with caution</strong> — the spice must flow, but bugs may flow with it.</span>
+        <span class="banner-text">Inventory editing is still experimental and items might not save properly. Double-check your changes in-game. <strong>Use with caution</strong>.</span>
     </div>
     <div class="card">
         <div class="card-body">
@@ -642,7 +642,7 @@
         <form onsubmit="return submitEdit(this, '/api/edit_xp')">
             <input type="hidden" name="player_id" value="{{ player.player_controller_id or '' }}">
             <input type="hidden" name="track_type" value="{{ s.track_type }}">
-            <label>{{ s.track_type }} — XP: <input type="number" name="xp_amount" value="{{ s.xp_amount }}" style="width:100px;">
+            <label>{{ s.track_type }} - XP: <input type="number" name="xp_amount" value="{{ s.xp_amount }}" style="width:100px;">
             Level: <input type="number" step="0.1" name="level" value="{{ s.level }}" style="width:80px;">
             </label>
             <button type="submit" class="btn-save" style="font-size:11px;padding:2px 8px;">Save</button>

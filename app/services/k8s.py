@@ -1,6 +1,7 @@
 """Kubernetes service - kubectl operations via SSH"""
 
 import logging
+import shlex
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +12,7 @@ class K8sService:
         self.namespace = namespace
 
     def run(self, kubectl_command, timeout=30):
-        full_cmd = f'sudo kubectl {kubectl_command} -n {self.namespace}'
+        full_cmd = f'sudo kubectl {kubectl_command} -n {shlex.quote(str(self.namespace))}'
         logger.debug(f"K8s executing: kubectl {kubectl_command} -n {self.namespace}")
         result = self.ssh.run(full_cmd, timeout=timeout)
         out, err, rc = result
@@ -29,6 +30,32 @@ class K8sService:
         pods = [line.replace('pod/', '').strip() for line in (out or '').strip().split('\n') if line.strip()]
         logger.debug(f"Found {len(pods)} pods in namespace {self.namespace}")
         return pods
+
+    def get_running_game_pods(self):
+        """List game server pods (sg-*-pod-*) currently in Running phase.
+
+        Used as the "server is online" signal, e.g. to block battlegroup
+        updates while players could be connected.
+
+        Returns:
+            List of running game pod names, [] when none running,
+            or None when pod status could not be determined.
+        """
+        out, err, rc = self.run(
+            'get pods --no-headers -o custom-columns=NAME:.metadata.name,STATUS:.status.phase')
+        if rc != 0:
+            logger.warning(f"Could not get pod statuses: {err[:100] if err else 'no error'}")
+            return None
+        running = []
+        for line in (out or '').strip().split('\n'):
+            parts = line.strip().split()
+            if len(parts) < 2:
+                continue
+            name, phase = parts[0], parts[1]
+            if phase == 'Running' and '-sg-' in name and '-pod-' in name:
+                running.append(name)
+        logger.debug(f"Found {len(running)} running game pods in namespace {self.namespace}")
+        return running
 
     def find_pod_by_pattern(self, pattern):
         pods = self.get_pods()

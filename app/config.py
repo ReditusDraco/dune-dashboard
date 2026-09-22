@@ -51,6 +51,8 @@ DEFAULTS = {
     },
     'filebrowser': {
         'port': 18888,
+        # Empty = built-in defaults (/srv, /home/dune/.dune).
+        'allowed_roots': [],
     },
     'firewall': {
         'block_filebrowser': True,

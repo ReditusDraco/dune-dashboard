@@ -93,6 +93,248 @@
     </div>
 </div>
 
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+<div class="card">
+    <div class="card-header">
+        <span>Custom Notification</span>
+        <span id="bc-status" style="font-size:12px;color:var(--text-muted);"></span>
+    </div>
+    <div class="card-body">
+        <div style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:6px;font-size:13px;line-height:1.6;">
+            Send a custom in-game broadcast to all connected players right now.
+            Uses the confirmed In-Game Broadcast (RabbitMQ <code>heartbeats</code> exchange).
+        </div>
+        <div style="margin-bottom:12px;">
+            <label style="display:block;margin-bottom:4px;font-size:13px;">Title</label>
+            <input type="text" id="bc-title" value="Server Notice"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
+        </div>
+        <div style="margin-bottom:12px;">
+            <label style="display:block;margin-bottom:4px;font-size:13px;">Message</label>
+            <textarea id="bc-message" rows="3"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;resize:vertical;"></textarea>
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+            <label style="font-size:13px;">Duration (seconds, 5–300):
+                <input type="number" id="bc-duration" value="30" min="5" max="300"
+                    style="display:block;width:120px;margin-top:4px;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
+            </label>
+            <button id="bc-send-btn" style="padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">Send Broadcast</button>
+            <span id="bc-msg" style="font-size:12px;color:var(--text-muted);"></span>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <span>Scheduled Notifications</span>
+        <span id="bn-indicator" style="font-size:12px;color:var(--text-muted);">Loading...</span>
+    </div>
+    <div class="card-body">
+        <div style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:6px;font-size:13px;line-height:1.6;">
+            Schedule a custom message to display in-game at specific dates, times and intervals.
+            One-shot entries fire once, then switch off automatically (settings are kept).
+        </div>
+        <div id="bn-list" style="margin-bottom:16px;font-size:13px;"></div>
+        <hr style="border-color:var(--border);margin:12px 0;">
+        <h4 id="bn-form-title" style="margin:0 0 8px;font-size:14px;">New scheduled notification</h4>
+        <input type="hidden" id="bn-id" value="">
+        <div style="margin-bottom:8px;">
+            <label style="display:block;margin-bottom:4px;font-size:13px;">Title</label>
+            <input type="text" id="bn-title" value="Server Notice"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
+        </div>
+        <div style="margin-bottom:8px;">
+            <label style="display:block;margin-bottom:4px;font-size:13px;">Message</label>
+            <textarea id="bn-message" rows="2"
+                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;resize:vertical;"></textarea>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+            <label style="font-size:13px;">Duration (5–300s):
+                <input type="number" id="bn-duration" value="30" min="5" max="300"
+                    style="width:90px;padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" id="bn-enabled" checked style="width:16px;height:16px;"> Enabled
+            </label>
+            <label style="font-size:13px;">Repeats:
+                <select id="bn-mode" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="once">One-shot</option>
+                </select>
+            </label>
+        </div>
+        <div id="bn-sched-daily" style="margin-bottom:12px;">
+            <div style="font-size:13px;margin-bottom:6px;">Times - pick a time, then Add:</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+                <input type="time" id="bn-daily-time-pick" value="12:00" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+                <button id="bn-daily-add" style="padding:6px 14px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Add time</button>
+            </div>
+            <div id="bn-daily-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+        </div>
+        <div id="bn-sched-weekly" style="margin-bottom:12px;display:none;">
+            <div style="font-size:13px;margin-bottom:6px;">Days:</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:13px;margin-bottom:8px;">
+                <label><input type="checkbox" class="bn-weekday" value="0"> Mon</label>
+                <label><input type="checkbox" class="bn-weekday" value="1"> Tue</label>
+                <label><input type="checkbox" class="bn-weekday" value="2"> Wed</label>
+                <label><input type="checkbox" class="bn-weekday" value="3"> Thu</label>
+                <label><input type="checkbox" class="bn-weekday" value="4"> Fri</label>
+                <label><input type="checkbox" class="bn-weekday" value="5"> Sat</label>
+                <label><input type="checkbox" class="bn-weekday" value="6" checked> Sun</label>
+            </div>
+            <div style="font-size:13px;margin-bottom:6px;">Times - pick a time, then Add:</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+                <input type="time" id="bn-weekly-time-pick" value="12:00" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+                <button id="bn-weekly-add" style="padding:6px 14px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Add time</button>
+            </div>
+            <div id="bn-weekly-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+        </div>
+        <div id="bn-sched-monthly" style="margin-bottom:12px;display:none;">
+            <div style="font-size:13px;margin-bottom:6px;">Days of month - click to select:</div>
+            <div id="bn-monthly-grid" style="display:grid;grid-template-columns:repeat(8, minmax(34px, 44px));gap:6px;margin-bottom:8px;"></div>
+            <label style="font-size:13px;">Time:
+                <input type="time" id="bn-monthly-time" value="12:00" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+            </label>
+        </div>
+        <div id="bn-sched-once" style="margin-bottom:12px;display:none;">
+            <label style="font-size:13px;">Date + time - pick from the calendar:
+                <input type="datetime-local" id="bn-once-at" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+            </label>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button id="bn-save" style="padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Save notification</button>
+            <button id="bn-reset" style="padding:8px 16px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">New / Reset</button>
+            <span id="bn-msg" style="font-size:12px;color:var(--text-muted);"></span>
+        </div>
+    </div>
+</div>
+
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+<div class="card">
+    <div class="card-header">
+        <span>Graceful Shutdown / Restart</span>
+        <span id="lc-status-indicator" style="font-size:12px;color:var(--text-muted);">No active countdown</span>
+    </div>
+    <div class="card-body">
+        <div style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:6px;font-size:13px;line-height:1.6;">
+            Graceful actions warn players in-game first via the In-Game Broadcast, then run
+            <code>battlegroup stop</code> / <code>restart</code>.
+            Notices at 15m, 10m, 5m, 3m, 2m, 1m, 30s (10s each), 10s (5s), then a final notice at 1s.
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+            <button id="lc-btn-start" style="padding:8px 20px;background:#27ae60;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Start (immediate)</button>
+            <button id="lc-btn-shutdown" style="padding:8px 20px;background:#e74c3c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Shutdown (graceful)</button>
+            <button id="lc-btn-restart" style="padding:8px 20px;background:#e67e22;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Restart (graceful)</button>
+            <button id="lc-btn-cancel" style="padding:8px 20px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;" disabled>Cancel countdown</button>
+            <button id="lc-btn-refresh" style="padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Refresh</button>
+        </div>
+        <div id="lc-status-output">
+            <pre id="lc-status-text" style="background:var(--bg);color:var(--text);padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;min-height:60px;">No active countdown.</pre>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <span>Scheduled Restarts</span>
+        <span id="lc-sched-indicator" style="font-size:12px;color:var(--text-muted);">Loading...</span>
+    </div>
+    <div class="card-body">
+        <div style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:6px;font-size:13px;line-height:1.6;">
+            Same in-game countdown as above, but the notices say e.g.
+            <em>"Scheduled restart in 5 minutes (daily 05:00)."</em>
+            The countdown starts 15 minutes before the restart time.
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+                <input type="checkbox" id="lc-sched-enabled" style="width:16px;height:16px;"> Enabled
+            </label>
+            <label style="font-size:13px;">Mode:
+                <select id="lc-sched-mode" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="once">One-shot</option>
+                </select>
+            </label>
+        </div>
+        <div id="lc-sched-daily" style="margin-bottom:12px;">
+            <div style="font-size:13px;margin-bottom:6px;">Times - pick a time, then Add:</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+                <input type="time" id="lc-daily-time-pick" value="05:00" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+                <button id="lc-daily-add" style="padding:6px 14px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Add time</button>
+            </div>
+            <div id="lc-daily-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+        </div>
+        <div id="lc-sched-weekly" style="margin-bottom:12px;display:none;">
+            <div style="font-size:13px;margin-bottom:6px;">Days:</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:13px;margin-bottom:8px;">
+                <label><input type="checkbox" class="lc-weekday" value="0"> Mon</label>
+                <label><input type="checkbox" class="lc-weekday" value="1"> Tue</label>
+                <label><input type="checkbox" class="lc-weekday" value="2"> Wed</label>
+                <label><input type="checkbox" class="lc-weekday" value="3"> Thu</label>
+                <label><input type="checkbox" class="lc-weekday" value="4"> Fri</label>
+                <label><input type="checkbox" class="lc-weekday" value="5"> Sat</label>
+                <label><input type="checkbox" class="lc-weekday" value="6" checked> Sun</label>
+            </div>
+            <div style="font-size:13px;margin-bottom:6px;">Times - pick a time, then Add:</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+                <input type="time" id="lc-weekly-time-pick" value="05:00" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+                <button id="lc-weekly-add" style="padding:6px 14px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Add time</button>
+            </div>
+            <div id="lc-weekly-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+        </div>
+        <div id="lc-sched-monthly" style="margin-bottom:12px;display:none;">
+            <div style="font-size:13px;margin-bottom:6px;">Days of month - click to select:</div>
+            <div id="lc-monthly-grid" style="display:grid;grid-template-columns:repeat(8, minmax(34px, 44px));gap:6px;margin-bottom:8px;"></div>
+            <label style="font-size:13px;">Time:
+                <input type="time" id="lc-monthly-time" value="05:00" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+            </label>
+        </div>
+        <div id="lc-sched-once" style="margin-bottom:12px;display:none;">
+            <label style="font-size:13px;">Date + time - pick from the calendar:
+                <input type="datetime-local" id="lc-once-at" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+            </label>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button id="lc-sched-save" style="padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Save schedule</button>
+            <button id="lc-sched-enable" style="padding:8px 16px;background:#27ae60;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Enable</button>
+            <button id="lc-sched-disable" style="padding:8px 16px;background:#e67e22;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Disable</button>
+            <button id="lc-sched-clear" style="padding:8px 16px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Clear schedule</button>
+            <span id="lc-sched-message" style="font-size:12px;color:var(--text-muted);"></span>
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:var(--text-muted);">Enable / Disable / Clear keep your saved days and times.</div>
+        <div style="margin-top:8px;font-size:12px;color:var(--text-muted);">Next restart: <span id="lc-sched-next">-</span></div>
+    </div>
+</div>
+
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+<div class="card">
+    <div class="card-header">
+        <span>Battlegroup Control</span>
+        <span id="bg-status-indicator" style="font-size:12px;color:var(--text-muted);">Click "Refresh Status" to load</span>
+    </div>
+    <div class="card-body">
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+            <button id="bg-btn-start" class="bg-btn" style="padding:8px 20px;background:#27ae60;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Start</button>
+            <button id="bg-btn-stop" class="bg-btn" style="padding:8px 20px;background:#e74c3c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Stop</button>
+            <button id="bg-btn-restart" class="bg-btn" style="padding:8px 20px;background:#e67e22;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Restart</button>
+            <button id="bg-btn-update" class="bg-btn" style="padding:8px 20px;background:#9b59b6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Update</button>
+            <button id="bg-btn-refresh" style="padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Refresh Status</button>
+        </div>
+        <div id="bg-status-output">
+            <pre id="bg-status-text" style="background:var(--bg);color:var(--text);padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;min-height:100px;">Click "Refresh Status" to load battlegroup status...</pre>
+        </div>
+    </div>
+</div>
+
 <div class="card">
         <div class="card-header">Active Server IDs</div>
         <div class="card-body">
@@ -124,6 +366,8 @@
             {% endif %}
         </div>
     </div>
+</div>
+
 </div>
 
 <div class="card">
@@ -165,10 +409,10 @@
         {% if deploys_ok %}
         <div style="margin-bottom:10px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px;line-height:1.5;color:var(--text-light);">
             <strong>Button Guide:</strong>
-            <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#e67e22;">Restart</span> — rolling restart of pods</span>
-            <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#3498db;">Status</span> — rollout status</span>
-            <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#e74c3c;">Scale to 0</span> — stop all pods</span>
-            <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#27ae60;">Scale to 1</span> — start a pod</span>
+            <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#e67e22;">Restart</span> - rolling restart of pods</span>
+            <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#3498db;">Status</span> - rollout status</span>
+            <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#e74c3c;">Scale to 0</span> - stop all pods</span>
+            <span style="display:inline-block;margin:0 10px 0 4px;"><span style="color:#27ae60;">Scale to 1</span> - start a pod</span>
         </div>
         <div class="table-wrap">
             <table>
@@ -205,25 +449,6 @@
 </div>
 
 <div class="card">
-    <div class="card-header">
-        <span>Battlegroup Control</span>
-        <span id="bg-status-indicator" style="font-size:12px;color:var(--text-muted);">Click "Refresh Status" to load</span>
-    </div>
-    <div class="card-body">
-        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-            <button id="bg-btn-start" class="bg-btn" style="padding:8px 20px;background:#27ae60;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Start</button>
-            <button id="bg-btn-stop" class="bg-btn" style="padding:8px 20px;background:#e74c3c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Stop</button>
-            <button id="bg-btn-restart" class="bg-btn" style="padding:8px 20px;background:#e67e22;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Restart</button>
-            <button id="bg-btn-update" class="bg-btn" style="padding:8px 20px;background:#9b59b6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Update</button>
-            <button id="bg-btn-refresh" style="padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Refresh Status</button>
-        </div>
-        <div id="bg-status-output">
-            <pre id="bg-status-text" style="background:var(--bg);color:var(--text);padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;min-height:100px;">Click "Refresh Status" to load battlegroup status...</pre>
-        </div>
-    </div>
-</div>
-
-<div class="card">
     <div class="card-header">Pod Status</div>
     <div class="card-body">
         <button id="refresh-pods" style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Refresh Pods</button>
@@ -234,13 +459,60 @@
 </div>
 
 <div class="card">
+    <div class="card-header">
+        <span>Firewall Security</span>
+        <span id="fw-status-indicator" style="font-size:12px;color:var(--text-muted);">Loading...</span>
+    </div>
+    <div class="card-body">
+        <div style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:6px;font-size:13px;line-height:1.6;">
+            <strong style="color:#e74c3c;">Security Recommendation:</strong> The following services are exposed to the internet without authentication.
+            Block them so only localhost (the dashboard via SSH tunnel) can reach them.
+        </div>
+        <div id="fw-ports-list" style="margin-bottom:16px;"></div>
+        <button id="fw-btn-refresh" style="padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Refresh Status</button>
+        <div id="fw-action-output" style="margin-top:12px;display:none;">
+            <pre id="fw-action-text" style="background:var(--bg);color:var(--text);padding:12px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;"></pre>
+        </div>
+    </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+<div class="card">
+    <div class="card-header">
+        <span>Funcom Service Auth Token <span style="font-size:10px;color:var(--warn);font-weight:400;">[WIP]</span></span>
+        <span id="sat-status" style="font-size:12px;color:var(--text-muted);"></span>
+    </div>
+    <div class="card-body">
+        <div style="margin-bottom:12px;padding:10px 12px;background:var(--warn-bg, #fff3cd);border:1px solid var(--warn-border, #ffc107);border-radius:6px;font-size:12px;line-height:1.5;color:var(--warn-text, #856404);">
+            <strong>⚠ WIP - Use with caution.</strong> This feature is still experimental.
+            Only use if you understand the risks. Backup your <code>*.yaml</code> files first.
+        </div>
+        <div style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:6px;font-size:13px;line-height:1.6;">
+            <strong style="color:var(--primary);">ServiceAuthToken</strong> - Used by the game server to authenticate with Funcom's live services.
+            If this token is regenerated by Funcom, paste the new JWT below and save.
+            All consuming pods must be restarted afterward.
+        </div>
+        <div style="margin-bottom:12px;">
+            <textarea id="sat-token" rows="4"
+                style="width:100%;padding:10px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:monospace;resize:vertical;"
+                placeholder="Paste the new ServiceAuthToken JWT here..."></textarea>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button id="sat-save-btn" onclick="saveServiceAuthToken()"
+                style="padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Save Token</button>
+            <span id="sat-message" style="font-size:12px;color:var(--text-muted);"></span>
+        </div>
+    </div>
+</div>
+
+<div class="card">
     <div class="card-header" style="cursor:pointer;" onclick="document.getElementById('debug-section').classList.toggle('hidden');">
-        <span>🐛 Debug Logging</span>
+        <span>Debug Logging</span>
         <span id="debug-status" style="font-size:12px;color:var(--text-muted);">Loading...</span>
     </div>
     <div class="card-body" id="debug-section">
         <div style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:6px;font-size:13px;line-height:1.6;color:var(--text);">
-            <strong style="color:var(--primary);">📝 Verbose Logging:</strong> Enable to log detailed information about SSH commands, API requests, database queries, and service connections.
+            <strong style="color:var(--primary);">Verbose Logging:</strong> Enable to log detailed information about SSH commands, API requests, database queries, and service connections.
             Logs are written to <code>logs/debug.log</code>. Sanitizes sensitive data (passwords, tokens) automatically.
         </div>
         <div style="display:flex;align-items:center;gap:16px;">
@@ -253,9 +525,11 @@
     </div>
 </div>
 
+</div>
+
 <div class="card">
     <div class="card-header" style="cursor:pointer;" onclick="document.getElementById('audit-section').classList.toggle('hidden');">
-        <span>📋 Audit Log Viewer</span>
+        <span>Audit Log Viewer</span>
         <span id="audit-stats" style="font-size:12px;color:var(--text-muted);">Loading...</span>
     </div>
     <div class="card-body" id="audit-section">
@@ -292,24 +566,6 @@
                     <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text-muted);">Loading...</td></tr>
                 </tbody>
             </table>
-        </div>
-    </div>
-</div>
-
-<div class="card">
-    <div class="card-header">
-        <span>Firewall Security</span>
-        <span id="fw-status-indicator" style="font-size:12px;color:var(--text-muted);">Loading...</span>
-    </div>
-    <div class="card-body">
-        <div style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:6px;font-size:13px;line-height:1.6;">
-            <strong style="color:#e74c3c;">Security Recommendation:</strong> The following services are exposed to the internet without authentication.
-            Block them so only localhost (the dashboard via SSH tunnel) can reach them.
-        </div>
-        <div id="fw-ports-list" style="margin-bottom:16px;"></div>
-        <button id="fw-btn-refresh" style="padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Refresh Status</button>
-        <div id="fw-action-output" style="margin-top:12px;display:none;">
-            <pre id="fw-action-text" style="background:var(--bg);color:var(--text);padding:12px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;"></pre>
         </div>
     </div>
 </div>
@@ -530,7 +786,7 @@ async function bgAction(action, btn) {
     const confirmMsgs = {
         'stop': 'Stop the battlegroup? This will disconnect all players.',
         'restart': 'Restart the battlegroup? This will disconnect all players.',
-        'update': 'Update the battlegroup? This will download new images and restart. This may take several minutes.'
+        'update': 'Update the battlegroup? This will download new images and restart. This may take several minutes. The server must be stopped first - update is blocked while game pods are running.'
     };
     if (confirmMsgs[action] && !confirm(confirmMsgs[action])) return;
     if ((action === 'stop' || action === 'restart') && !confirm('Are you sure? This will affect live players.')) return;
@@ -582,6 +838,539 @@ document.getElementById('bg-btn-stop')?.addEventListener('click', function() { b
 document.getElementById('bg-btn-restart')?.addEventListener('click', function() { bgAction('restart', this); });
 document.getElementById('bg-btn-update')?.addEventListener('click', function() { bgAction('update', this); });
 document.getElementById('bg-btn-refresh')?.addEventListener('click', bgRefreshStatus);
+
+// Graceful lifecycle (countdown + scheduled restarts)
+function lcSetBusy(busy) {
+    for (const id of ['lc-btn-start', 'lc-btn-shutdown', 'lc-btn-restart']) {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = busy;
+    }
+}
+
+function lcRenderStatus(data) {
+    const pre = document.getElementById('lc-status-text');
+    const indicator = document.getElementById('lc-status-indicator');
+    const cancelBtn = document.getElementById('lc-btn-cancel');
+    if (!data.active) {
+        pre.textContent = 'No active countdown.';
+        indicator.textContent = 'No active countdown';
+        indicator.style.color = 'var(--text-muted)';
+        if (cancelBtn) cancelBtn.disabled = true;
+        return;
+    }
+    const actionAt = data.action_at ? new Date(data.action_at * 1000).toLocaleString() : 'unknown';
+    const lines = [
+        `Active: ${data.kind} (${data.reason || 'manual'}${data.context ? ' - ' + data.context : ''})`,
+        `Status: ${data.status}`,
+        `Action at: ${actionAt}`,
+        '',
+        'Notices sent:',
+    ];
+    for (const s of (data.sent || [])) {
+        lines.push(` - ${s.mark}: ${s.ok ? 'sent' : 'FAILED - ' + (s.detail || 'error')}`);
+    }
+    if (data.error) lines.push('', 'Error: ' + data.error);
+    pre.textContent = lines.join('\n');
+    indicator.textContent = `${data.kind} countdown: ${data.status}`;
+    indicator.style.color = 'var(--warn)';
+    if (cancelBtn) cancelBtn.disabled = (data.status === 'executing');
+}
+
+async function lcRefresh() {
+    try {
+        const resp = await fetch('/server/lifecycle/status');
+        const data = await resp.json();
+        if (data.success === false && data.error) {
+            document.getElementById('lc-status-text').textContent = 'Error: ' + data.error;
+            return;
+        }
+        lcRenderStatus(data);
+    } catch (e) {
+        document.getElementById('lc-status-text').textContent = 'Error: ' + e.message;
+    }
+}
+
+async function lcAction(kind) {
+    const msgs = {
+        'start': 'Start the battlegroup now? This is immediate (no countdown).',
+        'shutdown': 'Graceful shutdown? Players get in-game warnings at 15m, 10m, 5m, 3m, 2m, 1m, 30s, 10s, then shutdown.',
+        'restart': 'Graceful restart? Players get in-game warnings at 15m, 10m, 5m, 3m, 2m, 1m, 30s, 10s, then restart.'
+    };
+    if (msgs[kind] && !confirm(msgs[kind])) return;
+    if ((kind === 'shutdown' || kind === 'restart') && !confirm('Are you sure? This will affect live players.')) return;
+    lcSetBusy(true);
+    try {
+        const url = kind === 'start' ? '/server/lifecycle/start' : `/server/lifecycle/${kind}`;
+        const resp = await csrfFetch(url, { method: 'POST' });
+        const data = await resp.json();
+        if (!data.success) {
+            document.getElementById('lc-status-text').textContent = 'Failed: ' + (data.output || data.error || 'unknown error');
+        }
+        await lcRefresh();
+    } catch (e) {
+        document.getElementById('lc-status-text').textContent = 'Error: ' + e.message;
+    }
+    lcSetBusy(false);
+}
+
+async function lcCancel() {
+    if (!confirm('Cancel the active countdown? No further warnings will be sent.')) return;
+    try {
+        const resp = await csrfFetch('/server/lifecycle/cancel', { method: 'POST' });
+        const data = await resp.json();
+        if (!data.success) alert('Cancel failed: ' + (data.error || data.output || 'unknown'));
+        await lcRefresh();
+    } catch (e) { alert('Cancel error: ' + e.message); }
+}
+
+// ── Shared picker helpers (no typing: wheels, calendars, click-to-select) ──
+function escapeHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function renderTimeChips(containerId, times, onRemove) {
+    const c = document.getElementById(containerId);
+    c.innerHTML = '';
+    if (!times.length) {
+        c.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">No times yet - pick one above and hit Add.</span>';
+        return;
+    }
+    times.forEach(t => {
+        const s = document.createElement('span');
+        s.textContent = t + ' ×';
+        s.title = 'Click to remove';
+        s.style.cssText = 'padding:4px 10px;background:var(--primary);color:#fff;border-radius:12px;font-size:12px;cursor:pointer;';
+        s.onclick = () => onRemove(t);
+        c.appendChild(s);
+    });
+}
+
+function addPickedTime(inputId, arr, rerender) {
+    const raw = document.getElementById(inputId).value;
+    if (!raw) return;
+    const t = raw.slice(0, 5);
+    if (!/^\d{2}:\d{2}$/.test(t)) return;
+    if (!arr.includes(t)) { arr.push(t); arr.sort(); }
+    rerender();
+}
+
+function renderDayGrid(containerId, selected, onToggle) {
+    const g = document.getElementById(containerId);
+    g.innerHTML = '';
+    for (let d = 1; d <= 31; d++) {
+        const b = document.createElement('button');
+        b.textContent = d;
+        b.type = 'button';
+        const on = selected.includes(d);
+        b.style.cssText = 'padding:6px 0;border-radius:6px;cursor:pointer;font-size:12px;' +
+            (on ? 'background:var(--primary);color:#fff;border:1px solid var(--primary);font-weight:700;'
+                : 'background:var(--bg);color:var(--text);border:1px solid var(--border);');
+        b.onclick = () => onToggle(d);
+        g.appendChild(b);
+    }
+}
+
+// ── Custom notification (send now) ──
+async function bcSend() {
+    const btn = document.getElementById('bc-send-btn');
+    const msg = document.getElementById('bc-msg');
+    const status = document.getElementById('bc-status');
+    const title = document.getElementById('bc-title').value.trim();
+    const message = document.getElementById('bc-message').value.trim();
+    const duration = parseInt(document.getElementById('bc-duration').value) || 30;
+    if (!title || !message) {
+        msg.textContent = 'Title and message are required.';
+        msg.style.color = 'var(--danger)';
+        return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    msg.textContent = 'Sending...';
+    msg.style.color = 'var(--text-muted)';
+    try {
+        const resp = await csrfFetch('/server/broadcast', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, message, duration })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            msg.textContent = 'Broadcast sent!';
+            msg.style.color = 'var(--success)';
+            status.textContent = 'Last sent just now';
+        } else {
+            msg.textContent = 'Error: ' + (data.output || data.error || 'unknown');
+            msg.style.color = 'var(--danger)';
+        }
+    } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+        msg.style.color = 'var(--danger)';
+    }
+    btn.disabled = false;
+    btn.textContent = 'Send Broadcast';
+}
+
+// ── Restart schedule (picker-driven) ──
+const lcSched = { enabled: false, mode: 'daily', daily_times: [], weekly_days: [],
+    weekly_times: [], monthly_days: [], monthly_time: '05:00', once_at: '', next_run: '' };
+
+function lcSchedModeChanged() {
+    const mode = document.getElementById('lc-sched-mode').value;
+    lcSched.mode = mode;
+    for (const m of ['daily', 'weekly', 'monthly', 'once']) {
+        document.getElementById('lc-sched-' + m).style.display = (m === mode) ? '' : 'none';
+    }
+}
+
+function lcRenderPickers() {
+    renderTimeChips('lc-daily-chips', lcSched.daily_times,
+        (t) => { lcSched.daily_times = lcSched.daily_times.filter(x => x !== t); lcRenderPickers(); });
+    renderTimeChips('lc-weekly-chips', lcSched.weekly_times,
+        (t) => { lcSched.weekly_times = lcSched.weekly_times.filter(x => x !== t); lcRenderPickers(); });
+    renderDayGrid('lc-monthly-grid', lcSched.monthly_days,
+        (d) => {
+            const i = lcSched.monthly_days.indexOf(d);
+            if (i >= 0) lcSched.monthly_days.splice(i, 1);
+            else { lcSched.monthly_days.push(d); lcSched.monthly_days.sort((a, b) => a - b); }
+            lcRenderPickers();
+        });
+}
+
+function lcApplyToForm(s) {
+    Object.assign(lcSched, {
+        enabled: !!s.enabled, mode: s.mode || 'daily',
+        daily_times: [...(s.daily_times || [])], weekly_days: [...(s.weekly_days || [])],
+        weekly_times: [...(s.weekly_times || [])], monthly_days: [...(s.monthly_days || [])],
+        monthly_time: s.monthly_time || '05:00', once_at: s.once_at || '', next_run: s.next_run || '',
+    });
+    document.getElementById('lc-sched-enabled').checked = lcSched.enabled;
+    document.getElementById('lc-sched-mode').value = lcSched.mode;
+    document.getElementById('lc-monthly-time').value = lcSched.monthly_time;
+    if (lcSched.once_at) {
+        try { document.getElementById('lc-once-at').value = lcSched.once_at.slice(0, 16); } catch (e) { /* ignore */ }
+    } else {
+        document.getElementById('lc-once-at').value = '';
+    }
+    const weekdays = new Set(lcSched.weekly_days.map(String));
+    document.querySelectorAll('.lc-weekday').forEach(cb => { cb.checked = weekdays.has(cb.value); });
+    document.getElementById('lc-sched-next').textContent = lcSched.next_run ? new Date(lcSched.next_run).toLocaleString() : '-';
+    document.getElementById('lc-sched-indicator').textContent = lcSched.enabled ? `Enabled (${lcSched.mode})` : 'Disabled';
+    lcSchedModeChanged();
+    lcRenderPickers();
+}
+
+function lcCollectFromForm() {
+    lcSched.enabled = document.getElementById('lc-sched-enabled').checked;
+    lcSched.mode = document.getElementById('lc-sched-mode').value;
+    lcSched.weekly_days = Array.from(document.querySelectorAll('.lc-weekday:checked')).map(cb => Number(cb.value));
+    lcSched.monthly_time = document.getElementById('lc-monthly-time').value || '05:00';
+    // Send the local calendar value as-is (no UTC conversion) so the
+    // server schedules it in server-local time.
+    lcSched.once_at = document.getElementById('lc-once-at').value || '';
+    return { ...lcSched };
+}
+
+async function lcLoadSchedule() {
+    const msg = document.getElementById('lc-sched-message');
+    try {
+        const resp = await fetch('/server/lifecycle/schedule');
+        const data = await resp.json();
+        if (!data.success) { msg.textContent = 'Failed to load schedule.'; return; }
+        lcApplyToForm(data.schedule || {});
+    } catch (e) { msg.textContent = 'Error: ' + e.message; }
+}
+
+async function lcSaveSchedule() {
+    const msg = document.getElementById('lc-sched-message');
+    msg.textContent = 'Saving...';
+    msg.style.color = 'var(--text-muted)';
+    try {
+        const resp = await csrfFetch('/server/lifecycle/schedule', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(lcCollectFromForm())
+        });
+        const data = await resp.json();
+        if (data.success) {
+            lcApplyToForm(data.schedule);
+            msg.textContent = 'Schedule saved.';
+            msg.style.color = 'var(--success)';
+        } else {
+            msg.textContent = 'Error: ' + (data.error || 'unknown');
+            msg.style.color = 'var(--danger)';
+        }
+    } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+        msg.style.color = 'var(--danger)';
+    }
+}
+
+async function lcSetEnabled(on) {
+    const msg = document.getElementById('lc-sched-message');
+    try {
+        const resp = await csrfFetch('/server/lifecycle/schedule/enabled', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: on })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            lcApplyToForm(data.schedule);
+            msg.textContent = on ? 'Schedule enabled.' : 'Schedule disabled - settings kept.';
+            msg.style.color = 'var(--success)';
+        } else {
+            msg.textContent = 'Error: ' + (data.error || 'unknown');
+            msg.style.color = 'var(--danger)';
+        }
+    } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+        msg.style.color = 'var(--danger)';
+    }
+}
+
+async function lcClearSchedule() {
+    if (!confirm('Clear the restart schedule? Days and times are kept, but the armed date and pending run are removed and the schedule is disabled.')) return;
+    const msg = document.getElementById('lc-sched-message');
+    try {
+        const resp = await csrfFetch('/server/lifecycle/schedule/clear', { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+            lcApplyToForm(data.schedule);
+            msg.textContent = 'Schedule cleared - days and times kept.';
+            msg.style.color = 'var(--success)';
+        } else {
+            msg.textContent = 'Error: ' + (data.error || 'unknown');
+            msg.style.color = 'var(--danger)';
+        }
+    } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+        msg.style.color = 'var(--danger)';
+    }
+}
+
+// ── Scheduled notifications ──
+let bnEntries = [];
+const bnForm = { id: '', daily_times: [], weekly_times: [], monthly_days: [] };
+const BN_DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function bnModeChanged() {
+    const mode = document.getElementById('bn-mode').value;
+    for (const m of ['daily', 'weekly', 'monthly', 'once']) {
+        document.getElementById('bn-sched-' + m).style.display = (m === mode) ? '' : 'none';
+    }
+}
+
+function bnRenderPickers() {
+    renderTimeChips('bn-daily-chips', bnForm.daily_times,
+        (t) => { bnForm.daily_times = bnForm.daily_times.filter(x => x !== t); bnRenderPickers(); });
+    renderTimeChips('bn-weekly-chips', bnForm.weekly_times,
+        (t) => { bnForm.weekly_times = bnForm.weekly_times.filter(x => x !== t); bnRenderPickers(); });
+    renderDayGrid('bn-monthly-grid', bnForm.monthly_days,
+        (d) => {
+            const i = bnForm.monthly_days.indexOf(d);
+            if (i >= 0) bnForm.monthly_days.splice(i, 1);
+            else { bnForm.monthly_days.push(d); bnForm.monthly_days.sort((a, b) => a - b); }
+            bnRenderPickers();
+        });
+}
+
+function bnDescribe(e) {
+    if (e.mode === 'once') return 'one-shot ' + (e.once_at ? new Date(e.once_at).toLocaleString() : '(unscheduled)');
+    if (e.mode === 'daily') return 'daily ' + (e.daily_times || []).join(', ');
+    if (e.mode === 'weekly') {
+        const days = (e.weekly_days || []).map(d => BN_DAY_NAMES[d] || d).join(', ');
+        return `weekly ${days} ${(e.weekly_times || []).join(', ')}`;
+    }
+    if (e.mode === 'monthly') return `monthly day ${(e.monthly_days || []).join(', ')} ${e.monthly_time || ''}`;
+    return e.mode;
+}
+
+function bnRenderList() {
+    const list = document.getElementById('bn-list');
+    const indicator = document.getElementById('bn-indicator');
+    const active = bnEntries.filter(e => e.enabled).length;
+    indicator.textContent = bnEntries.length ? `${active}/${bnEntries.length} enabled` : 'None yet';
+    if (!bnEntries.length) {
+        list.innerHTML = '<p style="color:var(--text-muted);">No scheduled notifications yet - use the form below.</p>';
+        return;
+    }
+    list.innerHTML = '';
+    bnEntries.forEach(e => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;margin-bottom:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;';
+        const next = e.next_run ? new Date(e.next_run).toLocaleString() : '-';
+        row.innerHTML =
+            `<strong style="font-size:13px;">${escapeHtml(e.title)}</strong>` +
+            `<span style="font-size:12px;color:var(--text-muted);">${escapeHtml(bnDescribe(e))}</span>` +
+            `<span style="font-size:12px;color:var(--text-muted);">next: ${next}</span>` +
+            `<span style="font-size:11px;font-weight:700;color:${e.enabled ? 'var(--success)' : 'var(--text-muted)'};">${e.enabled ? 'ON' : 'OFF'}</span>`;
+        const mkBtn = (label, bg, fn) => {
+            const b = document.createElement('button');
+            b.textContent = label;
+            b.style.cssText = `padding:4px 12px;background:${bg};color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;`;
+            b.onclick = fn;
+            return b;
+        };
+        row.appendChild(mkBtn('Edit', 'var(--primary)', () => bnEdit(e.id)));
+        row.appendChild(mkBtn(e.enabled ? 'Disable' : 'Enable', e.enabled ? '#e67e22' : '#27ae60', () => bnToggle(e.id, !e.enabled)));
+        row.appendChild(mkBtn('Delete', '#e74c3c', () => bnDelete(e.id)));
+        list.appendChild(row);
+    });
+}
+
+async function bnLoad() {
+    const msg = document.getElementById('bn-msg');
+    try {
+        const resp = await fetch('/server/broadcasts/schedule');
+        const data = await resp.json();
+        if (!data.success) { msg.textContent = 'Failed to load.'; return; }
+        bnEntries = data.entries || [];
+        bnRenderList();
+    } catch (e) { msg.textContent = 'Error: ' + e.message; }
+}
+
+function bnResetForm() {
+    document.getElementById('bn-id').value = '';
+    document.getElementById('bn-form-title').textContent = 'New scheduled notification';
+    document.getElementById('bn-title').value = 'Server Notice';
+    document.getElementById('bn-message').value = '';
+    document.getElementById('bn-duration').value = 30;
+    document.getElementById('bn-enabled').checked = true;
+    document.getElementById('bn-mode').value = 'daily';
+    document.getElementById('bn-once-at').value = '';
+    document.getElementById('bn-monthly-time').value = '12:00';
+    bnForm.id = '';
+    bnForm.daily_times = ['12:00'];
+    bnForm.weekly_times = ['12:00'];
+    bnForm.monthly_days = [1];
+    const weekdays = new Set(['6']);
+    document.querySelectorAll('.bn-weekday').forEach(cb => { cb.checked = weekdays.has(cb.value); });
+    bnModeChanged();
+    bnRenderPickers();
+}
+
+function bnEdit(id) {
+    const e = bnEntries.find(x => x.id === id);
+    if (!e) return;
+    document.getElementById('bn-id').value = e.id;
+    document.getElementById('bn-form-title').textContent = 'Edit scheduled notification';
+    document.getElementById('bn-title').value = e.title || '';
+    document.getElementById('bn-message').value = e.message || '';
+    document.getElementById('bn-duration').value = e.duration || 30;
+    document.getElementById('bn-enabled').checked = !!e.enabled;
+    document.getElementById('bn-mode').value = e.mode || 'daily';
+    document.getElementById('bn-monthly-time').value = e.monthly_time || '12:00';
+    try { document.getElementById('bn-once-at').value = (e.once_at || '').slice(0, 16); }
+    catch (err) { document.getElementById('bn-once-at').value = ''; }
+    bnForm.id = e.id;
+    bnForm.daily_times = [...(e.daily_times || [])];
+    bnForm.weekly_times = [...(e.weekly_times || [])];
+    bnForm.monthly_days = [...(e.monthly_days || [])];
+    const weekdays = new Set((e.weekly_days || []).map(String));
+    document.querySelectorAll('.bn-weekday').forEach(cb => { cb.checked = weekdays.has(cb.value); });
+    bnModeChanged();
+    bnRenderPickers();
+    document.getElementById('bn-form-title').scrollIntoView({ block: 'nearest' });
+}
+
+function bnCollect() {
+    return {
+        id: document.getElementById('bn-id').value || undefined,
+        title: document.getElementById('bn-title').value.trim(),
+        message: document.getElementById('bn-message').value.trim(),
+        duration: parseInt(document.getElementById('bn-duration').value) || 30,
+        enabled: document.getElementById('bn-enabled').checked,
+        mode: document.getElementById('bn-mode').value,
+        daily_times: [...bnForm.daily_times],
+        weekly_times: [...bnForm.weekly_times],
+        weekly_days: Array.from(document.querySelectorAll('.bn-weekday:checked')).map(cb => Number(cb.value)),
+        monthly_days: [...bnForm.monthly_days],
+        monthly_time: document.getElementById('bn-monthly-time').value || '12:00',
+        once_at: document.getElementById('bn-once-at').value || '',
+    };
+}
+
+async function bnSave() {
+    const msg = document.getElementById('bn-msg');
+    const body = bnCollect();
+    if (!body.title || !body.message) {
+        msg.textContent = 'Title and message are required.';
+        msg.style.color = 'var(--danger)';
+        return;
+    }
+    msg.textContent = 'Saving...';
+    msg.style.color = 'var(--text-muted)';
+    try {
+        const resp = await csrfFetch('/server/broadcasts/schedule', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await resp.json();
+        if (data.success) {
+            msg.textContent = 'Saved.';
+            msg.style.color = 'var(--success)';
+            await bnLoad();
+            bnResetForm();
+        } else {
+            msg.textContent = 'Error: ' + (data.error || 'unknown');
+            msg.style.color = 'var(--danger)';
+        }
+    } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+        msg.style.color = 'var(--danger)';
+    }
+}
+
+async function bnToggle(id, on) {
+    try {
+        const resp = await csrfFetch('/server/broadcasts/schedule/enabled', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, enabled: on })
+        });
+        const data = await resp.json();
+        if (!data.success) alert('Failed: ' + (data.error || 'unknown'));
+        await bnLoad();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function bnDelete(id) {
+    if (!confirm('Delete this scheduled notification?')) return;
+    try {
+        const resp = await csrfFetch('/server/broadcasts/schedule/delete', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+        });
+        const data = await resp.json();
+        if (!data.success) alert('Delete failed.');
+        await bnLoad();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+document.getElementById('lc-btn-start')?.addEventListener('click', () => lcAction('start'));
+document.getElementById('lc-btn-shutdown')?.addEventListener('click', () => lcAction('shutdown'));
+document.getElementById('lc-btn-restart')?.addEventListener('click', () => lcAction('restart'));
+document.getElementById('lc-btn-cancel')?.addEventListener('click', lcCancel);
+document.getElementById('lc-btn-refresh')?.addEventListener('click', lcRefresh);
+document.getElementById('bc-send-btn')?.addEventListener('click', bcSend);
+document.getElementById('lc-sched-mode')?.addEventListener('change', lcSchedModeChanged);
+document.getElementById('lc-sched-save')?.addEventListener('click', lcSaveSchedule);
+document.getElementById('lc-sched-enable')?.addEventListener('click', () => lcSetEnabled(true));
+document.getElementById('lc-sched-disable')?.addEventListener('click', () => lcSetEnabled(false));
+document.getElementById('lc-sched-clear')?.addEventListener('click', lcClearSchedule);
+document.getElementById('lc-daily-add')?.addEventListener('click', () => addPickedTime('lc-daily-time-pick', lcSched.daily_times, lcRenderPickers));
+document.getElementById('lc-weekly-add')?.addEventListener('click', () => addPickedTime('lc-weekly-time-pick', lcSched.weekly_times, lcRenderPickers));
+document.getElementById('bn-mode')?.addEventListener('change', bnModeChanged);
+document.getElementById('bn-save')?.addEventListener('click', bnSave);
+document.getElementById('bn-reset')?.addEventListener('click', bnResetForm);
+document.getElementById('bn-daily-add')?.addEventListener('click', () => addPickedTime('bn-daily-time-pick', bnForm.daily_times, bnRenderPickers));
+document.getElementById('bn-weekly-add')?.addEventListener('click', () => addPickedTime('bn-weekly-time-pick', bnForm.weekly_times, bnRenderPickers));
+lcRefresh();
+lcLoadSchedule();
+bnResetForm();
+bnLoad();
+setInterval(lcRefresh, 15000);
 
 // Firewall Security
 async function loadFwStatus() {
@@ -678,7 +1467,7 @@ async function loadAuditLogs(action = '', user = '', severity = '', limit = 100,
         const data = await resp.json();
         
         if (!data.success) {
-            tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--danger);">Error: ' + data.error + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--danger);">Error: ' + escapeHtml(data.error || 'unknown') + '</td></tr>';
             return;
         }
         
@@ -698,22 +1487,22 @@ async function loadAuditLogs(action = '', user = '', severity = '', limit = 100,
         document.getElementById('audit-warning-count').textContent = warningCount;
         document.getElementById('audit-error-count').textContent = errorCount;
         
-        // Render table
+        // Render table (all server data escaped - never raw innerHTML)
         tbody.innerHTML = logs.map(log => {
             const details = log.details ? JSON.stringify(log.details) : '-';
             const severityColor = log.severity === 'error' ? 'color:#e74c3c;' : (log.severity === 'warning' ? 'color:#f39c12;' : 'color:#3498db;');
             const timestamp = log.timestamp ? log.timestamp.replace('T', ' ').substring(0, 19) : '-';
             return '<tr style="border-bottom:1px solid var(--border);">' +
-                '<td style="padding:8px;color:var(--text-muted);">' + timestamp + '</td>' +
-                '<td style="padding:8px;font-weight:600;">' + (log.action || '-') + '</td>' +
-                '<td style="padding:8px;">' + (log.user || '-') + '</td>' +
-                '<td style="padding:8px;' + severityColor + '">' + (log.severity || 'info') + '</td>' +
-                '<td style="padding:8px;color:var(--text-muted);font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">' + details + '</td>' +
+                '<td style="padding:8px;color:var(--text-muted);">' + escapeHtml(timestamp) + '</td>' +
+                '<td style="padding:8px;font-weight:600;">' + escapeHtml(log.action || '-') + '</td>' +
+                '<td style="padding:8px;">' + escapeHtml(log.user || '-') + '</td>' +
+                '<td style="padding:8px;' + severityColor + '">' + escapeHtml(log.severity || 'info') + '</td>' +
+                '<td style="padding:8px;color:var(--text-muted);font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(details) + '</td>' +
                 '</tr>';
         }).join('');
         
     } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--danger);">Error: ' + e.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--danger);">Error: ' + escapeHtml(e.message) + '</td></tr>';
     }
 }
 
@@ -784,5 +1573,56 @@ loadDebugStatus();
 // Auto-load battlegroup and pods once on page load, then require manual refresh
 bgRefreshStatus();
 refreshPods();
+
+// ServiceAuthToken
+async function saveServiceAuthToken() {
+    const token = document.getElementById('sat-token').value.trim();
+    const btn = document.getElementById('sat-save-btn');
+    const msg = document.getElementById('sat-message');
+    const status = document.getElementById('sat-status');
+
+    if (!token) {
+        msg.textContent = 'Please paste the new token first.';
+        msg.style.color = 'var(--danger)';
+        return;
+    }
+    if (!confirm('Are you sure you want to replace the ServiceAuthToken?\n\nThis will update the K8s secret and YAML file. All consuming pods must be restarted for the change to take effect.')) return;
+    if (!confirm('Are you absolutely sure? An incorrect token may break server connectivity with Funcom live services.')) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    msg.textContent = 'Updating token...';
+    msg.style.color = 'var(--text-muted)';
+    status.textContent = 'Updating...';
+
+    try {
+        const resp = await csrfFetch('/api/server/service-auth-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            msg.textContent = data.message || 'Token updated successfully.';
+            msg.style.color = 'var(--success)';
+            status.textContent = 'Token saved';
+            status.style.color = 'var(--success)';
+            document.getElementById('sat-token').value = '';
+        } else {
+            msg.textContent = 'Error: ' + (data.error || 'Unknown error');
+            msg.style.color = 'var(--danger)';
+            status.textContent = 'Failed';
+            status.style.color = 'var(--danger)';
+        }
+    } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+        msg.style.color = 'var(--danger)';
+        status.textContent = 'Error';
+        status.style.color = 'var(--danger)';
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Save Token';
+}
 </script>
 {% endblock %}

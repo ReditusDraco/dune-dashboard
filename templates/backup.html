@@ -9,13 +9,21 @@
 
 <div id="backup-status" class="error-banner" style="display:none;"></div>
 
+<div style="background:rgba(255,193,7,0.12);border:2px solid rgba(255,193,7,0.6);border-left:6px solid #ffc107;border-radius:8px;padding:14px 20px;margin-bottom:16px;">
+    <div style="font-size:14px;font-weight:700;color:#e8a317;margin-bottom:6px;">&#9888; WIP - Use with caution</div>
+    <div style="font-size:13px;color:var(--text);line-height:1.5;">
+        This feature is still experimental. Test on a non-production environment first.
+        Keep offline backups of anything critical before using restore.
+    </div>
+</div>
+
 <div style="background:rgba(220,38,38,0.12);border:2px solid rgba(220,38,38,0.6);border-left:6px solid #dc2626;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
     <div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px;">&#9888; SECURITY WARNING</div>
     <div style="font-size:13px;color:var(--text);line-height:1.6;">
         Backups contain <strong>sensitive information</strong> including database contents, K8s secrets, and server configuration.
         Store backup files in a <strong>secure, offline location</strong>. Use a password to encrypt backups containing private data.
         Do not share backup files or expose them in insecure storage.
-        <strong style="color:#ef4444;display:block;margin-top:8px;">&#9888; If you set a password, never forget it — lost passwords cannot be recovered and the backup will be permanently unrecoverable.</strong>
+        <strong style="color:#ef4444;display:block;margin-top:8px;">&#9888; If you set a password, don't forget it - there's no way to recover it, and the backup will be locked for good.</strong>
     </div>
 </div>
 
@@ -119,7 +127,7 @@
                 </div>
                 <div style="margin-bottom:8px;">
                     <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:2px;">Encryption password (leave blank for no encryption)</label>
-                    <input type="password" id="sched-password" placeholder="All scheduled backups use this password"
+                    <input type="password" id="sched-password" placeholder="Leave blank to keep existing password"
                         style="width:100%;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
                 </div>
             </div>
@@ -264,8 +272,51 @@
 }
 </style>
 
+<!-- Create Backup Password Modal -->
+<div id="create-pw-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeModal('create-pw-modal')">
+    <div class="modal" style="max-width:400px;">
+        <div class="modal-header"><h3>Encrypt Backup (optional)</h3></div>
+        <div class="modal-body" style="padding:20px;">
+            <label style="display:block;margin-bottom:12px;font-size:13px;color:var(--text-light);">
+                Password
+                <input type="password" id="create-pw" placeholder="Leave blank for no encryption"
+                    style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--card-bg);color:var(--text);">
+            </label>
+            <label style="display:block;font-size:13px;color:var(--text-light);">
+                Confirm password
+                <input type="password" id="create-pw-confirm" placeholder="Repeat password"
+                    style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--card-bg);color:var(--text);">
+            </label>
+            <div id="create-pw-error" style="color:#c0392b;font-size:12px;margin-top:8px;display:none;"></div>
+        </div>
+        <div class="modal-actions" style="padding:12px 16px;border-top:1px solid var(--border);">
+            <button onclick="closeModal('create-pw-modal')" class="btn-cancel">Cancel</button>
+            <button id="create-pw-confirm-btn" onclick="confirmCreateBackup()" class="btn-save" style="margin-left:8px;">Create Backup</button>
+        </div>
+    </div>
+</div>
+
+<!-- Verify Backup Password Modal -->
+<div id="verify-pw-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeModal('verify-pw-modal')">
+    <div class="modal" style="max-width:380px;">
+        <div class="modal-header"><h3>Verify Backup - <span id="verify-pw-label"></span></h3></div>
+        <div class="modal-body" style="padding:20px;">
+            <label style="display:block;font-size:13px;color:var(--text-light);">
+                Password
+                <input type="password" id="verify-pw" placeholder="Leave blank if not encrypted"
+                    style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--card-bg);color:var(--text);">
+            </label>
+        </div>
+        <div class="modal-actions" style="padding:12px 16px;border-top:1px solid var(--border);">
+            <button onclick="closeModal('verify-pw-modal')" class="btn-cancel">Cancel</button>
+            <button id="verify-pw-confirm-btn" onclick="confirmVerifyBackup()" class="btn-save" style="margin-left:8px;">Verify</button>
+        </div>
+    </div>
+</div>
+
 <script>
 let restorePollInterval = null;
+let _pendingVerifyBackup = null;
 
 function showStatus(msg, type) {
     const el = document.getElementById('backup-status');
@@ -333,8 +384,32 @@ function populateRestoreSelect(backups) {
     }
 }
 
+function openModal(id) {
+    document.getElementById(id).style.display = '';
+}
+function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
+}
+
 async function createBackup() {
-    const pw = prompt('Optional: Enter a password to encrypt this backup (leave blank for no encryption):', '');
+    document.getElementById('create-pw').value = '';
+    document.getElementById('create-pw-confirm').value = '';
+    document.getElementById('create-pw-error').style.display = 'none';
+    openModal('create-pw-modal');
+    document.getElementById('create-pw').focus();
+}
+
+async function confirmCreateBackup() {
+    const pw = document.getElementById('create-pw').value;
+    const confirm = document.getElementById('create-pw-confirm').value;
+    const errEl = document.getElementById('create-pw-error');
+    if (pw !== confirm) {
+        errEl.textContent = 'Passwords do not match.';
+        errEl.style.display = '';
+        return;
+    }
+    errEl.style.display = 'none';
+    closeModal('create-pw-modal');
     const btn = document.getElementById('create-btn');
     btn.disabled = true;
     btn.textContent = 'Creating...';
@@ -360,7 +435,17 @@ async function createBackup() {
 }
 
 async function verifyBackup(name) {
-    const pw = prompt('Enter backup password (leave blank if not encrypted):', '');
+    _pendingVerifyBackup = name;
+    document.getElementById('verify-pw-label').textContent = name;
+    document.getElementById('verify-pw').value = '';
+    openModal('verify-pw-modal');
+    document.getElementById('verify-pw').focus();
+}
+
+async function confirmVerifyBackup() {
+    const name = _pendingVerifyBackup;
+    const pw = document.getElementById('verify-pw').value;
+    closeModal('verify-pw-modal');
     showStatus('Verifying ' + name + '...', 'info');
     try {
         const r = await csrfFetch('/api/backup/verify', {
@@ -375,11 +460,12 @@ async function verifyBackup(name) {
                 showStatus(name + ' verified: ' + d.files + ' files, ' + bytesStr(d.size), 'success');
             }
         } else {
-            showStatus('Verification failed: ' + esc(d.error || 'Corrupt backup'), 'error');
+            showStatus('Verification failed: ' + esc(d.error || 'Unknown error'), 'error');
         }
     } catch (e) {
         showStatus('Error: ' + esc(e.message), 'error');
     }
+    _pendingVerifyBackup = null;
 }
 
 async function deleteBackup(name) {
@@ -469,7 +555,7 @@ async function loadSchedule() {
             list.appendChild(div);
         });
         document.getElementById('sched-keep').value = s.keep;
-        document.getElementById('sched-password').value = s.password || '';
+        document.getElementById('sched-password').value = '';
         const status = document.getElementById('schedule-status');
         status.innerHTML = s.enabled
             ? '<span style="color:#27ae60;">&#9679; Active</span>'
@@ -620,7 +706,7 @@ async function startRestore() {
     }
 
     if (!confirm('This will OVERWRITE ALL DATA on the configured server. Are you sure?')) return;
-    if (!confirm('Last chance — are you absolutely sure you want to restore "' + name + '"?')) return;
+    if (!confirm('Last chance - are you absolutely sure you want to restore "' + name + '"?')) return;
 
     const password = document.getElementById('restore-password').value;
 
@@ -648,7 +734,7 @@ async function startRestore() {
     try {
         const r = await csrfFetch('/api/backup/restore/start', {
             method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({name, vm_ip: vmIp, options})
+            body: JSON.stringify({name, options})
         });
         const d = await r.json();
         if (!d.success) {

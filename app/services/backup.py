@@ -1,9 +1,11 @@
 """Backup service - backup creation, restore orchestration, backup management"""
 
 import base64
+import ipaddress
 import json
 import logging
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -12,7 +14,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
@@ -22,6 +24,16 @@ logger = logging.getLogger(__name__)
 
 class BackupError(Exception):
     pass
+
+
+# Backup names are always created as backup-DD-MM-YYYY_HHMMSS. Anything else
+# (e.g. '../../...') is rejected so names can never escape the backup dir
+# or break out of remote shell commands.
+BACKUP_NAME_RE = re.compile(r"^backup-\d{2}-\d{2}-\d{4}_\d{6}$")
+
+
+def is_valid_backup_name(name):
+    return bool(name and BACKUP_NAME_RE.fullmatch(str(name)))
 
 
 class BackupService:
@@ -311,7 +323,9 @@ class BackupService:
             cfg['schedule_times'] = data['schedule_times']
         cfg['keep'] = int(data.get('keep', cfg['keep']))
         if 'password' in data:
-            cfg['password'] = data['password']
+            if data['password']:
+                cfg['password'] = data['password']
+            # empty string = keep existing password (don't overwrite)
         if cfg.get('mode') == 'schedule':
             cfg['next_run'] = self._next_run_from_schedule(cfg)
         else:
@@ -386,6 +400,9 @@ class BackupService:
         return {}
 
     def delete_backup(self, name):
+        if not is_valid_backup_name(name):
+            logger.warning(f'Backup: rejected invalid backup name: {name!r}')
+            return False
         path = self._backup_path(f'{name}.tar.gz')
         if os.path.exists(path):
             os.remove(path)
@@ -395,6 +412,8 @@ class BackupService:
         return True
 
     def verify_backup(self, name, password=''):
+        if not is_valid_backup_name(name):
+            return {'success': False, 'error': 'Invalid backup name'}
         path = self._backup_path(f'{name}.tar.gz')
         if not os.path.exists(path):
             return {'success': False, 'error': 'Backup not found'}
@@ -434,12 +453,16 @@ class BackupService:
                 'size': os.path.getsize(path),
                 'components': meta.get('components', []),
             }
+        except InvalidToken:
+            return {'success': False, 'valid': False, 'error': 'Wrong password'}
         except Exception as e:
-            return {'success': False, 'valid': False, 'error': str(e)}
+            return {'success': False, 'valid': False, 'error': f'Backup corrupted: {e}'}
 
     # ── Restore Orchestration ─────────────────────────────────────────
 
     def restore_preview(self, name):
+        if not is_valid_backup_name(name):
+            return {'success': False, 'error': 'Invalid backup name'}
         path = self._backup_path(f'{name}.tar.gz')
         if not os.path.exists(path):
             return {'success': False, 'error': 'Backup not found'}
@@ -489,6 +512,8 @@ class BackupService:
             return {'success': False, 'error': str(e)}
 
     def start_restore(self, backup_name, options):
+        if not is_valid_backup_name(backup_name):
+            return {'success': False, 'error': 'Invalid backup name'}
         ssh_user = self.settings.get('server', {}).get('user', 'dune')
         ssh_key = self.settings.get('server', {}).get('ssh_key', '')
         vm_ip = self.settings.get('server', {}).get('host', '')
@@ -585,7 +610,8 @@ class BackupService:
         try:
             with open(upload_path, 'rb') as f:
                 b64_data = base64.b64encode(f.read()).decode()
-            r = ssh_cmd(f'echo {shlex.quote(b64_data)} | base64 -d > /tmp/restore-{backup_name}.tar.gz', timeout=300)
+            remote_archive = f'/tmp/restore-{backup_name}.tar.gz'
+            r = ssh_cmd(f'echo {shlex.quote(b64_data)} | base64 -d > {shlex.quote(remote_archive)}', timeout=300)
             if r.returncode != 0:
                 raise BackupError(f'Upload failed: {r.stderr}')
             complete_step('Uploading backup archive to new VM', True)
@@ -603,10 +629,11 @@ class BackupService:
         # Step 2: Extract archive on VM
         add_step('Extracting backup archive on VM')
         try:
+            restore_dir = f'/tmp/restore-{backup_name}'
             r = ssh_cmd(
-                f'mkdir -p /tmp/restore-{backup_name} && '
-                f'cd /tmp/restore-{backup_name} && '
-                f'tar xzf /tmp/restore-{backup_name}.tar.gz --strip-components=1',
+                f'mkdir -p {shlex.quote(restore_dir)} && '
+                f'cd {shlex.quote(restore_dir)} && '
+                f'tar xzf {shlex.quote(remote_archive)} --strip-components=1',
                 timeout=60)
             if r.returncode != 0:
                 raise BackupError(f'Extract failed: {r.stderr}')
@@ -620,8 +647,9 @@ class BackupService:
             try:
                 d = f'/tmp/restore-{backup_name}'
                 for fname in ['secrets.yaml', 'configmaps.yaml']:
+                    manifest = f'{d}/k8s-manifests/{fname}'
                     r = ssh_cmd(
-                        f'sudo kubectl apply -n {ns} -f {d}/k8s-manifests/{fname} 2>/dev/null || true',
+                        f'sudo kubectl apply -n {shlex.quote(str(ns))} -f {shlex.quote(manifest)} 2>/dev/null || true',
                         timeout=30)
                     if r.returncode != 0:
                         logger.warning(f'Could not apply {fname}: {r.stderr}')
@@ -634,8 +662,9 @@ class BackupService:
             add_step('Applying battlegroup CRD')
             try:
                 d = f'/tmp/restore-{backup_name}'
+                crd = f'{d}/k8s-manifests/battlegroup-crd.yaml'
                 r = ssh_cmd(
-                    f'sudo kubectl apply -f {d}/k8s-manifests/battlegroup-crd.yaml', timeout=60)
+                    f'sudo kubectl apply -f {shlex.quote(crd)}', timeout=60)
                 if r.returncode != 0:
                     raise BackupError(r.stderr)
                 complete_step('Applying battlegroup CRD', True)
@@ -646,7 +675,7 @@ class BackupService:
             try:
                 for i in range(30):
                     r = ssh_cmd(
-                        f'sudo kubectl get pods -n {ns} --no-headers 2>/dev/null | '
+                        f'sudo kubectl get pods -n {shlex.quote(str(ns))} --no-headers 2>/dev/null | '
                         f'grep -c -E "(dbdepl|mq-.*-sts)" || true', timeout=15)
                     if r.returncode == 0 and r.stdout.strip():
                         count = int(r.stdout.strip())
@@ -663,7 +692,7 @@ class BackupService:
             try:
                 for i in range(30):
                     r = ssh_cmd(
-                        f'sudo kubectl get pods -n {ns} -l role=db --no-headers '
+                        f'sudo kubectl get pods -n {shlex.quote(str(ns))} -l role=db --no-headers '
                         f'-o custom-columns=STATUS:.status.phase 2>/dev/null | head -1',
                         timeout=15)
                     if 'Running' in r.stdout:
@@ -680,7 +709,7 @@ class BackupService:
             add_step('Importing game database')
             try:
                 r = ssh_cmd(
-                    f'cd /tmp/restore-{backup_name} && '
+                    f'cd {shlex.quote(restore_dir)} && '
                     f'/home/dune/.dune/bin/battlegroup import',
                     timeout=600)
                 if r.returncode != 0:
@@ -704,9 +733,9 @@ class BackupService:
                 if dash_sql_content:
                     b64_sql = base64.b64encode(dash_sql_content).decode()
                     r = ssh_cmd(
-                        f'dbpod=$(sudo kubectl get pods -n {ns} -l role=db -o name | head -1) && '
+                        f'dbpod=$(sudo kubectl get pods -n {shlex.quote(str(ns))} -l role=db -o name | head -1) && '
                         f'echo {shlex.quote(b64_sql)} | base64 -d | '
-                        f'sudo kubectl exec -n {ns} -i $dbpod -- psql -U postgres -d dune',
+                        f'sudo kubectl exec -n {shlex.quote(str(ns))} -i $dbpod -- psql -U postgres -d dune',
                         timeout=120)
                     if r.returncode != 0:
                         logger.warning(f'Dashboard DB restore warning: {r.stderr}')
@@ -724,8 +753,8 @@ class BackupService:
                        "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA dashboard TO dune;"
                        "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA dashboard TO dune;")
                 r = ssh_cmd(
-                    f'dbpod=$(sudo kubectl get pods -n {ns} -l role=db -o name | head -1) && '
-                    f'sudo kubectl exec -n {ns} $dbpod -- psql -U postgres -d dune '
+                    f'dbpod=$(sudo kubectl get pods -n {shlex.quote(str(ns))} -l role=db -o name | head -1) && '
+                    f'sudo kubectl exec -n {shlex.quote(str(ns))} $dbpod -- psql -U postgres -d dune '
                     f'-c {shlex.quote(sql)}', timeout=30)
                 if r.returncode != 0:
                     logger.warning(f'Dashboard schema ownership warning: {r.stderr}')
@@ -737,15 +766,20 @@ class BackupService:
         if opts.get('restore_ping_fix', True) and opts.get('new_ip'):
             add_step('Applying HOST_DATACENTER ping fix')
             try:
+                try:
+                    new_ip = str(ipaddress.ip_address(str(opts['new_ip']).strip()))
+                except ValueError:
+                    raise BackupError(f'Invalid IP address: {opts.get("new_ip")!r}')
                 r = ssh_cmd('hostname', timeout=10)
                 hostname = r.stdout.strip()
-                new_ip = opts['new_ip']
+                if not re.fullmatch(r'[A-Za-z0-9_.-]{1,253}', hostname):
+                    raise BackupError(f'Unexpected hostname: {hostname!r}')
                 for deploy_suffix in ['bgd-deploy', 'sgw-deploy', 'tr-deploy']:
                     full_name = f'{ns}-{deploy_suffix}'
                     ssh_cmd(
-                        f'sudo kubectl set env deploy/{full_name} -n {ns} '
-                        f'HOST_DATACENTER_ID={hostname} '
-                        f'HOST_DATACENTER_IP_ADDRESS={new_ip}',
+                        f'sudo kubectl set env deploy/{shlex.quote(full_name)} -n {shlex.quote(str(ns))} '
+                        f'HOST_DATACENTER_ID={shlex.quote(hostname)} '
+                        f'HOST_DATACENTER_IP_ADDRESS={shlex.quote(new_ip)}',
                         timeout=30)
                 complete_step('Applying HOST_DATACENTER ping fix', True)
             except Exception as e:
@@ -758,21 +792,24 @@ class BackupService:
                 pw = self.settings.get('rabbitmq', {}).get('password', '')
                 for side in ['admin', 'game']:
                     pod_r = ssh_cmd(
-                        f'sudo kubectl get pods -n {ns} -o name | grep mq-{side}-sts | head -1',
+                        f'sudo kubectl get pods -n {shlex.quote(str(ns))} -o name | grep mq-{side}-sts | head -1',
                         timeout=15)
                     if pod_r.returncode != 0 or not pod_r.stdout.strip():
                         logger.warning(f'No mq-{side} pod found')
                         continue
                     pod = pod_r.stdout.strip()
+                    if not re.fullmatch(r'[a-z0-9]([-a-z0-9]*[a-z0-9])?', pod):
+                        logger.warning(f'Skipping unexpected pod name: {pod!r}')
+                        continue
                     for cmd in [
-                        f'rabbitmqctl add_user dashboard_admin {pw}',
+                        f'rabbitmqctl add_user dashboard_admin {shlex.quote(str(pw))}',
                         f'rabbitmqctl set_user_tags dashboard_admin administrator',
                         f'rabbitmqctl set_permissions -p / dashboard_admin ".*" ".*" ".*"',
                         f'rabbitmqctl eval '
                         f'\'application:set_env(rabbit, auth_backends, '
                         f'[rabbit_auth_backend_cache, rabbit_auth_backend_internal]).\'',
                     ]:
-                        ssh_cmd(f'sudo kubectl exec -n {ns} {pod} -- {cmd}', timeout=15)
+                        ssh_cmd(f'sudo kubectl exec -n {shlex.quote(str(ns))} {shlex.quote(pod)} -- {cmd}', timeout=15)
                 complete_step('Re-creating RMQ dashboard_admin user on both instances', True)
             except Exception as e:
                 complete_step('Re-creating RMQ dashboard_admin user on both instances', False, str(e))
@@ -782,7 +819,8 @@ class BackupService:
             add_step('Restoring dashboard settings.yaml locally')
             try:
                 d = f'/tmp/restore-{backup_name}'
-                r = ssh_cmd(f'cat {d}/settings.yaml', timeout=15)
+                settings_file = f'{d}/settings.yaml'
+                r = ssh_cmd(f'cat {shlex.quote(settings_file)}', timeout=15)
                 if r.returncode == 0 and r.stdout.strip():
                     local_settings = os.path.join(
                         os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
@@ -798,7 +836,7 @@ class BackupService:
         # Step 10: Cleanup
         add_step('Cleaning up temporary files on VM')
         try:
-            ssh_cmd(f'rm -rf /tmp/restore-{backup_name} /tmp/restore-{backup_name}.tar.gz',
+            ssh_cmd(f'rm -rf {shlex.quote(restore_dir)} {shlex.quote(remote_archive)}',
                     timeout=15)
             complete_step('Cleaning up temporary files on VM', True)
         except Exception as e:

@@ -1,12 +1,16 @@
 """Director service - battlegroup director API and ConfigMap management."""
 
+import ipaddress
 import json
 import logging
+import shlex
+import time
 import urllib.error
 import urllib.request
 import configparser
 import io
 import base64
+import re
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -48,11 +52,19 @@ class DirectorService:
         for line in (out or '').split('\n'):
             line = line.strip()
             if 'bgd-svc' in line:
-                svc_name = line.split('/')[-1]
+                svc_name = line.split('/')[-1].strip()
+                if not re.fullmatch(r'[a-z0-9]([-a-z0-9]*[a-z0-9])?', svc_name or ''):
+                    logger.warning("Director: unexpected svc name %r", svc_name)
+                    continue
                 ip_out, ip_err, ip_rc = self.k8s.run(
-                    f'get svc {svc_name} -o jsonpath={{.spec.clusterIP}}', timeout=10)
+                    f'get svc {shlex.quote(svc_name)} -o jsonpath={{.spec.clusterIP}}', timeout=10)
                 if ip_rc == 0 and ip_out:
                     ip = ip_out.strip()
+                    try:
+                        ipaddress.ip_address(ip)
+                    except ValueError:
+                        logger.warning("Director: unexpected cluster IP %r", ip)
+                        continue
                     logger.info("Director: resolved BGD svc cluster IP %s", ip)
                     return f'http://{ip}:{_BGD_CONTAINER_PORT}'
         logger.warning("Director: no BGD service found in namespace %s", self.namespace)
@@ -108,7 +120,7 @@ class DirectorService:
             svc_url = f"{self._bgd_svc_url}{path}"
             logger.debug("Director SSH fallback: %s %s", method, svc_url)
             if method == 'GET':
-                out, err, rc = self.ssh.run(f'wget -qO- {svc_url}', timeout=timeout)
+                out, err, rc = self.ssh.run(f'wget -qO- {shlex.quote(svc_url)}', timeout=timeout)
             else:
                 body_bytes = None
                 if raw_data and isinstance(data, str):
@@ -117,14 +129,14 @@ class DirectorService:
                     body_bytes = json.dumps(data).encode()
                 body_b64 = base64.b64encode(body_bytes).decode() if body_bytes else ''
                 tmp = f'/tmp/director_{int(time.time())}_{id(self)}'
-                self.ssh.run(f'echo {body_b64} | base64 -d > {tmp}', timeout=5)
+                self.ssh.run(f'echo {shlex.quote(body_b64)} | base64 -d > {shlex.quote(tmp)}', timeout=5)
                 try:
                     out, err, rc = self.ssh.run(
-                        f'wget -qO- --post-file={tmp} '
-                        f'--header="Content-Type: application/json" {svc_url}',
+                        f'wget -qO- --post-file={shlex.quote(tmp)} '
+                        f'--header="Content-Type: application/json" {shlex.quote(svc_url)}',
                         timeout=timeout)
                 finally:
-                    self.ssh.run(f'rm -f {tmp}', timeout=5)
+                    self.ssh.run(f'rm -f {shlex.quote(tmp)}', timeout=5)
             if rc == 0 and out:
                 return out
             logger.warning("Director SSH fallback failed (rc=%d): %s",

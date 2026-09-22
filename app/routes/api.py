@@ -31,6 +31,18 @@ def quote_remote(value):
     return shlex.quote(str(value))
 
 
+def fb_within_roots(canonical, roots):
+    """True when a canonical absolute path is inside one of the roots."""
+    canonical = '/' + str(canonical or '').strip().lstrip('/')
+    canonical = canonical.rstrip('/') or '/'
+    for root in roots or []:
+        root = str(root).strip().rstrip('/') or '/'
+        root = '/' + root.lstrip('/')
+        if canonical == root or canonical.startswith(root + '/'):
+            return True
+    return False
+
+
 def register_api_routes(app, services, settings):
     db = services['db']
     ssh = services['ssh']
@@ -39,6 +51,8 @@ def register_api_routes(app, services, settings):
     admin_svc = services['admin']
     vehicle_svc = services['vehicle']
     backup_svc = services.get('backup')
+    lifecycle_svc = services.get('lifecycle')
+    broadcasts_svc = services.get('broadcasts')
     audit_svc = services.get('audit')
 
 # Get or create rate limiter - use existing one from factory if available
@@ -128,9 +142,206 @@ def register_api_routes(app, services, settings):
     @auth_req
 
     def battlegroup_update():
+        # Safety guard: refuse to update while game servers are online.
+        running = k8s.get_running_game_pods()
+        if running is None:
+            return jsonify({'success': False,
+                            'output': 'Update blocked: could not verify pod status. '
+                                      'Stop the server first, then try again.'})
+        if running:
+            shown = ', '.join(running[:5])
+            if len(running) > 5:
+                shown += f', ... ({len(running)} total)'
+            return jsonify({'success': False,
+                            'output': f'Update blocked: server is online '
+                                      f'({len(running)} game pod(s) Running: {shown}). '
+                                      f'Stop/shutdown the server first.'})
         bg_script = settings['kubernetes']['battlegroup_script']
         out, err, rc = ssh.run(f'{bg_script} update', timeout=600)
         return jsonify({'success': rc == 0, 'output': out + err if out or err else 'No output'})
+
+    # Lifecycle: graceful shutdown/start/restart + scheduled restarts
+    @app.route('/server/lifecycle/status')
+    @auth_req
+    def lifecycle_status():
+        if not lifecycle_svc:
+            return jsonify({'success': False, 'error': 'Lifecycle service unavailable'})
+        status = lifecycle_svc.status()
+        status['success'] = True
+        return jsonify(status)
+
+    @app.route('/server/lifecycle/start', methods=['POST'])
+    @auth_req
+    def lifecycle_start():
+        if not lifecycle_svc:
+            return jsonify({'success': False, 'output': 'Lifecycle service unavailable'})
+        if lifecycle_svc.status().get('active'):
+            return jsonify({'success': False, 'output': 'A countdown is already running'})
+        bg_script = settings['kubernetes']['battlegroup_script']
+        out, err, rc = ssh.run(f'{bg_script} start', timeout=300)
+        if audit_svc:
+            audit_svc.log('server_start', {'result': rc}, user='admin',
+                          severity='warning' if rc != 0 else 'info')
+        return jsonify({'success': rc == 0, 'output': out + err if out or err else 'No output'})
+
+    @app.route('/server/lifecycle/shutdown', methods=['POST'])
+    @auth_req
+    def lifecycle_shutdown():
+        if not lifecycle_svc:
+            return jsonify({'success': False, 'output': 'Lifecycle service unavailable'})
+        result = lifecycle_svc.start_shutdown(reason='manual')
+        if audit_svc and result.get('success'):
+            audit_svc.log('server_shutdown_countdown', {'action_at': result.get('action_at')},
+                          user='admin', severity='warning')
+        return jsonify(result)
+
+    @app.route('/server/lifecycle/restart', methods=['POST'])
+    @auth_req
+    def lifecycle_restart():
+        if not lifecycle_svc:
+            return jsonify({'success': False, 'output': 'Lifecycle service unavailable'})
+        result = lifecycle_svc.start_restart(reason='manual')
+        if audit_svc and result.get('success'):
+            audit_svc.log('server_restart_countdown', {'action_at': result.get('action_at')},
+                          user='admin', severity='warning')
+        return jsonify(result)
+
+    @app.route('/server/lifecycle/cancel', methods=['POST'])
+    @auth_req
+    def lifecycle_cancel():
+        if not lifecycle_svc:
+            return jsonify({'success': False, 'output': 'Lifecycle service unavailable'})
+        result = lifecycle_svc.cancel()
+        if audit_svc and result.get('success'):
+            audit_svc.log('server_lifecycle_cancel', {'kind': result.get('kind')},
+                          user='admin', severity='info')
+        return jsonify(result)
+
+    @app.route('/server/lifecycle/schedule')
+    @auth_req
+    def lifecycle_schedule_get():
+        if not lifecycle_svc:
+            return jsonify({'success': False, 'error': 'Lifecycle service unavailable'})
+        cfg = lifecycle_svc.get_schedule()
+        return jsonify({'success': True, 'schedule': cfg})
+
+    @app.route('/server/lifecycle/schedule', methods=['POST'])
+    @auth_req
+    def lifecycle_schedule_set():
+        if not lifecycle_svc:
+            return jsonify({'success': False, 'error': 'Lifecycle service unavailable'})
+        data = request.get_json() or {}
+        try:
+            cfg = lifecycle_svc.update_schedule(data)
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)})
+        except Exception as e:
+            logger.error(f'Lifecycle schedule save failed: {e}')
+            return jsonify({'success': False, 'error': 'Could not save schedule'})
+        if audit_svc:
+            audit_svc.log('server_restart_schedule',
+                          {'enabled': cfg.get('enabled'), 'mode': cfg.get('mode'),
+                           'next_run': cfg.get('next_run')},
+                          user='admin', severity='info')
+        return jsonify({'success': True, 'schedule': cfg})
+
+    @app.route('/server/lifecycle/schedule/enabled', methods=['POST'])
+    @auth_req
+    def lifecycle_schedule_enabled():
+        if not lifecycle_svc:
+            return jsonify({'success': False, 'error': 'Lifecycle service unavailable'})
+        data = request.get_json() or {}
+        cfg = lifecycle_svc.set_enabled(data.get('enabled', True))
+        if audit_svc:
+            audit_svc.log('server_restart_schedule',
+                          {'enabled': cfg.get('enabled'), 'mode': cfg.get('mode'),
+                           'next_run': cfg.get('next_run')},
+                          user='admin', severity='info')
+        return jsonify({'success': True, 'schedule': cfg})
+
+    @app.route('/server/lifecycle/schedule/clear', methods=['POST'])
+    @auth_req
+    def lifecycle_schedule_clear():
+        if not lifecycle_svc:
+            return jsonify({'success': False, 'error': 'Lifecycle service unavailable'})
+        cfg = lifecycle_svc.clear_schedule()
+        if audit_svc:
+            audit_svc.log('server_restart_schedule',
+                          {'cleared': True, 'mode': cfg.get('mode')},
+                          user='admin', severity='info')
+        return jsonify({'success': True, 'schedule': cfg})
+
+    # Custom notifications (moved here from Experimental - confirmed working)
+    @app.route('/server/broadcast', methods=['POST'])
+    @auth_req
+    def server_broadcast():
+        data = request.get_json() or {}
+        title = (data.get('title') or '').strip()
+        message = (data.get('message') or '').strip()
+        try:
+            duration = int(data.get('duration', 30))
+        except (ValueError, TypeError):
+            duration = 30
+        duration = max(5, min(300, duration))
+        if not title or not message:
+            return jsonify({'success': False, 'error': 'Title and message are required'})
+        success, result = admin_svc.send_global_broadcast(title, message, duration)
+        if audit_svc and success:
+            audit_svc.log('server_broadcast', {'title': title, 'duration': duration},
+                          user='admin', severity='info')
+        return jsonify({'success': success, 'output': result})
+
+    @app.route('/server/broadcasts/schedule')
+    @auth_req
+    def broadcasts_schedule_list():
+        if not broadcasts_svc:
+            return jsonify({'success': False, 'error': 'Broadcast service unavailable'})
+        return jsonify({'success': True, 'entries': broadcasts_svc.list_entries()})
+
+    @app.route('/server/broadcasts/schedule', methods=['POST'])
+    @auth_req
+    def broadcasts_schedule_save():
+        if not broadcasts_svc:
+            return jsonify({'success': False, 'error': 'Broadcast service unavailable'})
+        data = request.get_json() or {}
+        try:
+            entry = broadcasts_svc.save_entry(data)
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)})
+        except Exception as e:
+            logger.error(f'Broadcast schedule save failed: {e}')
+            return jsonify({'success': False, 'error': 'Could not save scheduled notification'})
+        if audit_svc:
+            audit_svc.log('server_broadcast_schedule',
+                          {'id': entry.get('id'), 'enabled': entry.get('enabled'),
+                           'mode': entry.get('mode'), 'next_run': entry.get('next_run')},
+                          user='admin', severity='info')
+        return jsonify({'success': True, 'entry': entry})
+
+    @app.route('/server/broadcasts/schedule/enabled', methods=['POST'])
+    @auth_req
+    def broadcasts_schedule_enabled():
+        if not broadcasts_svc:
+            return jsonify({'success': False, 'error': 'Broadcast service unavailable'})
+        data = request.get_json() or {}
+        try:
+            entry = broadcasts_svc.set_enabled(data.get('id'), data.get('enabled', True))
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': True, 'entry': entry})
+
+    @app.route('/server/broadcasts/schedule/delete', methods=['POST'])
+    @auth_req
+    def broadcasts_schedule_delete():
+        if not broadcasts_svc:
+            return jsonify({'success': False, 'error': 'Broadcast service unavailable'})
+        data = request.get_json() or {}
+        ok = broadcasts_svc.delete_entry(str(data.get('id') or ''))
+        if audit_svc and ok:
+            audit_svc.log('server_broadcast_schedule',
+                          {'deleted': str(data.get('id') or '')},
+                          user='admin', severity='info')
+        return jsonify({'success': ok})
 
     # Firewall management
     def _get_bgd_nodeport():
@@ -800,12 +1011,47 @@ def register_api_routes(app, services, settings):
     # File browser
     FILEBROWSER_BASE_PATH = '/srv'
 
-    def _validate_fb_path(path):
-        """Validate filebrowser path — allow any path, block traversal."""
-        path_str = str(path or "").lstrip("/")
-        if '..' in path_str or '\x00' in path_str:
-            return False
-        return True
+    # Built-in file-browser jail roots (used when settings has none).
+    _FB_DEFAULT_ROOTS = ('/srv', '/home/dune/.dune')
+
+    def _fb_allowed_roots():
+        """Allowed file-browser roots from settings, else built-in defaults."""
+        roots = (settings.get('filebrowser', {}) or {}).get('allowed_roots')
+        if isinstance(roots, str):
+            roots = [roots]
+        cleaned = []
+        for root in roots or []:
+            root = '/' + str(root or '').strip().lstrip('/')
+            root = root.rstrip('/') or '/'
+            if root and root not in cleaned:
+                cleaned.append(root)
+        return cleaned or list(_FB_DEFAULT_ROOTS)
+
+    def _fb_resolve_path(path, pod_name=None, timeout=10):
+        """Canonicalize a path in the target context and enforce the jail.
+
+        Returns (canonical_path, error). error is '' on success, in which
+        case canonical_path is safe to use in remote commands.
+        """
+        raw = str(path or '')
+        if '\x00' in raw:
+            return '', 'Invalid path: access denied'
+        if not raw.startswith('/'):
+            return '', 'Invalid path: must be absolute'
+        import posixpath
+        roots = _fb_allowed_roots()
+        lexical = posixpath.normpath(raw)
+        out, err, rc = _fb_exec(f'realpath -m -- {quote_remote(raw)}', pod_name, timeout=timeout)
+        if rc == 0 and (out or '').strip():
+            canonical = (out or '').strip().split('\n')[0].strip()
+        else:
+            # realpath unavailable in this context: fall back to the lexical
+            # path (still blocks '..' escapes; symlinks stay unresolved).
+            logger.warning('File browser: realpath unavailable, using lexical path check')
+            canonical = lexical
+        if not fb_within_roots(canonical, roots):
+            return '', 'Invalid path: outside allowed directories'
+        return canonical, ''
 
     def _get_fb_pod():
         """Get the default FileBrowser pod name dynamically."""
@@ -821,20 +1067,39 @@ def register_api_routes(app, services, settings):
                 available.append(p)
         return available
 
+    # Pod names the file browser accepts: the VM host entries shown in the
+    # pod selector, or real Kubernetes pod names (RFC 1123).
+    _FB_VM_PODS = ('__VM__', '__VM__ (Host OS)')
+
+    def _fb_check_pod(pod_name):
+        """Validate a file-browser pod value. Returns an error string or ''."""
+        if not pod_name:
+            return ''
+        if pod_name in _FB_VM_PODS:
+            return ''
+        try:
+            require_k8s_name(pod_name, 'pod')
+        except ValueError as e:
+            return str(e)
+        return ''
+
     def _fb_exec(command, pod_name=None, timeout=10):
         """Execute a command on the VM host or in a K8s pod."""
-        if pod_name == '__VM__' or (pod_name and pod_name.startswith('__VM__')):
+        if pod_name in _FB_VM_PODS:
             return k8s.ssh.run(command, timeout=timeout)
         pod = pod_name or _get_fb_pod()
         if not pod:
             return '', 'No pod specified or found', 1
-        full_cmd = f'sudo kubectl exec {pod} -n {k8s.namespace} -- {command}'
+        err = _fb_check_pod(pod)
+        if err:
+            return '', f'Invalid pod name: {err}', 1
+        full_cmd = f'sudo kubectl exec {shlex.quote(pod)} -n {shlex.quote(str(k8s.namespace))} -- {command}'
         return k8s.ssh.run(full_cmd, timeout=timeout)
 
     def _fb_write_file(content_b64, path, pod_name=None, timeout=30):
         """Write a file to the pod filesystem."""
         import base64
-        cmd = f"echo '{content_b64}' | base64 -d > '{path}'"
+        cmd = f"echo '{content_b64}' | base64 -d > {quote_remote(path)}"
         return _fb_exec(f"sh -c {quote_remote(cmd)}", pod_name, timeout)
 
     def _get_pod_from_request():
@@ -857,9 +1122,10 @@ def register_api_routes(app, services, settings):
     def api_files_list():
         path = request.form.get('path', '/srv')
         pod_name = _get_pod_from_request()
-        if not _validate_fb_path(path):
-            return jsonify({'success': False, 'error': 'Invalid path: access denied'})
-        safe_path = quote_remote(path)
+        canonical, err = _fb_resolve_path(path, pod_name)
+        if err:
+            return jsonify({'success': False, 'error': err})
+        safe_path = quote_remote(canonical)
         out, err, rc = _fb_exec(f'ls -la {safe_path}', pod_name, timeout=10)
         if rc != 0:
             return jsonify({'success': False, 'error': err or 'Failed to list directory'})
@@ -890,9 +1156,10 @@ def register_api_routes(app, services, settings):
         pod_name = _get_pod_from_request()
         if not path:
             return jsonify({'success': False, 'error': 'Missing path'})
-        if not _validate_fb_path(path):
-            return jsonify({'success': False, 'error': 'Invalid path: access denied'})
-        safe_path = quote_remote(path)
+        canonical, err = _fb_resolve_path(path, pod_name)
+        if err:
+            return jsonify({'success': False, 'error': err})
+        safe_path = quote_remote(canonical)
         out, err, rc = _fb_exec(f'head -c 100000 {safe_path}', pod_name, timeout=10)
         if rc != 0:
             return jsonify({'success': False, 'error': err or 'Failed to read file'})
@@ -907,11 +1174,12 @@ def register_api_routes(app, services, settings):
         pod_name = _get_pod_from_request()
         if not path:
             return jsonify({'success': False, 'error': 'Missing path'})
-        if not _validate_fb_path(path):
-            return jsonify({'success': False, 'error': 'Invalid path: access denied'})
+        canonical, err = _fb_resolve_path(path, pod_name)
+        if err:
+            return jsonify({'success': False, 'error': err})
         import base64
         content_b64 = base64.b64encode(content.encode()).decode()
-        out, err, rc = _fb_write_file(content_b64, path, pod_name)
+        out, err, rc = _fb_write_file(content_b64, canonical, pod_name)
         if rc != 0:
             return jsonify({'success': False, 'error': err or 'Failed to save file'})
         return jsonify({'success': True})
@@ -923,10 +1191,11 @@ def register_api_routes(app, services, settings):
         pod_name = _get_pod_from_request()
         if not path:
             return jsonify({'success': False, 'error': 'Missing path'})
-        if not _validate_fb_path(path):
-            return jsonify({'success': False, 'error': 'Invalid path: access denied'})
+        canonical, err = _fb_resolve_path(path, pod_name)
+        if err:
+            return jsonify({'success': False, 'error': err})
         import base64
-        safe_path = quote_remote(path)
+        safe_path = quote_remote(canonical)
         out, err, rc = _fb_exec(f'base64 {safe_path}', pod_name, timeout=30)
         if rc != 0:
             return jsonify({'success': False, 'error': err or 'Failed to read file'})
@@ -942,16 +1211,15 @@ def register_api_routes(app, services, settings):
         pod_name = _get_pod_from_request()
         if not uploaded:
             return jsonify({'success': False, 'error': 'No file provided'})
-        if not _validate_fb_path(target_path):
-            return jsonify({'success': False, 'error': 'Invalid path: access denied'})
         import base64
         filename = uploaded.filename.rsplit('/', 1)[-1].rsplit('\\', 1)[-1] if uploaded.filename else 'uploaded_file'
         dest = target_path.rstrip('/') + '/' + filename
-        if not _validate_fb_path(dest):
+        canonical, err = _fb_resolve_path(dest, pod_name)
+        if err:
             return jsonify({'success': False, 'error': 'Invalid destination path'})
         content = uploaded.read()
         content_b64 = base64.b64encode(content).decode()
-        out, err, rc = _fb_write_file(content_b64, dest, pod_name)
+        out, err, rc = _fb_write_file(content_b64, canonical, pod_name)
         if rc != 0:
             return jsonify({'success': False, 'error': err or 'Failed to upload file'})
         return jsonify({'success': True, 'filename': filename})
@@ -963,9 +1231,10 @@ def register_api_routes(app, services, settings):
         pod_name = _get_pod_from_request()
         if not path:
             return jsonify({'success': False, 'error': 'Missing path'})
-        if not _validate_fb_path(path):
-            return jsonify({'success': False, 'error': 'Invalid path: access denied'})
-        safe_path = quote_remote(path)
+        canonical, err = _fb_resolve_path(path, pod_name)
+        if err:
+            return jsonify({'success': False, 'error': err})
+        safe_path = quote_remote(canonical)
         out, err, rc = _fb_exec(f'rm -rf {safe_path}', pod_name, timeout=10)
         if rc != 0:
             return jsonify({'success': False, 'error': err or 'Failed to delete'})
@@ -1080,10 +1349,23 @@ def register_api_routes(app, services, settings):
                 return jsonify({'success': False, 'error': 'Director unavailable. The BGD service is not responding.'}), 503
             return jsonify({'success': False, 'error': str(e)}), 500
 
+    _MAP_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+    def _require_map_name(map_name):
+        """Validate a director map name (used in kubectl resource names)."""
+        map_name = str(map_name or '').strip()
+        if not _MAP_NAME_RE.fullmatch(map_name):
+            raise ValueError('Invalid map name')
+        return map_name
+
     @app.route('/api/director/server_set_scale/<map_name>')
     @auth_req
     def director_server_set_scale_get(map_name):
         try:
+            try:
+                map_name = _require_map_name(map_name)
+            except ValueError as e:
+                return jsonify({'success': False, 'error': str(e)}), 400
             if not director_svc:
                 return jsonify({'success': False, 'error': 'Director service not available'}), 503
             scale = director_svc.get_server_set_scale(map_name)
@@ -1101,6 +1383,10 @@ def register_api_routes(app, services, settings):
     @auth_req
     def director_server_set_scale_patch(map_name):
         try:
+            try:
+                map_name = _require_map_name(map_name)
+            except ValueError as e:
+                return jsonify({'success': False, 'error': str(e)}), 400
             if not director_svc:
                 return jsonify({'success': False, 'error': 'Director service not available'}), 503
             config = request.get_json()
@@ -1138,17 +1424,25 @@ def register_api_routes(app, services, settings):
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
 
+    def _require_pod(data):
+        """Extract + validate a pod name from a JSON body. Raises ValueError."""
+        pod = (data.get('pod', '') or '').strip()
+        if not pod:
+            raise ValueError('pod name required')
+        return require_k8s_name(pod, 'pod')
+
     @app.route('/api/pod/logs', methods=['POST'])
     @auth_req
     def api_pod_logs():
         try:
             data = request.get_json(force=True) or {}
-            pod = data.get('pod', '').strip()
-            if not pod:
-                return jsonify({'success': False, 'error': 'pod name required'})
+            try:
+                pod = _require_pod(data)
+            except ValueError as e:
+                return jsonify({'success': False, 'error': str(e)})
             ns = settings['kubernetes']['namespace']
             out, err, rc = ssh.run(
-                f'sudo kubectl logs -n {ns} {pod} --tail=300 2>/dev/null || echo "NO_LOGS"', timeout=15)
+                f'sudo kubectl logs -n {shlex.quote(str(ns))} {shlex.quote(pod)} --tail=300 2>/dev/null || echo "NO_LOGS"', timeout=15)
             if rc != 0 and 'NO_LOGS' not in (out or ''):
                 return jsonify({'success': False, 'error': err or 'Failed to get logs'})
             logs = (out or '').replace('NO_LOGS\n', '').replace('NO_LOGS', '')
@@ -1161,11 +1455,12 @@ def register_api_routes(app, services, settings):
     def api_pod_delete():
         try:
             data = request.get_json(force=True) or {}
-            pod = data.get('pod', '').strip()
-            if not pod:
-                return jsonify({'success': False, 'error': 'pod name required'})
+            try:
+                pod = _require_pod(data)
+            except ValueError as e:
+                return jsonify({'success': False, 'error': str(e)})
             ns = settings['kubernetes']['namespace']
-            out, err, rc = ssh.run(f'sudo kubectl delete pod -n {ns} {pod} --wait=false', timeout=30)
+            out, err, rc = ssh.run(f'sudo kubectl delete pod -n {shlex.quote(str(ns))} {shlex.quote(pod)} --wait=false', timeout=30)
             if rc != 0:
                 return jsonify({'success': False, 'error': err or 'Failed to delete pod'})
             return jsonify({'success': True, 'message': f'Pod {pod} deleted (will be recreated by its controller)'})
@@ -1177,11 +1472,12 @@ def register_api_routes(app, services, settings):
     def api_pod_describe():
         try:
             data = request.get_json(force=True) or {}
-            pod = data.get('pod', '').strip()
-            if not pod:
-                return jsonify({'success': False, 'error': 'pod name required'})
+            try:
+                pod = _require_pod(data)
+            except ValueError as e:
+                return jsonify({'success': False, 'error': str(e)})
             ns = settings['kubernetes']['namespace']
-            out, err, rc = ssh.run(f'sudo kubectl describe pod -n {ns} {pod}', timeout=30)
+            out, err, rc = ssh.run(f'sudo kubectl describe pod -n {shlex.quote(str(ns))} {shlex.quote(pod)}', timeout=30)
             if rc != 0:
                 return jsonify({'success': False, 'error': err or 'Failed to describe pod'})
             return jsonify({'success': True, 'describe': out or '', 'pod': pod})
@@ -1412,650 +1708,6 @@ def register_api_routes(app, services, settings):
             logger.error(f"Failed to toggle debug: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
 
-    # ── Admin Experimental: Broadcast ─────────────────────────────────
-    @app.route('/api/admin-experimental/broadcast', methods=['POST'])
-    @auth_req
-
-    def admin_broadcast():
-        data = request.get_json() or {}
-        title = (data.get('title') or '').strip()
-        message = (data.get('message') or '').strip()
-        try:
-            duration = int(data.get('duration', 30))
-        except (ValueError, TypeError):
-            duration = 30
-        if not title or not message:
-            return jsonify({'success': False, 'error': 'Title and message are required'})
-        success, result = admin_svc.send_global_broadcast(title, message, duration)
-        return jsonify({'success': success, 'output': result})
-
-    # ── Admin Experimental: Query Database ────────────────────────────
-    @app.route('/api/admin-experimental/query', methods=['POST'])
-    @auth_req
-
-    def admin_query():
-        data = request.get_json() or {}
-        sql = (data.get('sql') or '').strip()
-        if not sql:
-            return jsonify({'success': False, 'error': 'SQL is required'})
-        lower = sql.strip().lower()
-        if not any(lower.startswith(w) for w in ('select', 'with', 'show', 'explain')):
-            return jsonify({'success': False, 'error': 'Only SELECT/WITH queries allowed'})
-        result = admin_svc.admin_db_query(sql)
-        return jsonify({'success': True, 'rows': result or []})
-
-    # ── Admin Experimental: Search Players ────────────────────────────
-    @app.route('/api/admin-experimental/search-players', methods=['POST'])
-    @auth_req
-    def admin_search_players():
-        data = request.get_json() or {}
-        term = (data.get('term') or '').strip()
-        if not term:
-            return jsonify({'success': False, 'error': 'Search term required'})
-        try:
-            results = admin_svc.search_players(term)
-            return jsonify({'success': True, 'players': results})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Online Players ─────────────────────────────
-    @app.route('/api/admin-experimental/online-players', methods=['GET'])
-    @auth_req
-    def admin_online_players():
-        try:
-            players = admin_svc.get_online_players()
-            return jsonify({'success': True, 'players': players})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Adjust Currency ───────────────────────────
-    @app.route('/api/admin-experimental/adjust-currency', methods=['POST'])
-    @auth_req
-
-    def admin_adjust_currency():
-        data = request.get_json() or {}
-        pid = data.get('player_controller_id')
-        cid = data.get('currency_id')
-        delta = data.get('delta')
-        if pid is None or cid is None or delta is None:
-            return jsonify({'success': False, 'error': 'player_controller_id, currency_id, and delta required'})
-        success, result = admin_svc.adjust_currency(pid, int(cid), int(delta))
-        return jsonify({'success': success, 'output': result})
-
-    # ── Admin Experimental: Change Faction ────────────────────────────
-    @app.route('/api/admin-experimental/change-faction', methods=['POST'])
-    @auth_req
-
-    def admin_change_faction():
-        data = request.get_json() or {}
-        pid = data.get('player_id')
-        fid = data.get('faction_id')
-        if pid is None or fid is None:
-            return jsonify({'success': False, 'error': 'player_id and faction_id required'})
-        success, result = admin_svc.change_faction(pid, int(fid))
-        return jsonify({'success': success, 'output': result})
-
-    # ── Admin Experimental: Battlegroup Info ──────────────────────────
-    @app.route('/api/admin-experimental/battlegroup', methods=['GET'])
-    @auth_req
-    def admin_battlegroup():
-        try:
-            out, err, rc = ssh.run("wget -qO- http://10.43.135.0:11717/v0/battlegroup", timeout=15)
-            if rc != 0 or not out:
-                return jsonify({'success': False, 'error': f'BGD unreachable: {err}'})
-            parsed = json.loads(out)
-            return jsonify({'success': True, 'data': parsed})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: View Currency Balances ────────────────────
-    @app.route('/api/admin-experimental/currency-balances', methods=['POST'])
-    @auth_req
-    def admin_currency_balances():
-        data = request.get_json() or {}
-        pcid = data.get('player_controller_id')
-        if not pcid:
-            return jsonify({'success': False, 'error': 'player_controller_id required'})
-        try:
-            result = admin_svc.get_currency_balances(pcid)
-            return jsonify({'success': True, 'balances': result})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Teleport Player ───────────────────────────
-    @app.route('/api/admin-experimental/teleport', methods=['POST'])
-    @auth_req
-
-    def admin_teleport():
-        data = request.get_json() or {}
-        fls_id = data.get('fls_id')
-        partition_id = data.get('partition_id')
-        x = data.get('x', 0)
-        y = data.get('y', 0)
-        z = data.get('z', 0)
-        if not fls_id or not partition_id:
-            return jsonify({'success': False, 'error': 'fls_id and partition_id required'})
-        try:
-            success, msg = admin_svc.teleport_player(fls_id, int(partition_id), float(x), float(y), float(z))
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/partitions', methods=['GET'])
-    @auth_req
-    def admin_partitions():
-        try:
-            partitions = admin_svc.get_partitions()
-            return jsonify({'success': True, 'partitions': partitions})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Faction Reputation ────────────────────────
-    @app.route('/api/admin-experimental/faction-reputation', methods=['POST'])
-    @auth_req
-    def admin_faction_reputation():
-        data = request.get_json() or {}
-        actor_id = data.get('actor_id')
-        if not actor_id:
-            return jsonify({'success': False, 'error': 'actor_id required'})
-        try:
-            # GET mode
-            if 'set' not in data:
-                result = admin_svc.get_faction_reputation(actor_id)
-                return jsonify({'success': True, 'reputation': result})
-            else:
-                success, msg = admin_svc.set_faction_reputation(actor_id, int(data['faction_id']), int(data['amount']))
-                return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Inventory Lookup ──────────────────────────
-    @app.route('/api/admin-experimental/inventory', methods=['POST'])
-    @auth_req
-    def admin_inventory():
-        data = request.get_json() or {}
-        account_id = data.get('account_id')
-        if not account_id:
-            return jsonify({'success': False, 'error': 'account_id required'})
-        try:
-            inv = admin_svc.get_inventory(account_id)
-            pawn = admin_svc.get_player_pawn(account_id)
-            return jsonify({'success': True, 'inventory': inv, 'pawn': pawn})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Guild Tools ────────────────────────────────
-    @app.route('/api/admin-experimental/guilds', methods=['GET'])
-    @auth_req
-    def admin_guilds():
-        try:
-            guilds = admin_svc.get_all_guilds()
-            return jsonify({'success': True, 'guilds': guilds})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/guild-data', methods=['POST'])
-    @auth_req
-    def admin_guild_data():
-        data = request.get_json() or {}
-        guild_id = data.get('guild_id')
-        if not guild_id:
-            return jsonify({'success': False, 'error': 'guild_id required'})
-        try:
-            guild = admin_svc.get_guild_data(guild_id)
-            return jsonify({'success': True, 'guild': guild})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/disband-guild', methods=['POST'])
-    @auth_req
-
-    def admin_disband_guild():
-        data = request.get_json() or {}
-        guild_id = data.get('guild_id')
-        if not guild_id:
-            return jsonify({'success': False, 'error': 'guild_id required'})
-        try:
-            success, msg = admin_svc.disband_guild(guild_id)
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/remove-guild-member', methods=['POST'])
-    @auth_req
-
-    def admin_remove_guild_member():
-        data = request.get_json() or {}
-        guild_id = data.get('guild_id')
-        player_id = data.get('player_id')
-        if not guild_id or not player_id:
-            return jsonify({'success': False, 'error': 'guild_id and player_id required'})
-        try:
-            success, msg = admin_svc.remove_guild_member(guild_id, player_id)
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Player Tags ────────────────────────────────
-    @app.route('/api/admin-experimental/player-tags', methods=['POST'])
-    @auth_req
-    def admin_player_tags():
-        data = request.get_json() or {}
-        account_id = data.get('account_id')
-        if not account_id:
-            return jsonify({'success': False, 'error': 'account_id required'})
-        try:
-            if 'tags_to_add' in data or 'tags_to_remove' in data:
-                success, msg = admin_svc.update_player_tags(account_id, data.get('tags_to_add', []), data.get('tags_to_remove', []))
-                return jsonify({'success': success, 'output': msg})
-            else:
-                tags = admin_svc.get_player_tags(account_id)
-                return jsonify({'success': True, 'tags': tags})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/flag-cheater', methods=['POST'])
-    @auth_req
-
-    def admin_flag_cheater():
-        data = request.get_json() or {}
-        account_id = data.get('account_id')
-        cheat_type = data.get('cheat_type', 'manual')
-        if not account_id:
-            return jsonify({'success': False, 'error': 'account_id required'})
-        try:
-            success, msg = admin_svc.flag_cheater(account_id, cheat_type)
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Player Vehicles ───────────────────────────
-    @app.route('/api/admin-experimental/player-vehicles', methods=['POST'])
-    @auth_req
-    def admin_player_vehicles():
-        data = request.get_json() or {}
-        player_id = data.get('player_id')
-        account_id = data.get('account_id')
-        if not player_id or not account_id:
-            return jsonify({'success': False, 'error': 'player_id and account_id required'})
-        try:
-            vehicles = admin_svc.get_player_vehicles(player_id, account_id)
-            return jsonify({'success': True, 'vehicles': vehicles})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Player Stats ──────────────────────────────
-    @app.route('/api/admin-experimental/player-stats', methods=['POST'])
-    @auth_req
-    def admin_player_stats():
-        data = request.get_json() or {}
-        pcid = data.get('player_controller_id')
-        if not pcid:
-            return jsonify({'success': False, 'error': 'player_controller_id required'})
-        try:
-            stats = admin_svc.get_player_stats(pcid)
-            return jsonify({'success': True, 'stats': stats})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Character Management ──────────────────────
-    @app.route('/api/admin-experimental/set-character-name', methods=['POST'])
-    @auth_req
-    def admin_set_character_name():
-        data = request.get_json() or {}
-        account_id = data.get('account_id')
-        name = data.get('name', '').strip()
-        if not account_id or not name:
-            return jsonify({'success': False, 'error': 'account_id and name required'})
-        try:
-            success, msg = admin_svc.set_character_name(account_id, name)
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/delete-character', methods=['POST'])
-    @auth_req
-
-    def admin_delete_character():
-        data = request.get_json() or {}
-        actor_id = data.get('actor_id')
-        if not actor_id:
-            return jsonify({'success': False, 'error': 'actor_id required'})
-        try:
-            success, msg = admin_svc.delete_character(actor_id)
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/delete-account', methods=['POST'])
-    @auth_req
-
-    def admin_delete_account():
-        data = request.get_json() or {}
-        user_id = data.get('user_id')
-        reason = data.get('reason', 'admin')
-        if not user_id:
-            return jsonify({'success': False, 'error': 'user_id required'})
-        try:
-            success, msg = admin_svc.delete_account(user_id, reason)
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/set-demo-state', methods=['POST'])
-    @auth_req
-    def admin_set_demo_state():
-        data = request.get_json() or {}
-        user_id = data.get('user_id')
-        demo_state = data.get('demo_state', 'none')
-        if not user_id:
-            return jsonify({'success': False, 'error': 'user_id required'})
-        try:
-            success, msg = admin_svc.set_demo_state(user_id, demo_state)
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Journey / Progression ─────────────────────
-    @app.route('/api/admin-experimental/journey', methods=['POST'])
-    @auth_req
-    def admin_journey():
-        data = request.get_json() or {}
-        account_id = data.get('account_id')
-        node_ids = data.get('node_ids', [])
-        action = data.get('action', 'complete')
-        if not account_id or not node_ids:
-            return jsonify({'success': False, 'error': 'account_id and node_ids required'})
-        try:
-            if action == 'complete':
-                success, msg = admin_svc.complete_journey_nodes(account_id, node_ids)
-            elif action == 'reveal':
-                success, msg = admin_svc.reveal_journey_nodes(account_id, node_ids)
-            elif action == 'reset':
-                success, msg = admin_svc.reset_journey_nodes(account_id, node_ids)
-            else:
-                return jsonify({'success': False, 'error': 'Invalid action'})
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/specialization', methods=['POST'])
-    @auth_req
-    def admin_specialization():
-        data = request.get_json() or {}
-        player_id = data.get('player_id')
-        if not player_id:
-            return jsonify({'success': False, 'error': 'player_id required'})
-        try:
-            if 'reset' in data:
-                success, msg = admin_svc.reset_specialization(player_id)
-            else:
-                track = data.get('track_type', 'combat')
-                xp = data.get('xp', 0)
-                level = data.get('level', 1)
-                success, msg = admin_svc.set_specialization(player_id, track, xp, level)
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Guild Roster ──────────────────────────────
-    @app.route('/api/admin-experimental/guild-members', methods=['POST'])
-    @auth_req
-    def admin_guild_members():
-        data = request.get_json() or {}
-        guild_id = data.get('guild_id')
-        if not guild_id:
-            return jsonify({'success': False, 'error': 'guild_id required'})
-        try:
-            if 'promote' in data:
-                success, msg = admin_svc.promote_guild_member(guild_id, data['player_id'], data['new_role'])
-                return jsonify({'success': success, 'output': msg})
-            else:
-                members = admin_svc.get_guild_members(guild_id)
-                return jsonify({'success': True, 'members': members})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Economy ───────────────────────────────────
-    @app.route('/api/admin-experimental/clean-vendor-stock', methods=['POST'])
-    @auth_req
-    def admin_clean_vendor_stock():
-        data = request.get_json() or {}
-        player_id = data.get('player_id')
-        if not player_id:
-            return jsonify({'success': False, 'error': 'player_id required'})
-        try:
-            success, msg = admin_svc.clean_player_vendor_stock(player_id)
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/tax-invoices', methods=['POST'])
-    @auth_req
-    def admin_tax_invoices():
-        data = request.get_json() or {}
-        player_id = data.get('player_id')
-        if not player_id:
-            return jsonify({'success': False, 'error': 'player_id required'})
-        try:
-            invoices = admin_svc.get_player_tax_invoices(player_id)
-            return jsonify({'success': True, 'invoices': invoices})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Spice Fields ──────────────────────────────
-    @app.route('/api/admin-experimental/spice', methods=['POST'])
-    @auth_req
-
-    def admin_spice():
-        data = request.get_json() or {}
-        try:
-            if data.get('action') == 'reset':
-                success, msg = admin_svc.reset_spice_state(data['map_name'], data.get('dimension_index', 0))
-            else:
-                success, msg = admin_svc.force_spice_spawn(data['server_id'], data['spicefield_type_id'])
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Server Tools ──────────────────────────────
-    @app.route('/api/admin-experimental/server-tools', methods=['POST'])
-    @auth_req
-
-    def admin_server_tools():
-        data = request.get_json() or {}
-        try:
-            if data.get('action') == 'set_offline':
-                success, msg = admin_svc.set_players_offline(data.get('server_ids', []))
-            elif data.get('action') == 'cleanup_orphans':
-                success, msg = admin_svc.cleanup_orphaned()
-            else:
-                return jsonify({'success': False, 'error': 'Invalid action'})
-            return jsonify({'success': success, 'output': msg})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Permissions ──────────────────────────────
-    @app.route('/api/admin-experimental/permissions', methods=['POST'])
-    @auth_req
-    def admin_permissions():
-        data = request.get_json() or {}
-        try:
-            if 'set_rank' in data:
-                success, msg = admin_svc.set_player_rank(data['actor_id'], data['player_id'], data['rank'], data.get('map_id', ''))
-                return jsonify({'success': success, 'output': msg})
-            elif data.get('actor_id'):
-                perms = admin_svc.get_actor_permissions(data['actor_id'])
-                return jsonify({'success': True, 'permissions': perms})
-            else:
-                return jsonify({'success': False, 'error': 'actor_id required'})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: RMQ Explorer ─────────────────────────────
-    @app.route('/api/admin-experimental/rmq/overview')
-    @auth_req
-    def admin_rmq_overview():
-        try:
-            rmq = services.get('rmq')
-            if not rmq:
-                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
-            data = rmq.combined_overview()
-            return jsonify({'success': True, 'data': data})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/rmq/queues')
-    @auth_req
-    def admin_rmq_queues():
-        try:
-            rmq = services.get('rmq')
-            if not rmq:
-                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
-            data = rmq.combined_queues()
-            return jsonify({'success': True, 'data': data})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/rmq/exchanges')
-    @auth_req
-    def admin_rmq_exchanges():
-        try:
-            rmq = services.get('rmq')
-            if not rmq:
-                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
-            data = rmq.combined_exchanges()
-            return jsonify({'success': True, 'data': data})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/rmq/bindings')
-    @auth_req
-    def admin_rmq_bindings():
-        try:
-            rmq = services.get('rmq')
-            if not rmq:
-                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
-            data = rmq.bindings()
-            return jsonify({'success': True, 'data': data})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/rmq/consumers')
-    @auth_req
-    def admin_rmq_consumers():
-        try:
-            rmq = services.get('rmq')
-            if not rmq:
-                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
-            data = rmq.consumers()
-            return jsonify({'success': True, 'data': data})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/rmq/peek', methods=['POST'])
-    @auth_req
-    def admin_rmq_peek():
-        try:
-            rmq = services.get('rmq')
-            if not rmq:
-                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
-            cfg = request.get_json() or {}
-            queue_name = cfg.get('queue', '')
-            count = int(cfg.get('count', 5))
-            if not queue_name:
-                return jsonify({'success': False, 'error': 'queue name required'}), 400
-            data = rmq.peek_messages(queue_name, count=count)
-            return jsonify({'success': True, 'data': data})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/rmq/publish', methods=['POST'])
-    @auth_req
-    def admin_rmq_publish():
-        try:
-            rmq = services.get('rmq')
-            if not rmq:
-                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
-            cfg = request.get_json() or {}
-            exchange = cfg.get('exchange', '')
-            routing_key = cfg.get('routing_key', '')
-            message = cfg.get('message', '')
-            side = cfg.get('side', 'admin')
-            if not exchange:
-                return jsonify({'success': False, 'error': 'exchange name required'}), 400
-            if side == 'game':
-                result = rmq.game_publish(exchange, routing_key, message)
-            else:
-                result = rmq.publish(exchange, routing_key, message)
-            return jsonify({'success': True, 'data': result})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/rmq/health')
-    @auth_req
-    def admin_rmq_health():
-        try:
-            rmq = services.get('rmq')
-            if not rmq:
-                return jsonify({'success': False, 'error': 'RMQ service not available'}), 503
-            data = rmq.health()
-            return jsonify({'success': True, 'data': data})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: Function Explorer ─────────────────────────
-    @app.route('/api/admin-experimental/functions', methods=['GET'])
-    @auth_req
-    def admin_list_functions():
-        try:
-            funcs = admin_svc.list_all_functions()
-            return jsonify({'success': True, 'functions': funcs})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/functions/<name>', methods=['GET'])
-    @auth_req
-    def admin_function_details(name):
-        try:
-            detail = admin_svc.get_function_details(name)
-            if not detail:
-                return jsonify({'success': False, 'error': 'Function not found'})
-            return jsonify({'success': True, 'function': detail})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    @app.route('/api/admin-experimental/functions/<name>/execute', methods=['POST'])
-    @auth_req
-
-    def admin_execute_function(name):
-        data = request.get_json() or {}
-        params = data.get('params', [])
-        try:
-            success, result, error = admin_svc.execute_function(name, params)
-            if success:
-                return jsonify({'success': True, 'result': result})
-            else:
-                return jsonify({'success': False, 'error': error})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)})
-
-    # ── Admin Experimental: SQL Execute (admin functions) ─────────────
-    @app.route('/api/admin-experimental/execute', methods=['POST'])
-    @auth_req
-
-    def admin_execute():
-        data = request.get_json() or {}
-        sql = (data.get('sql') or '').strip()
-        if not sql:
-            return jsonify({'success': False, 'error': 'SQL is required'})
-        lower = sql.strip().lower()
-        allowed_prefixes = ('select', 'with', 'insert', 'update', 'delete', 'call', 'show', 'explain')
-        if not any(lower.startswith(w) for w in allowed_prefixes):
-            return jsonify({'success': False, 'error': 'SQL prefix not allowed'})
-        success, result = admin_svc.admin_db_execute(sql)
-        return jsonify({'success': success, 'result': result if success else str(result)})
-
     # ── Backup Endpoints ──────────────────────────────────────────────
     if backup_svc:
 
@@ -2146,13 +1798,16 @@ def register_api_routes(app, services, settings):
         @app.route('/api/backup/schedule', methods=['GET'])
         @auth_req
         def api_backup_schedule_get():
-            return jsonify({'success': True, 'schedule': backup_svc.get_schedule()})
+            sched = backup_svc.get_schedule()
+            sched.pop('password', None)  # never send password to client
+            return jsonify({'success': True, 'schedule': sched})
 
         @app.route('/api/backup/schedule', methods=['POST'])
         @auth_req
         def api_backup_schedule_set():
             data = request.get_json() or {}
             result = backup_svc.update_schedule(data)
+            result.pop('password', None)  # never send password to client
             return jsonify({'success': True, 'schedule': result})
 
         @app.route('/api/backup/run-scheduled', methods=['POST'])
@@ -2160,3 +1815,175 @@ def register_api_routes(app, services, settings):
         def api_backup_run_scheduled():
             result = backup_svc.run_scheduled_backup()
             return jsonify(result)
+
+        # ── Funcom ServiceAuthToken ────────────────────────────────────────
+
+        @app.route('/api/server/service-auth-token', methods=['POST'])
+        @auth_req
+        def api_set_service_auth_token():
+            data = request.get_json() or {}
+            token = (data.get('token') or '').strip()
+            if not token:
+                return jsonify({'success': False, 'error': 'Token cannot be empty'})
+            if not token.startswith('eyJ'):
+                return jsonify({'success': False, 'error': 'Token does not look like a valid JWT'})
+
+            ns = settings.get('kubernetes', {}).get('namespace', '')
+            if not ns:
+                return jsonify({'success': False, 'error': 'Kubernetes namespace not configured'})
+
+            resource_prefix = ns
+            for prefix in ['funcom-seabass-']:
+                if resource_prefix.startswith(prefix):
+                    resource_prefix = resource_prefix[len(prefix):]
+                    break
+
+            secret_yaml = f'/home/dune/.dune/{resource_prefix}-fls-secret.yaml'
+            main_yaml = f'/home/dune/.dune/{resource_prefix}.yaml'
+
+            try:
+                import base64
+
+                # Force fresh SSH connection to avoid stale client reuse
+                ssh.close()
+
+                # ── Step 1: Read & update secret YAML (small file, keep current approach) ──
+                t0 = time.time()
+                out, err, rc = ssh.run(f'cat {shlex.quote(secret_yaml)}', timeout=10)
+                t1 = time.time()
+                logger.info(f'[token] read secret YAML: {t1-t0:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to read secret file: {err}'})
+
+                fls_prefix = 'FuncomLiveServices__ServiceAuthToken: "'
+                idx = out.find(fls_prefix)
+                if idx == -1:
+                    # Never log matching lines: they contain the token itself.
+                    logger.error('Secret YAML has no FuncomLiveServices__ServiceAuthToken line')
+                    return jsonify({'success': False, 'error': 'Could not find FuncomLiveServices__ServiceAuthToken line in secret file'})
+                start = idx + len(fls_prefix)
+                end = out.find('"', start)
+                if end == -1:
+                    return jsonify({'success': False, 'error': 'Could not find closing quote for ServiceAuthToken'})
+                old_token = out[start:end]
+                new_secret = out[:start] + token + out[end:]
+
+                t2 = time.time()
+                out, err, rc = ssh.write_file(secret_yaml, new_secret, timeout=10)
+                t3 = time.time()
+                logger.info(f'[token] write secret YAML: {t3-t2:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to write secret file: {err}'})
+
+                # ── Step 2: Update main battlegroup YAML via read-modify-write ──
+                # Extract old token from the main YAML (may differ from secret YAML)
+                t4 = time.time()
+                out, err, rc = ssh.run(f'cat {shlex.quote(main_yaml)}', timeout=10)
+                t5 = time.time()
+                logger.info(f'[token] read main YAML: {t5-t4:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to read battlegroup file: {err}'})
+
+                ini_prefix = '-ini:engine:[FuncomLiveServices]:ServiceAuthToken='
+                idx = out.find(ini_prefix)
+                if idx == -1:
+                    # Never log matching lines: they contain the token itself.
+                    logger.error('Main YAML has no ServiceAuthToken line')
+                    return jsonify({'success': False, 'error': 'Could not find ServiceAuthToken in battlegroup file'})
+                old_start = idx + len(ini_prefix)
+                old_end = out.find('\n', old_start)
+                old_token_main = out[old_start:old_end].strip() if old_end != -1 else out[old_start:].strip()
+
+                count = out.count(old_token_main)
+                new_main = out.replace(old_token_main, token)
+                logger.info(f'[token] replaced {count} occurrences in main YAML')
+
+                t6 = time.time()
+                out, err, rc = ssh.write_file(main_yaml, new_main, timeout=15)
+                t7 = time.time()
+                logger.info(f'[token] write main YAML: {t7-t6:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to write battlegroup file: {err}'})
+
+                # Verify: count total ServiceAuthToken lines vs new-token lines
+                out, err, rc = ssh.run(f"grep -c 'ServiceAuthToken' {shlex.quote(main_yaml)} || true", timeout=5)
+                total_lines = int(out.strip() or 0)
+                out, err, rc = ssh.run(f"grep -cF {shlex.quote(token)} {shlex.quote(main_yaml)} || true", timeout=5)
+                new_count = int(out.strip() or 0)
+                logger.info(f'[token] main YAML verify: {new_count}/{total_lines} tokens replaced')
+
+                # ── Step 3: Update live K8s BattleGroup CR (may differ from disk YAML) ──
+                bg_name = resource_prefix
+                t8 = time.time()
+                out, err, rc = ssh.run(
+                    f'sudo kubectl get battlegroup {shlex.quote(bg_name)} -n {shlex.quote(str(ns))} -o yaml', timeout=10
+                )
+                t9 = time.time()
+                logger.info(f'[token] read BG CR: {t9-t8:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to read BattleGroup CR: {err}'})
+
+                old_start = out.find(ini_prefix)
+                if old_start == -1:
+                    # Never log matching lines: they contain the token itself.
+                    logger.error('BattleGroup CR has no ServiceAuthToken line')
+                    return jsonify({'success': False, 'error': 'Could not find ServiceAuthToken in BattleGroup CR'})
+                old_start += len(ini_prefix)
+                old_end = out.find('\n', old_start)
+                old_token_cr = out[old_start:old_end].strip() if old_end != -1 else out[old_start:].strip()
+
+                cr_count = out.count(old_token_cr)
+                new_cr = out.replace(old_token_cr, token)
+                logger.info(f'[token] replaced {cr_count} occurrences in BG CR')
+
+                cr_temp = '/tmp/bg-cr-update.yaml'
+                t10 = time.time()
+                out, err, rc = ssh.write_file(cr_temp, new_cr, timeout=15)
+                t11 = time.time()
+                logger.info(f'[token] write BG CR temp: {t11-t10:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to write BG CR temp file: {err}'})
+
+                out, err, rc = ssh.run(
+                    f'sudo kubectl apply -f {shlex.quote(cr_temp)}', timeout=15
+                )
+                t12 = time.time()
+                logger.info(f'[token] apply BG CR: {t12-t11:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to apply BattleGroup CR: {err}'})
+
+                # Verify new token count in live CR
+                out, err, rc = ssh.run(
+                    f"sudo kubectl get battlegroup {shlex.quote(bg_name)} -n {shlex.quote(str(ns))} -o yaml | grep -cF {shlex.quote(token)} || true",
+                    timeout=5
+                )
+                live_count = int(out.strip() or 0)
+                logger.info(f'[token] BG CR verify: {live_count}/{cr_count} tokens replaced')
+
+                # Clean up temp file
+                ssh.run(f'rm -f {shlex.quote(cr_temp)}', timeout=3)
+
+                # ── Step 4: Update K8s secret via kubectl patch ──
+                patch = json.dumps({'stringData': {'FuncomLiveServices__ServiceAuthToken': token}})
+                patch_encoded = base64.b64encode(patch.encode()).decode()
+                t13 = time.time()
+                out, err, rc = ssh.run(
+                    f"printf '%s' {shlex.quote(patch_encoded)} | base64 -d > /tmp/service-auth-token-patch.json; "
+                    f"sudo kubectl patch secret server-gateway-secret -n {shlex.quote(str(ns))} --patch-file /tmp/service-auth-token-patch.json",
+                    timeout=15
+                )
+                t14 = time.time()
+                logger.info(f'[token] kubectl patch: {t14-t13:.2f}s rc={rc}')
+                if rc != 0:
+                    return jsonify({'success': False, 'error': f'Failed to update K8s secret: {err}'})
+
+                total = t14 - t0
+                logger.info(f'[token] completed successfully in {total:.2f}s (disk={new_count}, live={live_count})')
+                return jsonify({
+                    'success': True,
+                    'message': f'Token updated in secret YAML, battlegroup YAML ({new_count} replacements), live BattleGroup CR ({live_count} replacements), and K8s secret. Consuming pods must be restarted for the change to take effect.'
+                })
+
+            except Exception as e:
+                logger.error(f'[token] exception: {e}')
+                return jsonify({'success': False, 'error': str(e)})

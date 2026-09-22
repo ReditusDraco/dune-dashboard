@@ -802,6 +802,13 @@ class AdminService:
 
             token = os.environ.get('DUNE_BROADCAST_TOKEN',
                 getattr(self, '_broadcast_token', None) or 'Nu6VmPWUMvdPMeB7qErr')
+            # Duration is interpolated into Erlang code: force an int in range.
+            try:
+                duration = max(5, min(300, int(duration)))
+            except (TypeError, ValueError):
+                duration = 30
+            # Escape the token for the Erlang double-quoted binary literal.
+            token_esc = str(token).replace('\\', '\\\\').replace('"', '\\"')
             title_b64 = base64.b64encode(title.encode('utf-8')).decode()
             message_b64 = base64.b64encode(message.encode('utf-8')).decode()
 
@@ -809,7 +816,7 @@ class AdminService:
                 f'Title = base64:decode(<<"{title_b64}">>), '
                 f'Body = base64:decode(<<"{message_b64}">>), '
                 f'Duration = {duration}, '
-                f'Token = <<"{token}">>, '
+                f'Token = <<"{token_esc}">>, '
                 'EntryEn = #{<<"Key">> => <<"en">>, <<"Title">> => Title, <<"Body">> => Body}, '
                 'EntryEnUs = #{<<"Key">> => <<"en-US">>, <<"Title">> => Title, <<"Body">> => Body}, '
                 'Inner = iolist_to_binary(rabbit_json:encode(#{<<"ServerCommand">> => <<"ServiceBroadcast">>, <<"BroadcastType">> => <<"Generic">>, <<"BroadcastPayload">> => #{<<"BroadcastDuration">> => Duration, <<"LocalizedText">> => [EntryEn, EntryEnUs]}})), '

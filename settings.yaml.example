@@ -52,6 +52,9 @@ director:
 # File Browser
 filebrowser:
   port: 18888                  # File Browser service port
+  #allowed_roots:              # Directories the file browser may access.
+  #  - /srv                    # Empty/missing = defaults (/srv, /home/dune/.dune).
+  #  - /home/dune/.dune
 
 # Firewall Security
 # Block external internet access to game server services that have no authentication.

@@ -72,7 +72,7 @@
 <!-- Pod Logs Modal -->
 <div id="logs-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeModal('logs-modal')">
     <div class="modal" style="max-width:900px;">
-        <div class="modal-header"><h3>Pod Logs — <span id="logs-pod-name"></span></h3></div>
+        <div class="modal-header"><h3>Pod Logs - <span id="logs-pod-name"></span></h3></div>
         <div id="logs-loading" style="padding:20px;text-align:center;color:var(--text-muted);">Loading logs...</div>
         <pre id="logs-content" style="max-height:500px;overflow:auto;white-space:pre-wrap;display:none;margin:0;padding:16px;font-size:12px;background:var(--bg-card);color:var(--text);border-top:1px solid var(--border);"></pre>
         <div class="modal-actions" style="padding:12px 16px;border-top:1px solid var(--border);">
@@ -84,7 +84,7 @@
 <!-- Pod Describe Modal -->
 <div id="describe-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeModal('describe-modal')">
     <div class="modal" style="max-width:900px;">
-        <div class="modal-header"><h3>Describe Pod — <span id="describe-pod-name"></span></h3></div>
+        <div class="modal-header"><h3>Describe Pod - <span id="describe-pod-name"></span></h3></div>
         <div id="describe-loading" style="padding:20px;text-align:center;color:var(--text-muted);">Loading...</div>
         <pre id="describe-content" style="max-height:500px;overflow:auto;white-space:pre-wrap;display:none;margin:0;padding:16px;font-size:12px;background:var(--bg-card);color:var(--text);border-top:1px solid var(--border);"></pre>
         <div class="modal-actions" style="padding:12px 16px;border-top:1px solid var(--border);">
@@ -324,7 +324,7 @@ function promptDeletePod(name, safe) {
     const btn = document.getElementById('delete-confirm-btn');
     if (safe) {
         title.textContent = 'Delete DB Backup Pod';
-        msg.innerHTML = 'This pod stores database backups. It is <strong>safe to delete</strong> — Kubernetes will recreate it automatically. Continue?';
+        msg.innerHTML = 'This pod stores database backups. It is <strong>safe to delete</strong> - Kubernetes will recreate it on its own. Continue?';
         btn.className = 'btn-edit';
         btn.textContent = 'Delete Backup Pod';
     } else {
