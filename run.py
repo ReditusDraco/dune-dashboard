@@ -30,6 +30,23 @@ if __name__ == '__main__':
         cert_path = str(ssl_cert).strip("'\"")
         key_path = str(ssl_key).strip("'\"")
         if os.path.exists(cert_path) and os.path.exists(key_path):
+            try:
+                with open(cert_path, 'rb'):
+                    pass
+                with open(key_path, 'rb'):
+                    pass
+            except OSError:
+                print(f"\n  [ERROR] Cannot read SSL files (permission denied):")
+                print(f"  [ERROR]   {cert_path}")
+                print(f"  [ERROR]   {key_path}")
+                print(f"  [ERROR] The dashboard runs as '{os.environ.get('USERNAME', 'unknown')}'")
+                print("  [ERROR] but these files are only readable by an Administrator.")
+                print("  [ERROR] Fix with ONE of:")
+                print("  [ERROR]   1. Run the launcher as Administrator (right-click -> Run as administrator)")
+                print("  [ERROR]   2. Grant yourself read access, e.g. in an elevated terminal:")
+                print(f'  [ERROR]      icacls "{cert_path}" /grant "%USERNAME%:(R)"')
+                print(f'  [ERROR]      icacls "{key_path}" /grant "%USERNAME%:(R)"\n')
+                sys.exit(1)
             ssl_context = (cert_path, key_path)
             protocol = "https"
         else:
@@ -147,26 +164,24 @@ if __name__ == '__main__':
     # Socket.IO keeps working (threading mode = HTTP long-polling, which
     # runs on any WSGI server).
     try:
-        from cheroot import wsgi as cheroot_wsgi
+        import cheroot
+        from app.utils.http_server import build_server
     except ImportError:
         logging.getLogger(__name__).warning(
             "cheroot not installed - falling back to dev server "
             "(no connection timeouts)")
         socketio.run(app, host=host, port=port, debug=debug, log_output=False, ssl_context=ssl_context)
     else:
-        server = cheroot_wsgi.Server(
-            (host, port), app,
-            numthreads=16,
-            request_queue_size=128,
-            timeout=60,
-            accepted_queue_size=128,
-            accepted_queue_timeout=10,
-        )
-        if ssl_context:
-            from cheroot.ssl.builtin import BuiltinSSLAdapter
-            server.ssl_adapter = BuiltinSSLAdapter(cert_path, key_path)
-            print(f"  Server: cheroot (16 threads, 60s socket timeout, TLS on)")
-        else:
-            print(f"  Server: cheroot (16 threads, 60s socket timeout)")
+        try:
+            if ssl_context:
+                server = build_server(host, port, app, cert_path, key_path)
+                print(f"  Server: cheroot (16 threads, 60s socket timeout, TLS on)")
+            else:
+                server = build_server(host, port, app)
+                print(f"  Server: cheroot (16 threads, 60s socket timeout)")
+        except OSError as e:
+            print(f"\n  [ERROR] Could not start TLS server: {e}")
+            print("  [ERROR] If this is a permission error, run the launcher as Administrator once,\n")
+            sys.exit(1)
         print(f"  Watchdog: enabled (exit code 42 triggers launcher restart)\n")
         server.start()

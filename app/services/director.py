@@ -256,8 +256,15 @@ class DirectorService:
     def get_server_set_scale(self, map_name: str) -> Optional[Dict]:
         name = self._map_to_scale_name(map_name)
         cm_out, cm_err, cm_rc = self.k8s.run(
-            f'get serversetscale {name} -o json')
+            f'get serversetscale {name} -o json', quiet=True)
         if cm_rc != 0 or not cm_out:
+            # A missing ServerSetScale just means the map has none; only
+            # unexpected failures deserve a warning.
+            if cm_rc != 0 and 'not found' not in (cm_err or '').lower():
+                logger.warning("ServerSetScale lookup failed for %s: %s",
+                               map_name, (cm_err or '')[:150])
+            else:
+                logger.debug("No ServerSetScale for %s", map_name)
             return None
         return json.loads(cm_out)
 
