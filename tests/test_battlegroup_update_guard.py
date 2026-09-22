@@ -11,7 +11,7 @@ class FakeSSH:
         self.rc = rc
         self.commands = []
 
-    def run(self, command, timeout=30):
+    def run(self, command, timeout=30, quiet=False):
         self.commands.append(command)
         return self.out, '', self.rc
 

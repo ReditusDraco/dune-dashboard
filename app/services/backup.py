@@ -388,7 +388,7 @@ class BackupService:
                     with open(meta_path) as f:
                         return json.load(f)
                 except Exception as e:
-                    logger.warning(f'Could not read sidecar meta from {meta_path}: {e}')
+                    logger.debug(f'Could not read sidecar meta from {meta_path}: {e}')
             try:
                 with tarfile.open(path, 'r:gz') as tar:
                     for m in tar.getmembers():
@@ -396,7 +396,9 @@ class BackupService:
                             with tar.extractfile(m) as f:
                                 return json.loads(f.read().decode('utf-8'))
             except Exception as e:
-                logger.warning(f'Could not read metadata from {path}: {e}')
+                # Expected for encrypted archives (handled by verify with a
+                # password) and pre-sidecar backups; not worth a warning.
+                logger.debug(f'Could not read metadata from {path}: {e}')
         return {}
 
     def delete_backup(self, name):

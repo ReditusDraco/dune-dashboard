@@ -2,8 +2,6 @@
 
 A modern, full‑featured management dashboard for **Dune: Awakening** private servers. Provides real‑time monitoring, player tools, chat logs, file browsing, admin utilities, and secure remote access.
 
-> “A comprehensive web-based management dashboard for Dune: Awakening private servers.”  
-
 ---
 
 ## Quick Start
@@ -26,26 +24,18 @@ chmod +x start.sh
 ## Features
 
 - **Player Management** (vitals, inventory, vehicles, buildings, guilds, reputation)  
+- **In-Game Notifications** — instant broadcasts plus scheduled one-shot/daily/weekly/monthly messages  
+- **Graceful Shutdown / Restart** — in-game countdown warnings with cancel notices, plus scheduled restarts  
+- **Battlegroup Control** — start/stop/restart/update, with update blocked while players are online  
 - **Chat Logs** with channel filtering and auto-refresh  
 - **Director Tools** (battlegroups, world state, transfers)  
-- **SSH File Browser** + **in-browser shell**  
+- **SSH File Browser** (jailed to allowed directories) + **in-browser shell**  
 - **Pod Management** (list, logs, describe, delete with safe-mode for DB backup pods)  
-- **Nav Layout** — switch between horizontal and vertical sidebar; persists preference; auto-enables sidebar on mobile  
+- **Backup & Restore** — encrypted full-server snapshots with scheduled backups and retention cleanup  
+- **Funcom Service Auth Token Management** — update the `ServiceAuthToken` JWT across files and live K8s resources with verification  
 - **Firewall Hardening** via iptables  
-- **Auto‑Update** with safe file replacement  
-- **HTTPS + Remote Access** (self‑signed or Let’s Encrypt)  
-- **Cross‑Platform Launchers**  
-- **Organized Logging** with automatic cleanup and redaction  
-- **Debug Mode** with full SSH/K8s tracing  
-- **SSH Key Rotation** — scan all key locations and sync the newest key
-- **Backup & Restore** — full server snapshots (game DB, K8s resources, RMQ config, dashboard schema) with optional AES-256 encryption and password protection
-- **Scheduled Backups** — configurable interval or day/time-based scheduling with automatic retention cleanup
-- **Funcom Service Auth Token Management** — update the `ServiceAuthToken` JWT across files and live K8s resources (secret, YAML, BattleGroup CR) with verification
-- **Graceful Shutdown / Restart** — in-game countdown warnings, then `battlegroup stop` / `restart`, with cancel notices
-- **Custom Notifications** — instant in-game broadcasts, plus scheduled one-shot/daily/weekly/monthly messages
-- **Scheduled Restarts** — daily/weekly/monthly/one-shot with the same countdown, enable/disable/clear without losing settings
-- **Battlegroup Update Guard** — update refuses while game servers are online
-- **Jailed File Browser** — restricted to configured directories with symlink-aware checks
+- **HTTPS + Remote Access** (self-signed or Let's Encrypt)  
+- **Cross-Platform Launchers** (Windows + Linux/macOS, incl. debug mode and SSH key rotation)
 
 ---
 
@@ -70,33 +60,9 @@ DuneDashboard/
 
 ---
 
-## Security
-
-- `settings.yaml` is never committed  
-- SSH keys stored with restricted permissions  
-- All DB queries parameterized  
-- No raw SQL console — the old experimental query/execute endpoints were removed entirely  
-- Shell parameters validated and quoted throughout  
-- File browser jailed to allowed directories  
-- All mutations audited  
-- CSP, HSTS, X‑Frame‑Options enforced in production  
-
-> Because letting users run `DROP TABLE` from a web UI is how horror stories begin — so that UI no longer exists.
-
----
-
 ## Development
 
 Run `launcher.bat` or `.\launcher.ps1` — the launcher handles dependencies, SSH key configuration, and server setup automatically.
-
----
-
-## Branching Strategy
-
-- **main** — stable-ish beta  
-- **experimental** — where chaos becomes innovation  
-
-> “This seemed like a great idea at 3am.” — every experimental commit ever
 
 ---
 

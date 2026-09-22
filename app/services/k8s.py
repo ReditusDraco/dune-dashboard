@@ -11,10 +11,10 @@ class K8sService:
         self.ssh = ssh_service
         self.namespace = namespace
 
-    def run(self, kubectl_command, timeout=30):
+    def run(self, kubectl_command, timeout=30, quiet=False):
         full_cmd = f'sudo kubectl {kubectl_command} -n {shlex.quote(str(self.namespace))}'
         logger.debug(f"K8s executing: kubectl {kubectl_command} -n {self.namespace}")
-        result = self.ssh.run(full_cmd, timeout=timeout)
+        result = self.ssh.run(full_cmd, timeout=timeout, quiet=quiet)
         out, err, rc = result
         if rc != 0:
             logger.debug(f"K8s command failed (rc={rc}): {err[:100] if err else 'no error'}")

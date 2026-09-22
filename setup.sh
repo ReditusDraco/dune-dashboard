@@ -192,6 +192,78 @@ AUTH_USER="${AUTH_USER:-admin}"
 read -rsp "  Admin Password: " AUTH_PASS
 echo ""
 
+# RMQ tunnel ports
+echo ""
+echo "  RabbitMQ tunnel ports (local forwards to the game server)"
+read -rp "  RMQ Admin Port [30325]: " RMQ_ADMIN_PORT
+RMQ_ADMIN_PORT="${RMQ_ADMIN_PORT:-30325}"
+read -rp "  RMQ Game Port [32716]: " RMQ_GAME_PORT
+RMQ_GAME_PORT="${RMQ_GAME_PORT:-32716}"
+
+# Remote access
+echo ""
+echo "  Remote access:"
+echo "    Local only (n) - access from this machine only (recommended)"
+echo "    Remote (y)     - access from other devices on your network"
+read -rp "  Enable remote access? (y/N): " ENABLE_REMOTE
+DASH_HOST="127.0.0.1"
+SSL_CERT="null"
+SSL_KEY="null"
+SSL_DOMAIN="null"
+SSL_EMAIL="null"
+HTTP_REDIRECT="false"
+if [ "$ENABLE_REMOTE" = "y" ] || [ "$ENABLE_REMOTE" = "Y" ]; then
+    DASH_HOST="0.0.0.0"
+    echo ""
+    echo "  Remote access needs HTTPS. You can use a domain with Let's Encrypt"
+    echo "  or fall back to a self-signed certificate (browser warning)."
+    read -rp "  Domain name (leave blank to use a self-signed certificate): " SSL_DOMAIN_IN
+    if [ -n "$SSL_DOMAIN_IN" ]; then
+        read -rp "  Email address (required by Let's Encrypt): " SSL_EMAIL_IN
+        if command -v certbot &>/dev/null && [ -n "$SSL_EMAIL_IN" ]; then
+            echo "  Requesting Let's Encrypt certificate for $SSL_DOMAIN_IN..."
+            if sudo certbot certonly --standalone --non-interactive --agree-tos -m "$SSL_EMAIL_IN" -d "$SSL_DOMAIN_IN" 2>/dev/null; then
+                SSL_CERT="/etc/letsencrypt/live/${SSL_DOMAIN_IN}/fullchain.pem"
+                SSL_KEY="/etc/letsencrypt/live/${SSL_DOMAIN_IN}/privkey.pem"
+                SSL_DOMAIN="$SSL_DOMAIN_IN"
+                SSL_EMAIL="$SSL_EMAIL_IN"
+                echo "  Let's Encrypt certificate issued."
+            else
+                echo "  [WARN] Let's Encrypt failed (port 80 must be reachable). Falling back to self-signed."
+            fi
+        else
+            echo "  [WARN] certbot not found or no email given. Falling back to self-signed."
+            echo "  Install with: sudo apt install certbot  (Ubuntu/Debian)"
+        fi
+    fi
+    if [ "$SSL_CERT" = "null" ]; then
+        echo ""
+        read -rp "  This machine's IP for the certificate [127.0.0.1]: " HOST_IP
+        HOST_IP="${HOST_IP:-127.0.0.1}"
+        mkdir -p "$PROJECT_ROOT/ssl"
+        if $PYTHON -c "
+import sys
+sys.path.insert(0, '$PROJECT_ROOT')
+from app.utils.ssl import generate_cert
+generate_cert('$PROJECT_ROOT/ssl/cert.pem', '$PROJECT_ROOT/ssl/key.pem', common_name='$HOST_IP', san_ips=['$HOST_IP', '127.0.0.1'], san_dns=['localhost'])
+" 2>/dev/null; then
+            SSL_CERT="$PROJECT_ROOT/ssl/cert.pem"
+            SSL_KEY="$PROJECT_ROOT/ssl/key.pem"
+        else
+            echo "  [WARN] Could not generate a certificate. Remote access will be HTTP only."
+        fi
+    fi
+    if [ "$SSL_CERT" != "null" ]; then
+        echo ""
+        echo "  Optional: redirect plain http://HOST to https automatically."
+        echo "  Requires TCP port 80 to be free."
+        read -rp "  Enable HTTP redirect on port 80? (y/N): " HTTP_REDIRECT_IN
+        if [ "$HTTP_REDIRECT_IN" = "y" ] || [ "$HTTP_REDIRECT_IN" = "Y" ]; then
+            HTTP_REDIRECT="true"
+        fi
+    fi
+fi
+
 # [5/5] Generate settings
 echo ""
 echo "[5/5] Generating settings.yaml..."
@@ -227,15 +299,15 @@ server:
   ssh_key: ${SSH_KEY_YAML}
 
 dashboard:
-  host: 127.0.0.1
+  host: ${DASH_HOST}
   port: ${DASH_PORT}
   debug: false
   secret_key: ${SECRET_KEY}
-  ssl_cert: null
-  ssl_key: null
-  ssl_domain: null
-  ssl_email: null
-  http_redirect: false
+  ssl_cert: ${SSL_CERT}
+  ssl_key: ${SSL_KEY}
+  ssl_domain: ${SSL_DOMAIN}
+  ssl_email: ${SSL_EMAIL}
+  http_redirect: ${HTTP_REDIRECT}
   http_redirect_port: 80
 
 database:
@@ -276,14 +348,11 @@ logging:
   max_bytes: 10485760
   backup_count: 5
 
-rmq:
-  admin_host: 127.0.0.1
-  admin_port: 32686
-  game_host: 127.0.0.1
-  game_port: 32021
-  username: admin
+rabbitmq:
+  admin_port: ${RMQ_ADMIN_PORT}
+  game_port: ${RMQ_GAME_PORT}
+  username: dashboard_admin
   password: null
-  ttl: 15
 YAML_EOF
 
 echo "  settings.yaml created!"
@@ -298,16 +367,30 @@ if [ -n "$SSH_KEY" ] && [ "$VM_HOST" != "YOUR_SERVER_IP" ]; then
     echo "  (Start the dashboard with option 1 or 7 first to set up tunnels)"
 fi
 
+if [ "$DASH_HOST" = "0.0.0.0" ] && command -v ufw &>/dev/null; then
+    echo ""
+    echo "  Remote access is on. This machine's firewall may block port ${DASH_PORT}."
+    read -rp "  Allow TCP port ${DASH_PORT} through ufw now? (requires sudo) (y/N): " UFW_ALLOW
+    if [ "$UFW_ALLOW" = "y" ] || [ "$UFW_ALLOW" = "Y" ]; then
+        sudo ufw allow "${DASH_PORT}/tcp" 2>/dev/null && echo "  Firewall rule added." || echo "  [WARN] Could not add firewall rule."
+    else
+        echo "  Skipped. If remote access fails, run: sudo ufw allow ${DASH_PORT}/tcp"
+    fi
+fi
+
 echo ""
 echo "============================================================"
 echo "  Setup Complete!"
 echo "============================================================"
 echo ""
 echo "  Next steps:"
-echo "    1. Start the dashboard: bash start.sh -> option 1 (classic)"
-echo "       Or try the new UI:    bash start.sh -> option 7 (React)"
+echo "    1. Start the dashboard: bash start.sh -> option 1"
 echo ""
-echo "    2. Open http://localhost:${DASH_PORT} in your browser"
+if [ "$SSL_CERT" != "null" ]; then
+    echo "    2. Open https://localhost:${DASH_PORT} in your browser (or your domain/IP)"
+else
+    echo "    2. Open http://localhost:${DASH_PORT} in your browser"
+fi
 echo ""
 echo "  Username: ${AUTH_USER}"
 echo "  Password: (what you entered)"

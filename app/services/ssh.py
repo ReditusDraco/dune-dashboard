@@ -79,19 +79,22 @@ class SSHService:
             self._client = client
             return self._client
 
-    def run(self, command, timeout=30):
+    def run(self, command, timeout=30, quiet=False):
         """Execute a remote command via SSH.
 
         Args:
             command: The shell command to execute.
             timeout: Maximum time in seconds to wait for the command.
+            quiet: When True, expected non-zero results (e.g. probing for
+                an optional resource) are logged at debug level instead of
+                warning. Return values are unchanged.
 
         Returns:
             Tuple of (stdout, stderr, return_code).
         """
         cmd_display = command[:150] + '...' if len(command) > 150 else command
         logger.debug(f"SSH executing: {cmd_display}")
-        
+
         try:
             client = self._get_client()
             stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
@@ -99,17 +102,23 @@ class SSHService:
             out = stdout.read().decode('utf-8', errors='replace')
             err = stderr.read().decode('utf-8', errors='replace')
             rc = stdout.channel.recv_exit_status()
-            
+
             # Debug logging for result
             logger.debug(f"SSH result: host={self.host}, user={self.user}, rc={rc}, stdout_len={len(out)}, stderr_len={len(err)}")
             if err and rc != 0:
-                logger.warning(f"SSH stderr (rc={rc}): {err[:200]}")
+                if quiet:
+                    logger.debug(f"SSH stderr (rc={rc}): {err[:200]}")
+                else:
+                    logger.warning(f"SSH stderr (rc={rc}): {err[:200]}")
             if out:
                 logger.debug(f"SSH stdout preview: {out[:200]}")
-            
+
             if rc != 0:
                 cmd_short = command[:80] + '...' if len(command) > 80 else command
-                logger.warning("SSH command failed (rc=%d): cmd=%s err=%s", rc, cmd_short, err[:100] if err else 'none')
+                if quiet:
+                    logger.debug("SSH command rc=%d (quiet): cmd=%s err=%s", rc, cmd_short, err[:100] if err else 'none')
+                else:
+                    logger.warning("SSH command failed (rc=%d): cmd=%s err=%s", rc, cmd_short, err[:100] if err else 'none')
             return out, err, rc
         except paramiko.SSHException as e:
             logger.error(f"SSH command error ({self.host}): {e}")
