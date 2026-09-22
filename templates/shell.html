@@ -116,7 +116,10 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
 <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.2/dist/socket.io.min.js"></script>
 <script>
-const socket = io();
+// Polling only: the server runs in threading mode, which has no true
+// websocket support. Letting the client attempt a websocket upgrade only
+// produces "Cannot obtain socket from WSGI environment" tracebacks.
+const socket = io({ transports: ['polling'] });
 
 let termVM = null;
 let termPod = null;

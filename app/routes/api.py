@@ -43,6 +43,27 @@ def fb_within_roots(canonical, roots):
     return False
 
 
+def fb_resolve_canonical(raw, lexical, run_fn, timeout=10):
+    """Pick a canonical path using the best realpath the target supports.
+
+    - GNU coreutils: ``realpath -m`` works, even for not-yet-existing paths.
+    - BusyBox (e.g. Alpine): no ``-m`` flag, so it is retried as plain
+      ``realpath`` (works for existing paths, resolves symlinks).
+    - Otherwise the lexical path is used (``..`` already collapsed, but
+      symlinks stay unresolved).
+
+    ``run_fn(command, timeout)`` executes in the target context and returns
+    ``(stdout, stderr, returncode)``. Returns the canonical path string.
+    """
+    out, err, rc = run_fn(f'realpath -m -- {quote_remote(raw)}', timeout)
+    if rc == 0 and (out or '').strip():
+        return (out or '').strip().split('\n')[0].strip()
+    out, err, rc = run_fn(f'realpath -- {quote_remote(raw)}', timeout)
+    if rc == 0 and (out or '').strip():
+        return (out or '').strip().split('\n')[0].strip()
+    return lexical
+
+
 def register_api_routes(app, services, settings):
     db = services['db']
     ssh = services['ssh']
@@ -1041,14 +1062,15 @@ def register_api_routes(app, services, settings):
         import posixpath
         roots = _fb_allowed_roots()
         lexical = posixpath.normpath(raw)
-        out, err, rc = _fb_exec(f'realpath -m -- {quote_remote(raw)}', pod_name, timeout=timeout)
-        if rc == 0 and (out or '').strip():
-            canonical = (out or '').strip().split('\n')[0].strip()
-        else:
-            # realpath unavailable in this context: fall back to the lexical
-            # path (still blocks '..' escapes; symlinks stay unresolved).
-            logger.warning('File browser: realpath unavailable, using lexical path check')
-            canonical = lexical
+
+        def _run(command, timeout):
+            # Probe commands are expected to fail on minimal toolchains
+            # (e.g. BusyBox realpath without -m): keep them out of the logs.
+            return _fb_exec(command, pod_name, timeout=timeout, quiet=True)
+
+        canonical = fb_resolve_canonical(raw, lexical, _run, timeout)
+        if canonical == lexical:
+            logger.debug('File browser: using lexical path check (no realpath -m support)')
         if not fb_within_roots(canonical, roots):
             return '', 'Invalid path: outside allowed directories'
         return canonical, ''
@@ -1083,10 +1105,10 @@ def register_api_routes(app, services, settings):
             return str(e)
         return ''
 
-    def _fb_exec(command, pod_name=None, timeout=10):
+    def _fb_exec(command, pod_name=None, timeout=10, quiet=False):
         """Execute a command on the VM host or in a K8s pod."""
         if pod_name in _FB_VM_PODS:
-            return k8s.ssh.run(command, timeout=timeout)
+            return k8s.ssh.run(command, timeout=timeout, quiet=quiet)
         pod = pod_name or _get_fb_pod()
         if not pod:
             return '', 'No pod specified or found', 1
@@ -1094,7 +1116,7 @@ def register_api_routes(app, services, settings):
         if err:
             return '', f'Invalid pod name: {err}', 1
         full_cmd = f'sudo kubectl exec {shlex.quote(pod)} -n {shlex.quote(str(k8s.namespace))} -- {command}'
-        return k8s.ssh.run(full_cmd, timeout=timeout)
+        return k8s.ssh.run(full_cmd, timeout=timeout, quiet=quiet)
 
     def _fb_write_file(content_b64, path, pod_name=None, timeout=30):
         """Write a file to the pod filesystem."""

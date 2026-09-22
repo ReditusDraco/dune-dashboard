@@ -2,8 +2,45 @@
 
 import pytest
 
-from app.routes.api import fb_within_roots
+from app.routes.api import fb_resolve_canonical, fb_within_roots
 from app.services.backup import is_valid_backup_name
+
+
+class TestCanonicalResolution:
+    def test_gnu_realpath_m(self):
+        calls = []
+
+        def run(cmd, timeout):
+            calls.append(cmd)
+            return '/srv/sub/../file.txt\n', '', 0
+
+        assert fb_resolve_canonical('/srv/file.txt', '/srv/file.txt', run) == \
+            '/srv/sub/../file.txt'
+        assert calls[0].startswith('realpath -m -- ')
+
+    def test_busybox_falls_back_to_plain_realpath(self):
+        def run(cmd, timeout):
+            if cmd.startswith('realpath -m -- '):
+                return '', 'realpath: -m: No such file or directory', 1
+            assert cmd.startswith('realpath -- ')
+            return '/srv/file.txt\n', '', 0
+
+        assert fb_resolve_canonical('/srv/file.txt', '/srv/file.txt', run) == \
+            '/srv/file.txt'
+
+    def test_missing_binary_falls_back_to_lexical(self):
+        def run(cmd, timeout):
+            return '', 'realpath: command not found', 127
+
+        assert fb_resolve_canonical('/srv/a/../b', '/srv/b', run) == '/srv/b'
+
+    def test_missing_file_without_m_support(self):
+        # New file on BusyBox: plain realpath fails too, lexical wins.
+        def run(cmd, timeout):
+            return '', 'No such file or directory', 1
+
+        assert fb_resolve_canonical('/srv/new.txt', '/srv/new.txt', run) == \
+            '/srv/new.txt'
 
 
 class TestFileBrowserJail:
