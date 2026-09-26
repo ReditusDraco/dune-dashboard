@@ -55,6 +55,16 @@ def create_app(settings_path=None):
     app.config['WTF_CSRF_ENABLED'] = True
     app.config['WTF_CSRF_TIME_LIMIT'] = None
 
+    # Cache-buster for static assets: browsers refetch CSS/JS whenever the
+    # files change, so theme fixes apply without a hard refresh.
+    try:
+        import time as _time
+
+        _asset_v = int(os.path.getmtime(os.path.join(base_dir, 'static', 'style.css')))
+    except OSError:
+        _asset_v = int(_time.time())
+    app.jinja_env.globals['asset_v'] = _asset_v
+
     csrf = CSRFProtect(app)
     csrf.init_app(app)
 
@@ -447,6 +457,8 @@ def create_app(settings_path=None):
             consecutive_failures = 0
             max_consecutive_failures = 5
             last_ssh_ok = True  # Track SSH state to detect reconnection
+            last_outage_warning = 0  # Last reminder logged during an outage
+            outage_reminder_interval = 3600  # Re-remind hourly, not every 30s
 
             while True:
                 time.sleep(check_interval)
@@ -489,7 +501,14 @@ def create_app(settings_path=None):
                         logging.debug("Connection monitor: All services healthy")
                     else:
                         consecutive_failures += 1
-                        logging.warning(f"Connection monitor: Service issue detected (failures={consecutive_failures})")
+                        # Warn on the state change, then only an hourly
+                        # reminder for the rest of the outage.
+                        now = time.time()
+                        if consecutive_failures == 1:
+                            logging.warning("Connection monitor: Service issue detected")
+                        elif now - last_outage_warning >= outage_reminder_interval:
+                            last_outage_warning = now
+                            logging.warning(f"Connection monitor: still down after {consecutive_failures} checks")
 
                         # Force SSH reconnection if SSH check failed
                         if not ssh_ok and ssh_svc:
@@ -608,6 +627,13 @@ def _setup_logging(settings):
     root_logger.setLevel(log_level)
     root_logger.addHandler(handler)
     root_logger.addHandler(console_handler)
+
+    # Third-party chatter (e.g. paramiko connect/auth INFO on every SSH
+    # reconnect) stays at WARNING unless debug logging is on. Failures
+    # still surface through the existing warning/error calls.
+    if not settings['logging'].get('debug_enabled', False):
+        logging.getLogger('paramiko').setLevel(logging.WARNING)
+        logging.getLogger('urllib3').setLevel(logging.WARNING)
 
     audit_logger = logging.getLogger('audit')
     audit_handler = logging.handlers.RotatingFileHandler(

@@ -1,6 +1,7 @@
 """SSH service - remote command execution via paramiko."""
 
 import logging
+import os
 import threading
 import paramiko
 
@@ -10,6 +11,20 @@ from app.utils.debug_logging import sanitize_for_log, log_ssh_command, log_ssh_r
 KEEPALIVE_INTERVAL = 15
 
 logger = logging.getLogger(__name__)
+
+
+def known_hosts_path():
+    """Location of the persisted known-hosts file.
+
+    Overridable via DUNE_KNOWN_HOSTS (used by tests). Host keys are saved
+    after the first successful connect, so later connects verify the host
+    instead of warning about unknown keys every time.
+    """
+    override = os.environ.get('DUNE_KNOWN_HOSTS')
+    if override:
+        return override
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    return os.path.join(base_dir, 'internal-scripts', 'ssh', 'known_hosts')
 
 
 class SSHService:
@@ -47,6 +62,13 @@ class SSHService:
                 self._client = None
 
             client = paramiko.SSHClient()
+            hosts_file = known_hosts_path()
+            try:
+                if os.path.exists(hosts_file):
+                    client.load_host_keys(hosts_file)
+            except Exception as e:
+                logger.debug(f"Could not load known hosts: {e}")
+                hosts_file = None
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             logger.debug("SSH host key verification policy set to AutoAddPolicy")
 
@@ -63,6 +85,12 @@ class SSHService:
             try:
                 client.connect(**connect_kwargs)
                 logger.debug("SSH connection established to %s@%s", self.user, self.host)
+                if hosts_file:
+                    try:
+                        os.makedirs(os.path.dirname(hosts_file), exist_ok=True)
+                        client.save_host_keys(hosts_file)
+                    except Exception as e:
+                        logger.debug(f"Could not save known hosts: {e}")
                 transport = client.get_transport()
                 if transport:
                     transport.set_keepalive(KEEPALIVE_INTERVAL)

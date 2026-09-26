@@ -99,12 +99,14 @@ class ChatService:
             return 0
 
         if not namespace:
-            logger.warning("Cannot catch up - kubernetes namespace not set")
+            # The API response already reports the failure to the UI.
+            logger.debug("Cannot catch up - kubernetes namespace not set")
             return 0
 
         pod_name = self.k8s.get_text_router_pod()
         if not pod_name:
-            logger.warning("Cannot catch up - no text-router pod found")
+            # The API response already reports the failure to the UI.
+            logger.debug("Cannot catch up - no text-router pod found")
             return 0
 
         logger.debug(f"Attempting to catch up chat from pod: {pod_name}")

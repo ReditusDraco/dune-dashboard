@@ -46,7 +46,7 @@
 <div class="card" style="margin-bottom:20px;">
     <div class="card-header">
         <span>Scheduled Backups</span>
-        <button onclick="runScheduledNow()" id="run-sched-btn" style="padding:6px 16px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:13px;">Run Now</button>
+        <button onclick="runScheduledNow()" id="run-sched-btn" style="padding:6px 16px;background:var(--card-bg);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:13px;">Run Now</button>
         <button onclick="saveSchedule()" id="save-sched-btn" style="padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">Save</button>
     </div>
     <div class="card-body">
@@ -72,13 +72,13 @@
                     </div>
                     <div id="sched-interval-fields" style="display:flex;gap:6px;align-items:center;">
                         <input type="number" id="sched-days" value="1" min="0" max="365"
-                            style="width:60px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                            style="width:60px;padding:6px 8px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
                         <span style="font-size:12px;color:var(--text-muted);">days</span>
                         <input type="number" id="sched-hours" value="0" min="0" max="23"
-                            style="width:60px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                            style="width:60px;padding:6px 8px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
                         <span style="font-size:12px;color:var(--text-muted);">hours</span>
                         <input type="number" id="sched-mins" value="0" min="0" max="59"
-                            style="width:60px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                            style="width:60px;padding:6px 8px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
                         <span style="font-size:12px;color:var(--text-muted);">mins</span>
                     </div>
                     <div id="sched-schedule-fields" style="display:none;">
@@ -110,11 +110,11 @@
                             <div id="sched-times-list">
                                 <div style="display:flex;gap:6px;margin-bottom:4px;">
                                     <input type="time" class="sched-time" value="05:00"
-                                        style="padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                                        style="padding:6px 8px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
                                     <button onclick="removeSchedTime(this)" style="padding:6px 10px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">&times;</button>
                                 </div>
                             </div>
-                            <button onclick="addSchedTime()" style="margin-top:4px;padding:4px 12px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px;">+ Add time</button>
+                            <button onclick="addSchedTime()" style="margin-top:4px;padding:4px 12px;background:var(--card-bg);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px;">+ Add time</button>
                         </div>
                     </div>
                 </div>
@@ -123,12 +123,12 @@
                 <div style="margin-bottom:8px;">
                     <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:2px;">Keep last N backups (0 = unlimited)</label>
                     <input type="number" id="sched-keep" value="5" min="0" max="100"
-                        style="width:100%;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                        style="width:100%;padding:6px 8px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
                 </div>
                 <div style="margin-bottom:8px;">
                     <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:2px;">Encryption password (leave blank for no encryption)</label>
                     <input type="password" id="sched-password" placeholder="Leave blank to keep existing password"
-                        style="width:100%;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                        style="width:100%;padding:6px 8px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
                 </div>
             </div>
         </div>
@@ -152,7 +152,7 @@
                 <div class="step-content">
                     <div class="step-title">Select Backup</div>
                     <div class="step-body">
-                        <select id="restore-backup-select" style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;margin-bottom:8px;">
+                        <select id="restore-backup-select" style="width:100%;padding:8px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;margin-bottom:8px;">
                             <option value="">-- Select a backup --</option>
                         </select>
                         <div id="restore-preview" style="display:none;font-size:13px;color:var(--text-muted);"></div>
@@ -201,15 +201,15 @@
                         <div id="new-ip-group" style="margin:8px 0 0 24px;display:none;">
                             <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:2px;">New public IP for ping fix</label>
                             <input type="text" id="restore-new-ip" placeholder="Same as VM IP if unchanged"
-                                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                                style="width:100%;padding:8px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
                         </div>
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;cursor:pointer;">
                             <input type="checkbox" id="opt-settings" checked> <span>Restore dashboard settings.yaml</span>
                         </label>
-                        <div style="margin:12px 0 0 0;padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;">
+                        <div style="margin:12px 0 0 0;padding:10px 12px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;">
                             <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Backup password (if encrypted)</div>
                             <input type="password" id="restore-password" placeholder="Leave blank if not password-protected"
-                                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
+                                style="width:100%;padding:8px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">
                         </div>
                     </div>
                 </div>
@@ -231,7 +231,7 @@
                                 <div id="progress-bar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width 0.5s;"></div>
                             </div>
                             <div id="progress-steps" style="font-size:13px;"></div>
-                            <div id="restore-complete" style="display:none;margin-top:12px;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;font-size:13px;"></div>
+                            <div id="restore-complete" style="display:none;margin-top:12px;padding:12px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;font-size:13px;"></div>
                         </div>
                     </div>
                 </div>
@@ -354,7 +354,7 @@ async function loadBackups() {
             container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No backups found. Click "Create Backup" to create one.</p>';
             return;
         }
-        let html = '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;">';
+        let html = '<div style="background:var(--card-bg);border:1px solid var(--border);border-radius:4px;">';
         html += '<div class="backup-row" style="font-weight:bold;color:var(--text-muted);font-size:12px;">';
         html += '<div class="backup-name">Name</div><div class="backup-date">Created</div><div class="backup-size">Size</div><div class="backup-actions">Actions</div></div>';
         for (const b of d.backups) {
@@ -511,7 +511,7 @@ function addSchedTime() {
     const list = document.getElementById('sched-times-list');
     const div = document.createElement('div');
     div.style.cssText = 'display:flex;gap:6px;margin-bottom:4px;';
-    div.innerHTML = '<input type="time" class="sched-time" value="05:00" style="padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">'
+    div.innerHTML = '<input type="time" class="sched-time" value="05:00" style="padding:6px 8px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">'
         + '<button onclick="removeSchedTime(this)" style="padding:6px 10px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">&times;</button>';
     list.appendChild(div);
 }
@@ -550,7 +550,7 @@ async function loadSchedule() {
         times.forEach(t => {
             const div = document.createElement('div');
             div.style.cssText = 'display:flex;gap:6px;margin-bottom:4px;';
-            div.innerHTML = '<input type="time" class="sched-time" value="' + t + '" style="padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">'
+            div.innerHTML = '<input type="time" class="sched-time" value="' + t + '" style="padding:6px 8px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;">'
                 + '<button onclick="removeSchedTime(this)" style="padding:6px 10px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">&times;</button>';
             list.appendChild(div);
         });
@@ -649,7 +649,7 @@ document.getElementById('restore-backup-select').addEventListener('change', asyn
         const d = await r.json();
         if (d.success) {
             preview.style.display = 'block';
-            let html = '<div style="margin-top:8px;padding:8px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;">';
+            let html = '<div style="margin-top:8px;padding:8px 12px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;">';
             html += '<strong>Backup contents:</strong><br>';
             html += 'Created: ' + esc(d.created) + '<br>';
             const comps = d.components || [];

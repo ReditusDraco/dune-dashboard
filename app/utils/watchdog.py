@@ -69,7 +69,12 @@ def start_watchdog(host, port, use_ssl):
                 failures = 0
                 continue
             failures += 1
-            logger.warning(f'Watchdog: self-check failed ({failures}/{failures_needed})')
+            # A lone failed probe that recovers is just a blip; warn once
+            # the pattern looks real (second consecutive failure).
+            if failures == 1:
+                logger.debug(f'Watchdog: self-check failed ({failures}/{failures_needed})')
+            else:
+                logger.warning(f'Watchdog: self-check failed ({failures}/{failures_needed})')
             if failures >= failures_needed:
                 logger.critical(
                     'Watchdog: dashboard unresponsive - exiting '

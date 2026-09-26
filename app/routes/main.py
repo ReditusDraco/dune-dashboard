@@ -363,27 +363,105 @@ def register_routes(app, services, settings):
     @app.route('/events')
     @login_required
     def events_page():
+        from flask import request as flask_request
+        from app.utils.events import (
+            GAME_EVENT_LABELS,
+            event_label,
+            parse_solaris_meta,
+            summarize_game_event,
+        )
+
+        # Filters (validated; anything unknown falls back to 'all').
+        type_filter = flask_request.args.get('type', 'all')
+        try:
+            type_filter = int(type_filter)
+            if type_filter not in GAME_EVENT_LABELS:
+                type_filter = 'all'
+        except (TypeError, ValueError):
+            type_filter = 'all'
+        map_filter = flask_request.args.get('map', 'all')
+        facing_filter = flask_request.args.get('facing', 'all')
+        if facing_filter not in ('0', '1'):
+            facing_filter = 'all'
+
         game_events = []
-        event_logs = []
-
-        def safe_query(table, cols, order_col, limit):
-            try:
-                return db.query(f"SELECT {cols} FROM {table} ORDER BY {order_col} DESC LIMIT {limit}") or []
-            except Exception as e:
-                logger.error(f"Error fetching {table}: {e}")
-                return []
+        maps = []
+        counts_24h = {}
+        total_24h = 0
+        solaris = []
 
         try:
-            game_events = safe_query("dune.game_events", "*", "universe_time", 50)
-        except Exception:
-            pass
+            map_rows = db.query(
+                "SELECT DISTINCT map FROM dune.game_events WHERE map IS NOT NULL ORDER BY map") or []
+            maps = [r['map'] for r in map_rows if r.get('map')]
+        except Exception as e:
+            logger.error(f"Error fetching event maps: {e}")
+        if map_filter != 'all' and map_filter not in maps:
+            map_filter = 'all'
 
         try:
-            event_logs = safe_query("dune.event_log", "*", "event_time", 100)
-        except Exception:
-            pass
+            stat_rows = db.query(
+                "SELECT event_type, COUNT(*)::int AS cnt FROM dune.game_events "
+                "WHERE universe_time > NOW() - INTERVAL '24 hours' "
+                "GROUP BY event_type") or []
+            for row in stat_rows:
+                try:
+                    counts_24h[int(row['event_type'])] = row['cnt']
+                    total_24h += row['cnt']
+                except (TypeError, ValueError, KeyError):
+                    pass
+        except Exception as e:
+            logger.error(f"Error fetching event stats: {e}")
 
-        return render_template('events.html', game_events=game_events, event_logs=event_logs)
+        try:
+            conditions = []
+            params = []
+            if type_filter != 'all':
+                conditions.append("event_type = %s")
+                params.append(type_filter)
+            if map_filter != 'all':
+                conditions.append("map = %s")
+                params.append(map_filter)
+            if facing_filter != 'all':
+                conditions.append("player_facing_event = %s")
+                params.append(facing_filter == '1')
+            where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+            game_events = db.query(
+                f"SELECT actor_id, universe_time, map, partition_id, event_type, "
+                f"x, y, z, custom_data, player_facing_event "
+                f"FROM dune.game_events {where} "
+                f"ORDER BY universe_time DESC LIMIT 200", params) or []
+            for event in game_events:
+                event['label'] = event_label(event.get('event_type'))
+                event['summary'] = summarize_game_event(
+                    event.get('event_type'), event.get('custom_data'))
+        except Exception as e:
+            logger.error(f"Error fetching game_events: {e}")
+            game_events = []
+
+        try:
+            log_rows = db.query(
+                "SELECT id, event_time, category, message, function_name, meta "
+                "FROM dune.event_log ORDER BY event_time DESC LIMIT 100") or []
+            for row in log_rows:
+                parsed = parse_solaris_meta(row.get('meta'))
+                if parsed:
+                    row.update(parsed)
+                    solaris.append(row)
+        except Exception as e:
+            logger.error(f"Error fetching event_log: {e}")
+
+        return render_template(
+            'events.html',
+            game_events=game_events,
+            type_filter=type_filter,
+            map_filter=map_filter,
+            facing_filter=facing_filter,
+            type_options=sorted(GAME_EVENT_LABELS.items()),
+            maps=maps,
+            counts_24h=counts_24h,
+            total_24h=total_24h,
+            solaris=solaris)
 
     # Chat
     @app.route('/chat')
