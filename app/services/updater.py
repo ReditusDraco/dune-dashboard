@@ -1,6 +1,18 @@
-"""Update service - checks GitHub for new releases and applies updates"""
+"""Update service - channel-aware self updates from GitHub Releases.
+
+Version source of truth: the committed VERSION file (e.g. ``0.7.5`` for
+stable, ``0.7.5-experimental`` for experimental). The channel is the suffix.
+
+Rules (all enforced server-side):
+- experimental installs track ``vX.Y.Z-experimental`` releases (matched
+  case-insensitively); stable installs track exact ``vX.Y.Z`` releases.
+- An update target must be newer than OR equal to the running version
+  (equal = reinstall/repair). Older versions are always refused.
+- Checking is automatic (background thread); installing is always manual.
+"""
 
 import os
+import re
 import sys
 import json
 import time
@@ -11,7 +23,7 @@ import urllib.request
 import zipfile
 import tempfile
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -28,40 +40,155 @@ PROTECTED_PATHS = {
     '.env',
 }
 
-# File extensions that are always safe to overwrite
-SAFE_EXTENSIONS = {'.py', '.html', '.css', '.js', '.sh', '.ps1', '.md', '.txt', '.yaml', '.yml', '.json', '.ini', '.cfg'}
+_VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-([A-Za-z0-9]+))?$")
+_STABLE_RE = re.compile(r"^v\d+\.\d+\.\d+$", re.IGNORECASE)
+_EXPERIMENTAL_RE = re.compile(r"^v\d+\.\d+\.\d+-experimental$", re.IGNORECASE)
+
+
+def parse_version(value):
+    """Parse 'v0.7.5-experimental' -> ((0, 7, 5), 'experimental').
+
+    Returns None for anything that is not a plain dotted version with an
+    optional single suffix. Never raises.
+    """
+    if not value:
+        return None
+    match = _VERSION_RE.fullmatch(str(value).strip())
+    if not match:
+        return None
+    numbers = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    return numbers, (match.group(4) or '')
+
+
+def channel_of(version):
+    """'experimental' for *-experimental versions, else 'stable'."""
+    parsed = parse_version(version)
+    if parsed and parsed[1].lower() == 'experimental':
+        return 'experimental'
+    return 'stable'
+
+
+def compare_versions(a, b):
+    """Compare numeric parts only. Returns -1, 0 or 1. Unknowns sort last."""
+    pa, pb = parse_version(a), parse_version(b)
+    if pa is None and pb is None:
+        return 0
+    if pa is None:
+        return -1
+    if pb is None:
+        return 1
+    if pa[0] < pb[0]:
+        return -1
+    if pa[0] > pb[0]:
+        return 1
+    return 0
+
+
+def release_matches_channel(tag, channel):
+    """True when a release tag belongs to the channel (case-insensitive)."""
+    tag = str(tag or '')
+    if channel == 'experimental':
+        return bool(_EXPERIMENTAL_RE.fullmatch(tag))
+    return bool(_STABLE_RE.fullmatch(tag))
 
 
 class UpdateService:
     def __init__(self, project_root):
         self.project_root = project_root
-        self._update_available = False
-        self._latest_sha = None
-        self._current_sha = None
+        self._current_version = self._read_local_version()
+        self._channel = channel_of(self._current_version)
+        self._latest = None  # {'version', 'tag', 'notes', 'zipball_url'}
+        self._other_latest = None
+        self._releases = {'experimental': [], 'stable': []}  # per-channel lists, newest first
         self._last_check = 0
         self._check_interval = 1800  # 30 minutes
         self._update_in_progress = False
         self._update_status = None
-        self._current_branch = self._detect_branch()
+        self._preview = None  # {'version', 'notes'} - in-memory test helper
 
-    def _detect_branch(self):
-        """Detect the current git branch or ZIP branch from folder name."""
+    # ── version / channel ────────────────────────────────────────────
+
+    def _read_local_version(self):
         try:
-            branch = subprocess.check_output(
-                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-                cwd=self.project_root, stderr=subprocess.DEVNULL
-            ).decode().strip()
-            if branch:
-                return branch
+            with open(os.path.join(self.project_root, 'VERSION')) as f:
+                version = f.read().strip().replace('\r', '').replace('\n', '')
+                if parse_version(version):
+                    return version
         except Exception:
             pass
+        return '0.0.0'
 
-        folder_name = os.path.basename(self.project_root).lower()
-        if 'nightly' in folder_name:
-            return 'nightly'
-        if 'beta' in folder_name:
-            return 'beta'
-        return 'main'
+    @property
+    def current_version(self):
+        return self._current_version
+
+    @property
+    def channel(self):
+        return self._channel
+
+    # ── silence state (backups/update-silence.json) ──────────────────
+
+    def _silence_path(self):
+        return os.path.join(self.project_root, 'backups', 'update-silence.json')
+
+    def get_silence(self):
+        try:
+            with open(self._silence_path()) as f:
+                stored = json.load(f) or {}
+            return {
+                'silenced_versions': list(stored.get('silenced_versions', [])),
+                'silence_all': bool(stored.get('silence_all', False)),
+            }
+        except (FileNotFoundError, ValueError, OSError):
+            return {'silenced_versions': [], 'silence_all': False}
+
+    def _save_silence(self, state):
+        try:
+            os.makedirs(os.path.dirname(self._silence_path()), exist_ok=True)
+            with open(self._silence_path(), 'w') as f:
+                json.dump({
+                    'silenced_versions': list(state.get('silenced_versions', [])),
+                    'silence_all': bool(state.get('silence_all', False)),
+                }, f, indent=2)
+        except OSError as e:
+            logger.warning(f'Update silence: could not save: {e}')
+        return self.get_silence()
+
+    def silence_version(self, version):
+        state = self.get_silence()
+        version = str(version or '').strip()
+        if version and version not in state['silenced_versions']:
+            state['silenced_versions'].append(version)
+        return self._save_silence(state)
+
+    def unsilence_version(self, version):
+        state = self.get_silence()
+        version = str(version or '').strip()
+        if version in state['silenced_versions']:
+            state['silenced_versions'].remove(version)
+        return self._save_silence(state)
+
+    def set_silence_all(self, enabled):
+        state = self.get_silence()
+        state['silence_all'] = bool(enabled)
+        return self._save_silence(state)
+
+    def clear_silence(self):
+        return self._save_silence({'silenced_versions': [], 'silence_all': False})
+
+    # ── preview helper (banner testing only, never installable) ─────
+
+    def set_preview(self, version, notes=''):
+        version = str(version or '').strip()
+        if not parse_version(version):
+            raise ValueError('Preview version is not a valid version number.')
+        self._preview = {'version': version, 'notes': str(notes or '')}
+        return dict(self._preview)
+
+    def clear_preview(self):
+        self._preview = None
+
+    # ── background checker ───────────────────────────────────────────
 
     def start_checker(self):
         """Start background update checker thread."""
@@ -78,107 +205,219 @@ class UpdateService:
                 logger.debug(f"Update check failed: {e}")
             time.sleep(self._check_interval)
 
+    def _fetch_releases(self):
+        """All releases from GitHub (follows pagination)."""
+        releases = []
+        url = f"{GITHUB_API}/releases?per_page=100"
+        while url:
+            req = urllib.request.Request(url)
+            req.add_header('Accept', 'application/vnd.github.v3+json')
+            req.add_header('User-Agent', 'DuneDashboard-UpdateChecker')
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                releases.extend(json.loads(resp.read().decode()))
+                url = self._next_page(resp.headers.get('Link', ''))
+        return releases
+
+    @staticmethod
+    def _next_page(link_header):
+        for part in (link_header or '').split(','):
+            segments = part.split(';')
+            if len(segments) == 2 and 'rel="next"' in segments[1]:
+                return segments[0].strip().strip('<>')
+        return ''
+
+    @staticmethod
+    def _collect_channel(releases, channel):
+        """All releases for a channel, newest first.
+
+        Each entry is {'version', 'tag', 'notes', 'zipball_url'}.
+        Drafts, non-matching tags and unparsable versions are skipped.
+        """
+        found = []
+        for release in releases:
+            if not isinstance(release, dict) or release.get('draft'):
+                continue
+            tag = str(release.get('tag_name') or '')
+            if not release_matches_channel(tag, channel):
+                continue
+            parsed = parse_version(tag)
+            if parsed is None:
+                continue
+            version = tag[1:] if tag.lower().startswith('v') else tag
+            found.append({
+                'version': version,
+                'tag': tag,
+                'notes': str(release.get('body') or ''),
+                'zipball_url': str(release.get('zipball_url') or ''),
+            })
+        found.sort(key=lambda e: parse_version(e['version'])[0], reverse=True)
+        return found
+
+    @staticmethod
+    def _pick_latest(releases, channel):
+        """Newest release for a channel. Returns entry dict or None."""
+        collected = UpdateService._collect_channel(releases, channel)
+        return collected[0] if collected else None
+
     def check_for_updates(self):
-        """Check GitHub for new commits."""
+        """Refresh latest-version info for our channel (and the other one)."""
         try:
-            branch = self._current_branch
-            git_dir = os.path.join(self.project_root, '.git')
-            if os.path.isdir(git_dir):
-                # Git clone: compare local HEAD to origin/<branch>
-                subprocess.run(
-                    ['git', 'fetch', 'origin', branch, '--quiet'],
-                    cwd=self.project_root, stderr=subprocess.DEVNULL, timeout=15
-                )
-                local_sha = subprocess.check_output(
-                    ['git', 'rev-parse', 'HEAD'],
-                    cwd=self.project_root, stderr=subprocess.DEVNULL
-                ).decode().strip()[:7]
-                remote_sha = subprocess.check_output(
-                    ['git', 'rev-parse', f'origin/{branch}'],
-                    cwd=self.project_root, stderr=subprocess.DEVNULL
-                ).decode().strip()[:7]
-            else:
-                # ZIP download: compare VERSION file to GitHub API
-                req = urllib.request.Request(f"{GITHUB_API}/commits/{branch}")
-                req.add_header('Accept', 'application/vnd.github.v3+json')
-                req.add_header('User-Agent', 'DuneDashboard-UpdateChecker')
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = json.loads(resp.read().decode())
-                    remote_sha = data['sha'][:7]
-
-                version_file = os.path.join(self.project_root, 'VERSION')
-                if os.path.exists(version_file):
-                    with open(version_file) as f:
-                        local_sha = f.read().strip().replace('\r', '').replace('\n', '')[:7]
-                else:
-                    # First run after ZIP download: record current version
-                    local_sha = remote_sha
-                    with open(version_file, 'w') as f:
-                        f.write(remote_sha + '\n')
-
-            self._latest_sha = remote_sha
-            self._current_sha = local_sha
-            self._update_available = remote_sha != local_sha and remote_sha != ""
+            releases = self._fetch_releases()
+            other = 'stable' if self._channel == 'experimental' else 'experimental'
+            self._releases = {
+                'experimental': self._collect_channel(releases, 'experimental'),
+                'stable': self._collect_channel(releases, 'stable'),
+            }
+            self._latest = (self._releases[self._channel][0]
+                            if self._releases[self._channel] else None)
+            self._other_latest = (self._releases[other][0]
+                                  if self._releases[other] else None)
             self._last_check = time.time()
-            logger.info(f"Update check ({branch}): {'available' if self._update_available else 'up to date'} (local={local_sha}, remote={remote_sha})")
+            if self._latest:
+                logger.info(
+                    f"Update check ({self._channel}): latest={self._latest['version']} "
+                    f"current={self._current_version}")
+            else:
+                logger.info(f"Update check ({self._channel}): no releases found")
         except Exception as e:
             logger.debug(f"Update check error: {e}")
 
+    def _is_newer_or_same(self, version):
+        return compare_versions(version, self._current_version) >= 0
+
+    def status(self):
+        """Full status payload for the banner/API."""
+        silence = self.get_silence()
+        latest = dict(self._latest) if self._latest else None
+        available = bool(
+            latest and self._is_newer_or_same(latest['version'])
+            and compare_versions(latest['version'], self._current_version) != 0)
+        other = dict(self._other_latest) if self._other_latest else None
+        show_other = bool(
+            other and other['version'] != (latest['version'] if latest else None)
+            and self._is_newer_or_same(other['version']))
+        # Per-channel release lists for the version picker (newest first).
+        # zipball URLs stay server-side; the panel only needs version/notes.
+        lists = {}
+        for channel, entries in (self._releases or {}).items():
+            lists[channel] = [
+                {'version': e['version'], 'tag': e['tag'],
+                 'notes': e['notes']}
+                for e in entries
+            ]
+        return {
+            'current_version': self._current_version,
+            'channel': self._channel,
+            'available': available,
+            'latest': latest,
+            'releases': lists,
+            'other_channel': {
+                'channel': 'stable' if self._channel == 'experimental' else 'experimental',
+                'latest': other,
+                'available': show_other,
+            },
+            'preview': dict(self._preview) if self._preview else None,
+            'silenced_versions': silence['silenced_versions'],
+            'silence_all': silence['silence_all'],
+            'update_in_progress': self._update_in_progress,
+            'update_status': self._update_status,
+            'last_check': self._last_check,
+        }
+
     @property
     def update_available(self):
-        return self._update_available
+        status = self.status()
+        return status['available'] or status['preview'] is not None
 
     @property
     def update_status(self):
         return self._update_status
 
-    def apply_update(self):
-        """Download and apply the latest update."""
+    # ── apply ────────────────────────────────────────────────────────
+
+    def _find_release(self, version):
+        """Find a known release matching a version string exactly."""
+        for entry in (self._latest, self._other_latest):
+            if entry and entry['version'] == version:
+                return entry
+        for entries in (self._releases or {}).values():
+            for entry in entries:
+                if entry['version'] == version:
+                    return entry
+        return None
+
+    def apply_update(self, version=None):
+        """Download and apply a release. Version must be known and not older."""
         if self._update_in_progress:
             return False, "Update already in progress"
 
+        target = str(version or '').strip()
+        if not target:
+            # Default: newest for our own channel.
+            if not self._latest:
+                return False, "No release found for this channel"
+            target = self._latest['version']
+
+        if parse_version(target) is None:
+            return False, "Invalid version number"
+        if not self._is_newer_or_same(target):
+            return False, (
+                f"Refusing downgrade: {target} is older than "
+                f"the running {self._current_version}")
+        entry = self._find_release(target)
+        if entry is None:
+            # Refresh once in case a release landed since the last check.
+            self.check_for_updates()
+            entry = self._find_release(target)
+        if entry is None:
+            return False, f"Unknown version: {target} (not a published release)"
+        if not entry.get('zipball_url'):
+            return False, "Release has no downloadable archive"
+
         self._update_in_progress = True
-        self._update_status = "Downloading update..."
+        self._update_status = f"Downloading {target}..."
 
         try:
-            # Download latest zip from the detected branch
-            branch = self._current_branch
-            zip_url = f"https://github.com/{GITHUB_REPO}/archive/refs/heads/{branch}.zip"
-            req = urllib.request.Request(zip_url)
+            req = urllib.request.Request(entry['zipball_url'])
+            req.add_header('Accept', 'application/vnd.github.v3+json')
             req.add_header('User-Agent', 'DuneDashboard-UpdateChecker')
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=120) as resp:
                 zip_data = resp.read()
+            if not zip_data.startswith(b'PK\x03\x04'):
+                raise ValueError("Downloaded file is not a zip archive")
 
             self._update_status = "Extracting update..."
-
-            # Extract to temp directory
             temp_dir = tempfile.mkdtemp(prefix='dune_update_')
             zip_path = os.path.join(temp_dir, 'update.zip')
             with open(zip_path, 'wb') as f:
                 f.write(zip_data)
 
             with zipfile.ZipFile(zip_path, 'r') as zf:
+                # Reject archives with absolute paths or parent escapes.
+                for member in zf.namelist():
+                    if member.startswith('/') or '..' in member.split('/'):
+                        raise ValueError(f"Unsafe archive entry: {member!r}")
                 zf.extractall(temp_dir)
 
-            # Find the extracted folder (e.g., dune-dashboard-main)
-            extracted = [d for d in os.listdir(temp_dir) if os.path.isdir(os.path.join(temp_dir, d)) and d != '__MACOSX']
+            extracted = [d for d in os.listdir(temp_dir)
+                         if os.path.isdir(os.path.join(temp_dir, d))
+                         and d != '__MACOSX']
             if not extracted:
                 return False, "Failed to extract update"
 
             source_dir = os.path.join(temp_dir, extracted[0])
 
-            # Create backup
-            backup_dir = os.path.join(self.project_root, 'backups', f'update_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+            backup_dir = os.path.join(
+                self.project_root, 'backups',
+                f'update_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
             os.makedirs(backup_dir, exist_ok=True)
 
-            # Copy files, skipping protected paths
             self._update_status = "Applying files..."
             files_updated = 0
             for root, dirs, files in os.walk(source_dir):
                 rel_root = os.path.relpath(root, source_dir)
                 target_root = os.path.join(self.project_root, rel_root)
 
-                # Skip protected directories
                 if any(p in PROTECTED_PATHS for p in rel_root.split(os.sep)):
                     continue
 
@@ -190,11 +429,9 @@ class UpdateService:
                     src_file = os.path.join(root, file)
                     dst_file = os.path.join(target_root, file)
 
-                    # Skip protected files
                     if file in PROTECTED_PATHS:
                         continue
 
-                    # Backup existing file if it exists
                     if os.path.exists(dst_file):
                         backup_file = os.path.join(backup_dir, rel_root, file)
                         os.makedirs(os.path.dirname(backup_file), exist_ok=True)
@@ -203,18 +440,15 @@ class UpdateService:
                     shutil.copy2(src_file, dst_file)
                     files_updated += 1
 
-            # Cleanup temp
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-            # Update VERSION file to match new version
-            version_file = os.path.join(self.project_root, 'VERSION')
-            with open(version_file, 'w') as f:
-                f.write(self._latest_sha + '\n')
+            with open(os.path.join(self.project_root, 'VERSION'), 'w') as f:
+                f.write(target + '\n')
 
+            self._current_version = target
+            self._channel = channel_of(target)
             self._update_status = f"Update applied! {files_updated} files updated. Restarting..."
-            self._update_available = False
 
-            # Restart the application
             self._restart_app()
 
             return True, f"Update applied successfully ({files_updated} files)"
@@ -226,13 +460,20 @@ class UpdateService:
             return False, str(e)
 
     def _restart_app(self):
-        """Restart the dashboard via the launcher script to preserve SSH/DB tunnels."""
+        """Restart the dashboard through the launcher in auto-start mode.
+
+        The launcher re-establishes SSH tunnels and port-forwards, then goes
+        straight into the dashboard without stopping at the selection menu.
+        The old process exits below, so the port is free when the new one
+        binds.
+        """
         try:
             if os.name == 'nt':
                 launcher = os.path.join(self.project_root, 'launcher.ps1')
                 if os.path.exists(launcher):
                     subprocess.Popen(
-                        ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', launcher],
+                        ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                         '-File', launcher, '-AutoStart'],
                         creationflags=subprocess.CREATE_NEW_CONSOLE
                     )
                 else:
@@ -240,7 +481,7 @@ class UpdateService:
             else:
                 launcher = os.path.join(self.project_root, 'start.sh')
                 if os.path.exists(launcher):
-                    subprocess.Popen(['bash', launcher], start_new_session=True)
+                    subprocess.Popen(['bash', launcher, '--auto-start'], start_new_session=True)
                 else:
                     subprocess.Popen([sys.executable, os.path.join(self.project_root, 'run.py')], start_new_session=True)
             os._exit(0)

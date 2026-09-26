@@ -1506,17 +1506,16 @@ def register_api_routes(app, services, settings):
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
 
-    # Update management
+    # Update management (channel-aware, releases-based, never downgrades)
     @app.route('/api/update/status')
     @auth_req
     def api_update_status():
         updater = services.get('updater')
         if not updater:
             return jsonify({'available': False})
-        return jsonify({
-            'available': updater.update_available,
-            'status': updater.update_status,
-        })
+        status = updater.status()
+        status['success'] = True
+        return jsonify(status)
 
     @app.route('/api/update/apply', methods=['POST'])
     @auth_req
@@ -1524,18 +1523,13 @@ def register_api_routes(app, services, settings):
         updater = services.get('updater')
         if not updater:
             return jsonify({'success': False, 'error': 'Updater not available'})
-        success, message = updater.apply_update()
+        data = request.get_json() or {}
+        success, message = updater.apply_update(data.get('version'))
+        if audit_svc and success:
+            audit_svc.log('dashboard_update',
+                          {'version': data.get('version') or 'latest'},
+                          user='admin', severity='warning')
         return jsonify({'success': success, 'message': message})
-
-    @app.route('/api/update/test', methods=['POST'])
-    @auth_req
-    def api_update_test():
-        """Force show update banner for testing."""
-        updater = services.get('updater')
-        if updater:
-            updater._update_available = True
-            return jsonify({'success': True, 'message': 'Update banner triggered'})
-        return jsonify({'success': False, 'error': 'Updater not available'})
 
     @app.route('/api/update/check', methods=['POST'])
     @auth_req
@@ -1545,12 +1539,60 @@ def register_api_routes(app, services, settings):
         if not updater:
             return jsonify({'success': False, 'error': 'Updater not available'})
         updater.check_for_updates()
-        return jsonify({
-            'available': updater.update_available,
-            'status': updater.update_status,
-            'local_version': updater._current_sha,
-            'remote_version': updater._latest_sha,
-        })
+        status = updater.status()
+        status['success'] = True
+        return jsonify(status)
+
+    @app.route('/api/update/preview', methods=['POST'])
+    @auth_req
+    def api_update_preview():
+        """Set an in-memory preview version to test the banner (never installable)."""
+        updater = services.get('updater')
+        if not updater:
+            return jsonify({'success': False, 'error': 'Updater not available'})
+        data = request.get_json() or {}
+        try:
+            preview = updater.set_preview(data.get('version'), data.get('notes'))
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': True, 'preview': preview})
+
+    @app.route('/api/update/preview', methods=['DELETE'])
+    @auth_req
+    def api_update_preview_clear():
+        updater = services.get('updater')
+        if not updater:
+            return jsonify({'success': False, 'error': 'Updater not available'})
+        updater.clear_preview()
+        return jsonify({'success': True})
+
+    @app.route('/api/update/silence', methods=['POST'])
+    @auth_req
+    def api_update_silence():
+        """Silence a version, toggle permanent mute, or clear all silence."""
+        updater = services.get('updater')
+        if not updater:
+            return jsonify({'success': False, 'error': 'Updater not available'})
+        data = request.get_json() or {}
+        action = str(data.get('action') or '').strip().lower()
+        try:
+            if action == 'silence':
+                state = updater.silence_version(data.get('version'))
+            elif action == 'unsilence':
+                state = updater.unsilence_version(data.get('version'))
+            elif action == 'mute':
+                state = updater.set_silence_all(True)
+            elif action == 'unmute':
+                state = updater.set_silence_all(False)
+            elif action == 'clear':
+                state = updater.clear_silence()
+            else:
+                return jsonify({'success': False,
+                                'error': 'Unknown action (silence/unsilence/mute/unmute/clear)'})
+        except Exception as e:
+            logger.error(f'Update silence failed: {e}')
+            return jsonify({'success': False, 'error': 'Could not save silence setting'})
+        return jsonify({'success': True, 'silence': state})
 
     # Audit logs
     from app.services.audit import AuditService

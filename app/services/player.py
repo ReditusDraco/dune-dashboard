@@ -199,7 +199,7 @@ class PlayerService:
     def get_player_detail(self, player_id):
         player = self.db.query("""
             SELECT a.*, a.transform::text as transform_text,
-                ea.id as account_id, ea.user as account_email, ea.platform_id,
+                ea.id as account_id, ea.user as account_email, acc.platform_id,
                 acc.funcom_id,
                 COALESCE(NULLIF(ps.character_name, ''), NULLIF(acc.funcom_id, ''), 'Character ' || a.id::text) as player_name,
                 ps.online_status::text as online_status,

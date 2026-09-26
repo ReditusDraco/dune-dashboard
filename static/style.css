@@ -1320,6 +1320,109 @@ body[data-nav-layout="vertical"] .site-footer {
     margin-left: 216px;
 }
 
+/* Update widget: lives in the nav next to the theme button, styled like
+   the theme dropdown (nav-bg surface, nav-text tones) in every theme. */
+.nav-tools { display: flex; align-items: center; gap: 2px; }
+.update-banner { display: none; position: relative; }
+.update-banner .ub-bellwrap { position: relative; display: inline-block; }
+.update-banner .ub-dot {
+    position: absolute; top: 2px; right: 6px; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--warn);
+}
+.update-banner .ub-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 320px;
+    max-width: calc(100vw - 32px);
+    max-height: 70vh;
+    overflow-y: auto;
+    background: var(--nav-bg);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    z-index: 1000;
+    padding: 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--nav-text);
+}
+.update-banner .ub-title { font-weight: 700; margin-bottom: 2px; color: #fff; }
+.update-banner .ub-sub { color: var(--nav-text); opacity: 0.75; font-size: 11px; margin-bottom: 6px; }
+.update-banner .ub-preview-tag {
+    font-size: 10px; font-weight: 700; color: #fff; background: var(--warn);
+    border-radius: 8px; padding: 0 6px; margin-left: 4px;
+}
+.update-banner .ub-notes { margin: 4px 0 6px; }
+.update-banner .ub-notes summary { cursor: pointer; font-size: 11px; color: var(--nav-text); opacity: 0.75; }
+.update-banner .ub-notes pre {
+    white-space: pre-wrap; font-size: 11px; max-height: 160px; overflow-y: auto;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px; padding: 8px; margin-top: 4px; color: var(--nav-text);
+}
+.update-banner .ub-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.update-banner .ub-actions button {
+    padding: 4px 12px; font-size: 12px; cursor: pointer;
+    background: var(--primary); color: #fff; border: none; border-radius: 4px;
+}
+.update-banner .ub-actions button.ub-ghost {
+    background: transparent; color: var(--nav-text);
+    border: 1px solid rgba(255,255,255,0.25);
+}
+.update-banner .ub-mute { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--nav-text); opacity: 0.75; cursor: pointer; }
+.update-banner .ub-status { font-size: 11px; color: var(--nav-text); opacity: 0.75; margin-top: 4px; }
+.update-banner .ub-panel-head { font-weight: 700; margin-bottom: 6px; color: #fff; cursor: pointer; }
+.update-banner .ub-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; font-size: 12px; }
+.update-banner .ub-row select {
+    padding: 4px 8px; font-size: 12px; color: var(--nav-text);
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px;
+}
+.update-banner .ub-row button {
+    padding: 4px 12px; font-size: 12px; cursor: pointer;
+    background: transparent; color: var(--nav-text);
+    border: 1px solid rgba(255,255,255,0.25); border-radius: 4px;
+}
+#ub-overlay {
+    position: fixed; inset: 0; z-index: 2000;
+    background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+#ub-overlay .ub-overlay-box {
+    max-width: 560px; width: 100%; max-height: 80vh; overflow-y: auto;
+    background: var(--card-bg); color: var(--text);
+    border-radius: 12px; box-shadow: var(--shadow); padding: 16px 18px;
+}
+#ub-overlay .ub-overlay-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+#ub-overlay .ub-overlay-head button {
+    padding: 4px 14px; font-size: 12px; cursor: pointer;
+    background: var(--primary); color: #fff; border: none; border-radius: 4px;
+}
+#ub-overlay pre { white-space: pre-wrap; font-size: 12px; }
+
+/* Vertical sidebar: tools row sits with the theme button; panel pops upward
+   like the theme dropdown content does. */
+body[data-nav-layout="vertical"] .nav-tools {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+body[data-nav-layout="vertical"] .nav-tools .theme-dropdown {
+    padding: 0;
+    border-top: none;
+}
+body[data-nav-layout="vertical"] .nav-tools .theme-btn {
+    width: auto;
+}
+body[data-nav-layout="vertical"] .update-banner .ub-panel {
+    top: auto;
+    bottom: calc(100% + 8px);
+    left: 0;
+    right: auto;
+}
+
 @media (max-width: 768px) {
     body[data-nav-layout="vertical"] {
         padding-left: 0;
