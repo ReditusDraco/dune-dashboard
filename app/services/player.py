@@ -235,7 +235,8 @@ class PlayerService:
                 FROM dune.actors WHERE id = %s
             """, [state_pawn_id], one=True) or {}
         except Exception as e:
-            logger.warning(f"Failed to get vitals: {e}")
+            # Missing pawn data is routine (page renders N/A instead).
+            logger.debug(f"Failed to get vitals: {e}")
             return {}
 
     def get_player_guild(self, player_controller_id):

@@ -118,6 +118,18 @@ if __name__ == '__main__':
             def log_message(self, format, *args):
                 pass
 
+            def handle_error(self, request, client_address):
+                # Scanners constantly connect and vanish mid-request. A reset
+                # or broken pipe on an already-dead socket is routine noise:
+                # debug-log it instead of dumping a traceback on the console.
+                exc = sys.exc_info()[1]
+                if isinstance(exc, (ConnectionResetError, BrokenPipeError)):
+                    logging.getLogger(__name__).debug(
+                        "Redirect: %s disconnected mid-request",
+                        client_address[0] if client_address else '?')
+                    return
+                super().handle_error(request, client_address)
+
         # Try configured redirect port first, fall back to dashboard port+1.
         # Try 0.0.0.0 first (all interfaces), fall back to 127.0.0.1 (localhost only)
         http_port = None

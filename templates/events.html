@@ -4,8 +4,7 @@
 
 <div class="page-header">
     <h1>Game Events</h1>
-    <p>Recent activity from the game event log</p>
-    <p style="font-size:11px;color:var(--text-muted);">Note: Solaris currency events may show incomplete history. Delta values may not sum to current balance.</p>
+    <p>What is happening on your server, in plain language</p>
 </div>
 
 {% if tunnel_down %}
@@ -14,56 +13,179 @@
 <div class="error-banner danger"><strong>Database Error:</strong> {{ db_error }}</div>
 {% else %}
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-    <div class="card">
-        <div class="card-header">Game Events ({{ game_events|length }})</div>
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Events (24h)</div>
+        <div class="value">{{ total_24h }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Deaths (24h)</div>
+        <div class="value">{{ counts_24h.get(0, 0) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Builds Placed (24h)</div>
+        <div class="value">{{ counts_24h.get(10, 0) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Permission Changes (24h)</div>
+        <div class="value">{{ counts_24h.get(97, 0) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Active Maps</div>
+        <div class="value">{{ maps|length }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Event Feed</div>
+    <div class="card-body">
+        <form method="get" action="/events" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px;">
+            <label style="font-size:13px;">Type:
+                <select name="type" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
+                    <option value="all" {% if type_filter == 'all' %}selected{% endif %}>All types</option>
+                    {% for tid, tlabel in type_options %}
+                    <option value="{{ tid }}" {% if type_filter == tid %}selected{% endif %}>{{ tlabel }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label style="font-size:13px;">Map:
+                <select name="map" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
+                    <option value="all" {% if map_filter == 'all' %}selected{% endif %}>All maps</option>
+                    {% for m in maps %}
+                    <option value="{{ m }}" {% if map_filter == m %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label style="font-size:13px;">Player-facing:
+                <select name="facing" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
+                    <option value="all" {% if facing_filter == 'all' %}selected{% endif %}>Both</option>
+                    <option value="1" {% if facing_filter == '1' %}selected{% endif %}>Yes</option>
+                    <option value="0" {% if facing_filter == '0' %}selected{% endif %}>No</option>
+                </select>
+            </label>
+            <button type="submit" style="padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Filter</button>
+            <a href="/events" style="padding:8px 16px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;text-decoration:none;">Reset</a>
+        </form>
         <div class="table-wrap">
             <table>
                 <thead>
-                    <tr><th>Time</th><th>Actor</th><th>Map</th><th>Type</th><th>Player</th><th>Position</th></tr>
+                    <tr><th>Time</th><th>Event</th><th>Map</th><th>Details</th><th>Position</th></tr>
+                </thead>
+                <tbody>
+                    {% for e in game_events[:25] %}
+                    <tr>
+                        <td style="font-size:11px;white-space:nowrap;">{{ e.universe_time.strftime('%Y-%m-%d %H:%M') if e.universe_time else '' }}</td>
+                        <td><span class="badge">{{ e.label }}</span></td>
+                        <td>{{ e.map or '' }}</td>
+                        <td style="font-size:12px;">{{ e.summary or '-' }}</td>
+                        <td style="font-size:11px;font-family:monospace;">{% if e.x is not none and e.y is not none %}{{ e.x|round(0)|int }}, {{ e.y|round(0)|int }}{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="empty">No events match these filters</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if game_events|length > 25 %}
+        <div style="margin-top:12px;text-align:center;">
+            <button onclick="openEventsModal()" style="padding:8px 20px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Show all {{ game_events|length }} events</button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div id="events-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeEventsModal()">
+    <div class="modal modal-wide">
+        <h3>All Events ({{ game_events|length }})</h3>
+        <div class="table-wrap" style="max-height:60vh;overflow-y:auto;">
+            <table>
+                <thead>
+                    <tr><th>Time</th><th>Event</th><th>Map</th><th>Details</th><th>Position</th></tr>
                 </thead>
                 <tbody>
                     {% for e in game_events %}
                     <tr>
                         <td style="font-size:11px;white-space:nowrap;">{{ e.universe_time.strftime('%Y-%m-%d %H:%M') if e.universe_time else '' }}</td>
-                        <td>{{ e.actor_id }}</td>
+                        <td><span class="badge">{{ e.label }}</span></td>
                         <td>{{ e.map or '' }}</td>
-                        <td>{{ e.event_type }}</td>
-                        <td>{% if e.actor_name %}{{ e.actor_name }}{% else %}-{% endif %}</td>
-                        <td style="font-size:11px;font-family:monospace;">{% if e.x %}{{ e.x|round(0)|int }}, {{ e.y|round(0)|int }}, {{ e.z|round(0)|int }}{% endif %}</td>
+                        <td style="font-size:12px;">{{ e.summary or '-' }}</td>
+                        <td style="font-size:11px;font-family:monospace;">{% if e.x is not none and e.y is not none %}{{ e.x|round(0)|int }}, {{ e.y|round(0)|int }}{% endif %}</td>
                     </tr>
-                    {% else %}
-                    <tr><td colspan="6" class="empty">No game events found</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">Event Log ({{ event_logs|length }})</div>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr><th>Time</th><th>Category</th><th>Function</th><th>Message</th><th>Details</th></tr>
-                </thead>
-                <tbody>
-                    {% for e in event_logs %}
-                    <tr>
-                        <td style="font-size:11px;white-space:nowrap;">{{ e.event_time.strftime('%Y-%m-%d %H:%M') if e.event_time else '' }}</td>
-                        <td><span class="badge badge-{{ e.category.lower() if e.category else 'none' }}">{{ e.category or '' }}</span></td>
-                        <td style="font-size:11px;font-family:monospace;">{{ e.function_name or '' }}</td>
-                        <td style="font-size:12px;">{{ e.message or '' }}</td>
-                        <td style="font-size:10px;max-width:250px;word-break:break-word;">{% if e.meta %}<pre style="margin:0;font-size:10px;white-space:pre-wrap;">{{ e.meta | json_format }}</pre>{% endif %}</td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="5" class="empty">No event logs found</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="modal-actions" style="margin-top:12px;text-align:right;">
+            <button onclick="closeEventsModal()" class="btn-cancel">Close</button>
         </div>
     </div>
 </div>
+
+<div class="card">
+    <div class="card-header">Solaris Movements ({{ solaris|length }})</div>
+    <div class="card-body">
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr><th>Time</th><th>Player</th><th>Change</th><th>Balance</th></tr>
+                </thead>
+                <tbody>
+                    {% for s in solaris[:25] %}
+                    <tr>
+                        <td style="font-size:11px;white-space:nowrap;">{{ s.event_time.strftime('%Y-%m-%d %H:%M') if s.event_time else '' }}</td>
+                        <td style="font-family:monospace;font-size:12px;">{{ s.fls_id or '' }}</td>
+                        <td style="font-size:13px;font-weight:600;color:{% if s.delta >= 0 %}#27ae60{% else %}#e74c3c{% endif %};">{{ '+' if s.delta >= 0 else '' }}{{ s.delta | format_number }}</td>
+                        <td style="font-size:12px;">{{ s.balance | format_number }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="empty">No currency movements logged</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if solaris|length > 25 %}
+        <div style="margin-top:12px;text-align:center;">
+            <button onclick="openSolarisModal()" style="padding:8px 20px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Show all {{ solaris|length }} movements</button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div id="solaris-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeSolarisModal()">
+    <div class="modal modal-wide">
+        <h3>All Solaris Movements ({{ solaris|length }})</h3>
+        <div class="table-wrap" style="max-height:60vh;overflow-y:auto;">
+            <table>
+                <thead>
+                    <tr><th>Time</th><th>Player</th><th>Change</th><th>Balance</th></tr>
+                </thead>
+                <tbody>
+                    {% for s in solaris %}
+                    <tr>
+                        <td style="font-size:11px;white-space:nowrap;">{{ s.event_time.strftime('%Y-%m-%d %H:%M') if s.event_time else '' }}</td>
+                        <td style="font-family:monospace;font-size:12px;">{{ s.fls_id or '' }}</td>
+                        <td style="font-size:13px;font-weight:600;color:{% if s.delta >= 0 %}#27ae60{% else %}#e74c3c{% endif %};">{{ '+' if s.delta >= 0 else '' }}{{ s.delta | format_number }}</td>
+                        <td style="font-size:12px;">{{ s.balance | format_number }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="modal-actions" style="margin-top:12px;text-align:right;">
+            <button onclick="closeSolarisModal()" class="btn-cancel">Close</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function openEventsModal() { document.getElementById('events-modal').style.display = 'flex'; }
+function closeEventsModal() { document.getElementById('events-modal').style.display = 'none'; }
+function openSolarisModal() { document.getElementById('solaris-modal').style.display = 'flex'; }
+function closeSolarisModal() { document.getElementById('solaris-modal').style.display = 'none'; }
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { closeEventsModal(); closeSolarisModal(); }
+});
+</script>
 
 {% endif %}
 {% endblock %}

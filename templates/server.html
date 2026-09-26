@@ -107,17 +107,17 @@
         <div style="margin-bottom:12px;">
             <label style="display:block;margin-bottom:4px;font-size:13px;">Title</label>
             <input type="text" id="bc-title" value="Server Notice"
-                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
+                style="width:100%;padding:8px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
         </div>
         <div style="margin-bottom:12px;">
             <label style="display:block;margin-bottom:4px;font-size:13px;">Message</label>
             <textarea id="bc-message" rows="3"
-                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;resize:vertical;"></textarea>
+                style="width:100%;padding:8px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;resize:vertical;"></textarea>
         </div>
         <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
             <label style="font-size:13px;">Duration (seconds, 5–300):
                 <input type="number" id="bc-duration" value="30" min="5" max="300"
-                    style="display:block;width:120px;margin-top:4px;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
+                    style="display:block;width:120px;margin-top:4px;padding:8px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
             </label>
             <button id="bc-send-btn" style="padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">Send Broadcast</button>
             <span id="bc-msg" style="font-size:12px;color:var(--text-muted);"></span>
@@ -142,23 +142,23 @@
         <div style="margin-bottom:8px;">
             <label style="display:block;margin-bottom:4px;font-size:13px;">Title</label>
             <input type="text" id="bn-title" value="Server Notice"
-                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
+                style="width:100%;padding:8px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
         </div>
         <div style="margin-bottom:8px;">
             <label style="display:block;margin-bottom:4px;font-size:13px;">Message</label>
             <textarea id="bn-message" rows="2"
-                style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;resize:vertical;"></textarea>
+                style="width:100%;padding:8px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;resize:vertical;"></textarea>
         </div>
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
             <label style="font-size:13px;">Duration (5–300s):
                 <input type="number" id="bn-duration" value="30" min="5" max="300"
-                    style="width:90px;padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
+                    style="width:90px;padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
             </label>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
                 <input type="checkbox" id="bn-enabled" checked style="width:16px;height:16px;"> Enabled
             </label>
             <label style="font-size:13px;">Repeats:
-                <select id="bn-mode" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+                <select id="bn-mode" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
                     <option value="daily">Daily</option>
                     <option value="weekly">Weekly</option>
                     <option value="monthly">Monthly</option>
@@ -169,7 +169,7 @@
         <div id="bn-sched-daily" style="margin-bottom:12px;">
             <div style="font-size:13px;margin-bottom:6px;">Times - pick a time, then Add:</div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-                <input type="time" id="bn-daily-time-pick" value="12:00" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+                <input type="time" id="bn-daily-time-pick" value="12:00" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
                 <button id="bn-daily-add" style="padding:6px 14px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Add time</button>
             </div>
             <div id="bn-daily-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
@@ -187,7 +187,7 @@
             </div>
             <div style="font-size:13px;margin-bottom:6px;">Times - pick a time, then Add:</div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-                <input type="time" id="bn-weekly-time-pick" value="12:00" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+                <input type="time" id="bn-weekly-time-pick" value="12:00" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
                 <button id="bn-weekly-add" style="padding:6px 14px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Add time</button>
             </div>
             <div id="bn-weekly-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
@@ -196,12 +196,12 @@
             <div style="font-size:13px;margin-bottom:6px;">Days of month - click to select:</div>
             <div id="bn-monthly-grid" style="display:grid;grid-template-columns:repeat(8, minmax(34px, 44px));gap:6px;margin-bottom:8px;"></div>
             <label style="font-size:13px;">Time:
-                <input type="time" id="bn-monthly-time" value="12:00" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+                <input type="time" id="bn-monthly-time" value="12:00" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
             </label>
         </div>
         <div id="bn-sched-once" style="margin-bottom:12px;display:none;">
             <label style="font-size:13px;">Date + time - pick from the calendar:
-                <input type="datetime-local" id="bn-once-at" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+                <input type="datetime-local" id="bn-once-at" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
             </label>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -255,7 +255,7 @@
                 <input type="checkbox" id="lc-sched-enabled" style="width:16px;height:16px;"> Enabled
             </label>
             <label style="font-size:13px;">Mode:
-                <select id="lc-sched-mode" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+                <select id="lc-sched-mode" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
                     <option value="daily">Daily</option>
                     <option value="weekly">Weekly</option>
                     <option value="monthly">Monthly</option>
@@ -266,7 +266,7 @@
         <div id="lc-sched-daily" style="margin-bottom:12px;">
             <div style="font-size:13px;margin-bottom:6px;">Times - pick a time, then Add:</div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-                <input type="time" id="lc-daily-time-pick" value="05:00" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+                <input type="time" id="lc-daily-time-pick" value="05:00" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
                 <button id="lc-daily-add" style="padding:6px 14px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Add time</button>
             </div>
             <div id="lc-daily-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
@@ -284,7 +284,7 @@
             </div>
             <div style="font-size:13px;margin-bottom:6px;">Times - pick a time, then Add:</div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-                <input type="time" id="lc-weekly-time-pick" value="05:00" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+                <input type="time" id="lc-weekly-time-pick" value="05:00" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
                 <button id="lc-weekly-add" style="padding:6px 14px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Add time</button>
             </div>
             <div id="lc-weekly-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
@@ -293,12 +293,12 @@
             <div style="font-size:13px;margin-bottom:6px;">Days of month - click to select:</div>
             <div id="lc-monthly-grid" style="display:grid;grid-template-columns:repeat(8, minmax(34px, 44px));gap:6px;margin-bottom:8px;"></div>
             <label style="font-size:13px;">Time:
-                <input type="time" id="lc-monthly-time" value="05:00" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+                <input type="time" id="lc-monthly-time" value="05:00" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
             </label>
         </div>
         <div id="lc-sched-once" style="margin-bottom:12px;display:none;">
             <label style="font-size:13px;">Date + time - pick from the calendar:
-                <input type="datetime-local" id="lc-once-at" style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
+                <input type="datetime-local" id="lc-once-at" style="padding:6px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;color-scheme:dark;">
             </label>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -494,7 +494,7 @@
         </div>
         <div style="margin-bottom:12px;">
             <textarea id="sat-token" rows="4"
-                style="width:100%;padding:10px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:monospace;resize:vertical;"
+                style="width:100%;padding:10px 12px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:monospace;resize:vertical;"
                 placeholder="Paste the new ServiceAuthToken JWT here..."></textarea>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">

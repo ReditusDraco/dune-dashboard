@@ -10,13 +10,19 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Fragments identifying a peer that vanished mid-handshake (typically an
-# internet scanner hitting the public HTTPS port). Never real failures.
+# Fragments identifying a dead scanner connection (typically an internet
+# scanner hitting the public HTTPS port): vanishing mid-handshake, sending
+# plain HTTP to the TLS port, or the follow-up cleanup of an already-dead
+# socket. Never real failures.
 _HANDSHAKE_NOISE = (
     'during handshake',
     'SSLV3_ALERT',
     'UNEXPECTED_EOF',
     'TLSV1_ALERT',
+    'plain HTTP',
+    'HTTP_REQUEST',
+    'not a socket',
+    'WinError 10038',
 )
 
 

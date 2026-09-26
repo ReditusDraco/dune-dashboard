@@ -1141,6 +1141,11 @@ td a:hover { text-decoration: underline; }
     overflow-y: auto;
 }
 
+.modal-wide {
+    max-width: 900px;
+    width: 95%;
+}
+
 .modal h3 {
     margin: 0 0 16px 0;
     font-size: 18px;
@@ -1443,4 +1448,45 @@ body[data-nav-layout="vertical"] .update-banner .ub-panel {
     body[data-nav-layout="vertical"] .site-footer {
         margin-left: 0;
     }
+}
+
+/* Native dropdowns: readable closed box in every theme. Several templates
+   reference background vars that were never defined, so be explicit here.
+   The color-scheme lines make the browser render the native options popup
+   to match (otherwise it pops up white while inheriting light text). */
+select {
+    background-color: var(--card-bg);
+    color: var(--text);
+    border-color: var(--border);
+}
+[data-theme$="-dark"] select {
+    color-scheme: dark;
+}
+/* Explicit option colors: some browsers ignore color-scheme for the
+   native popup, so paint the rows directly (light text on card bg). */
+[data-theme$="-dark"] select option {
+    background-color: var(--card-bg);
+    color: var(--text);
+}
+[data-theme]:not([data-theme$="-dark"]) select {
+    color-scheme: light;
+}
+
+/* Theme dropdown: invisible hover bridge so moving the mouse from the
+   button down to the menu never drops hover (no more racing the cursor). */
+.theme-dropdown::after {
+    content: '';
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    height: 14px;
+}
+.theme-dropdown:hover::after {
+    display: block;
+}
+body[data-nav-layout="vertical"] .theme-dropdown::after {
+    top: auto;
+    bottom: 100%;
 }

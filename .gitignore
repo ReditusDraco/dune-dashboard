@@ -38,6 +38,7 @@ config_local.py
 dune-tunnel-key
 dune-awakening-server-sshKey
 internal-scripts/ssh/sshKey
+internal-scripts/ssh/known_hosts
 
 # SSL Certificates
 ssl/

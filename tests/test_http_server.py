@@ -20,6 +20,26 @@ class TestHandshakeFilter:
         assert any('handshake dropped' in r.message for r in caplog.records)
         assert all(r.levelno == logging.DEBUG for r in caplog.records)
 
+    def test_plain_http_and_dead_socket_go_to_debug_only(self, caplog):
+        calls = []
+
+        def orig(msg='', level=20, traceback=False):
+            calls.append((msg, level))
+
+        noises = [
+            "Client ('1.2.3.4', 123) attempted to speak plain HTTP into a "
+            "TCP connection configured for TLS-only traffic",
+            '[SSL: HTTP_REQUEST] http request (_ssl.c:1081)',
+            'OSError: [WinError 10038] An operation was attempted on '
+            'something that is not a socket',
+        ]
+        with caplog.at_level(logging.DEBUG, logger='app.utils.http_server'):
+            for noise in noises:
+                cheroot_error_filter(orig, noise)
+        assert calls == []
+        assert len([r for r in caplog.records
+                    if r.levelno == logging.DEBUG]) == len(noises)
+
     def test_real_errors_pass_through(self):
         calls = []
 
